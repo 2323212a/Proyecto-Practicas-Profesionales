@@ -10,8 +10,7 @@ import {
   Users,
   Award,
 } from "lucide-react";
-import unachlogo from "./unachlogo1.JPG";
-
+import unachlogo from "../../../assets/unachlogo1.jpg";
 export function LandingPage() {
   const navigate = useNavigate();
   return (
