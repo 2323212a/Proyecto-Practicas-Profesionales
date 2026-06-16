@@ -222,7 +222,7 @@ if (role === "alumno")
       {
         label: "Configuración",
         icon: Settings,
-        path: "/admin/config",
+        path: "/admin/configuracion",
       },
     ];
   if (role === "asesor")
