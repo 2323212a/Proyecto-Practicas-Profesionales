@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from database.connection import Base, engine
 from routes.documentos import router as documentos_router
 from models.documento import DocumentoModel
+from routes.roles import router as roles_router
+from models.rol import RolModel
 
 Base.metadata.create_all(bind=engine)
 
@@ -11,7 +13,7 @@ app = FastAPI(
 )
 
 app.include_router(documentos_router)
-
+app.include_router(roles_router)
 
 @app.get("/")
 def root():
