@@ -1,4 +1,5 @@
 from models.usuario import UsuarioModel
+from security.password import generar_password_hash
 
 
 class UsuarioService:
@@ -7,9 +8,7 @@ class UsuarioService:
         self.db = db
 
     def listar(self):
-        return self.db.query(
-            UsuarioModel
-        ).all()
+        return self.db.query(UsuarioModel).all()
 
     def crear(self, usuario):
 
@@ -19,7 +18,7 @@ class UsuarioService:
             apellido_paterno=usuario.apellido_paterno,
             apellido_materno=usuario.apellido_materno,
             correo=usuario.correo,
-            password=usuario.password,
+            password=generar_password_hash(usuario.password),
             estado="Activo"
         )
 

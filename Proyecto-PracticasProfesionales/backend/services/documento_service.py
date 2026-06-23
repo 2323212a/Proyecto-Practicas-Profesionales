@@ -1,5 +1,6 @@
+from datetime import datetime
+
 from models.documento import DocumentoModel
-from schemas.documento import DocumentoCreate
 
 
 class DocumentoService:
@@ -17,29 +18,50 @@ class DocumentoService:
             .first()
         )
 
-    def crear(self, documento: DocumentoCreate):
-        nuevo_documento = DocumentoModel(
+    def crear(self, documento):
+        nuevo = DocumentoModel(
             id_expediente=documento.id_expediente,
             id_tipo_documento=documento.id_tipo_documento,
             nombre_archivo=documento.nombre_archivo,
             ruta_archivo=documento.ruta_archivo,
             generado_por_sistema=documento.generado_por_sistema,
-            estado_documento="Pendiente"
+            requiere_validacion_automatica=documento.requiere_validacion_automatica,
+            estado_documento="Pendiente",
+            validacion_automatica_estado="No validado"
         )
 
-        self.db.add(nuevo_documento)
+        self.db.add(nuevo)
         self.db.commit()
-        self.db.refresh(nuevo_documento)
+        self.db.refresh(nuevo)
 
-        return nuevo_documento
+        return nuevo
 
-    def cambiar_estado(self, id_documento: int, estado: str):
+    def cambiar_estado_documento(self, id_documento: int, estado: str):
         documento = self.obtener_por_id(id_documento)
 
         if documento is None:
             return None
 
         documento.estado_documento = estado
+
+        self.db.commit()
+        self.db.refresh(documento)
+
+        return documento
+
+    def cambiar_estado_validacion_automatica(
+        self,
+        id_documento: int,
+        estado_validacion: str
+    ):
+        documento = self.obtener_por_id(id_documento)
+
+        if documento is None:
+            return None
+
+        documento.validacion_automatica_estado = estado_validacion
+        documento.fecha_validacion_automatica = datetime.now()
+
         self.db.commit()
         self.db.refresh(documento)
 
