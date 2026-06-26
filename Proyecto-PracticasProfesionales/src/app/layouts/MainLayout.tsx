@@ -441,15 +441,19 @@ export function MainLayout() {
               <span className="text-sm">Inicio</span>
             )}
           </button>
-          <button
-            onClick={() => navigate("/login")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
-          >
-            <LogOut className="w-4 h-4 flex-shrink-0" />
-            {!collapsed && (
-              <span className="text-sm">Cerrar Sesión</span>
-            )}
-          </button>
+            <button
+              onClick={() => {
+                localStorage.removeItem("token");
+                localStorage.removeItem("usuario");
+                navigate("/login");
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+            >
+              <LogOut className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && (
+                <span className="text-sm">Cerrar Sesión</span>
+              )}
+            </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
             className={`hidden lg:flex w-full items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
