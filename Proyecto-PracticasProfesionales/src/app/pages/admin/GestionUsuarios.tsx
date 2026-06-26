@@ -1,60 +1,126 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, Search, Plus, Edit2, Trash2, UserX } from "lucide-react";
+import { obtenerUsuarios } from "../../../infrastructure/usuarios/usuariosApi";
+import { crearUsuario } from "../../../infrastructure/usuarios/usuariosApi";
+import {cambiarEstadoUsuario,} from "../../../infrastructure/usuarios/usuariosApi";
+import {eliminarUsuario} from "../../../infrastructure/usuarios/usuariosApi";
 
-const ini = [
-  { id: 1, nombre: "María García López", correo: "maria@unach.mx", rol: "Alumno", estado: "activo" },
-  { id: 2, nombre: "Dr. Roberto Méndez", correo: "roberto@unach.mx", rol: "Coordinador de Prácticas", estado: "activo" },
-  { id: 3, nombre: "Lic. Ana Torres", correo: "ana@unach.mx", rol: "Coord. Unidades Receptoras", estado: "activo" },
-  { id: 4, nombre: "M.C. Pedro Ruiz", correo: "pedro@unach.mx", rol: "Asesor Interno", estado: "activo" },
-  { id: 5, nombre: "TechSoft Chiapas", correo: "techsoft@empresa.mx", rol: "Unidad Receptora", estado: "activo" },
-  { id: 6, nombre: "Carlos López Ramos", correo: "carlos@unach.mx", rol: "Alumno", estado: "activo" },
-  { id: 7, nombre: "Laura Martínez Cruz", correo: "laura@unach.mx", rol: "Alumno", estado: "inactivo" },
-  { id: 8, nombre: "Dirección General", correo: "direccion@unach.mx", rol: "Dirección", estado: "activo" },
 
-  { id: 9, nombre: "Oscar Gonzalez", correo: "oscar@unach.mx", rol: "Alumno", estado: "activo" },
-  { id: 10, nombre: "Javier Molina", correo: "javier@unach.mx", rol: "Alumno", estado: "activo" },
-  { id: 11, nombre: "Brayan Hernandez", correo: "brayan@unach.mx", rol: "Alumno", estado: "activo" },
-];
+type Usuario = {
+  id_usuario: number;
+  id_rol: number;
+  nombre: string;
+  apellido_paterno?: string | null;
+  apellido_materno?: string | null;
+  correo: string;
+  estado: string;
+};
+
+const roles: Record<number, string> = {
+  1: "Alumno",
+  2: "Administrador",
+  3: "Coordinador de Prácticas",
+  4: "Coord. Unidades Receptoras",
+  5: "Unidad Receptora",
+  6: "Asesor Interno",
+  7: "Dirección",
+};
 
 const rolC: Record<string, string> = {
   Alumno: "bg-blue-100 text-blue-700",
+  Administrador: "bg-red-100 text-red-700",
   "Coordinador de Prácticas": "bg-purple-100 text-purple-700",
   "Coord. Unidades Receptoras": "bg-indigo-100 text-indigo-700",
-  "Asesor Interno": "bg-teal-100 text-teal-700",
   "Unidad Receptora": "bg-green-100 text-green-700",
+  "Asesor Interno": "bg-teal-100 text-teal-700",
   Dirección: "bg-orange-100 text-orange-700",
-  Administrador: "bg-red-100 text-red-700",
-};
-
-const ordenRoles: Record<string, number> = {
-  Administrador: 1,
-  Dirección: 2,
-  "Coordinador de Prácticas": 3,
-  "Coord. Unidades Receptoras": 4,
-  "Asesor Interno": 5,
-  "Unidad Receptora": 6,
-  Alumno: 7,
 };
 
 export function GestionUsuarios() {
-  const [usuarios, setUsuarios] = useState(ini);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [q, setQ] = useState("");
   const [showCreate, setShowCreate] = useState(false);
 
-  const filtrados = usuarios
-    .filter(
-      (u) =>
-        u.nombre.toLowerCase().includes(q.toLowerCase()) ||
-        u.correo.toLowerCase().includes(q.toLowerCase()) ||
-        u.rol.toLowerCase().includes(q.toLowerCase()),
-    )
-    .sort((a, b) => {
-      const ordenRol = ordenRoles[a.rol] - ordenRoles[b.rol];
+  useEffect(() => {
+    cargarUsuarios();
+  }, []);
 
-      if (ordenRol !== 0) return ordenRol;
+  const [nuevoUsuario, setNuevoUsuario] = useState({
+  nombre: "",
+  apellido_paterno: "",
+  apellido_materno: "",
+  correo: "",
+  password: "",
+  id_rol: 1,
+  });
 
-      return a.nombre.localeCompare(b.nombre);
+  async function handleCrearUsuario() {
+  try {
+    await crearUsuario(nuevoUsuario);
+
+    setShowCreate(false);
+
+    setNuevoUsuario({
+      nombre: "",
+      apellido_paterno: "",
+      apellido_materno: "",
+      correo: "",
+      password: "",
+      id_rol: 1,
     });
+
+    await cargarUsuarios();
+  } catch (error) {
+    console.error(error);
+    alert("Error al crear usuario");
+  }
+  }
+
+  async function cargarUsuarios() {
+    const data = await obtenerUsuarios();
+    setUsuarios(data);
+  }
+
+  const filtrados = usuarios.filter((u) => {
+    const nombreCompleto = `${u.nombre} ${u.apellido_paterno ?? ""} ${
+      u.apellido_materno ?? ""
+    }`;
+
+    const rol = roles[u.id_rol] ?? "Sin rol";
+
+    return (
+      nombreCompleto.toLowerCase().includes(q.toLowerCase()) ||
+      u.correo.toLowerCase().includes(q.toLowerCase()) ||
+      rol.toLowerCase().includes(q.toLowerCase())
+    );
+  });
+
+  async function handleCambiarEstado(id: number) {
+  try {
+    await cambiarEstadoUsuario(id);
+    await cargarUsuarios();
+  } catch (error) {
+    console.error(error);
+    alert("Error al cambiar estado");
+  }
+  }
+
+  async function handleEliminarUsuario(id: number) {
+  const confirmar = window.confirm(
+    "¿Deseas eliminar este usuario?"
+  );
+
+  if (!confirmar) return;
+
+  try {
+    await eliminarUsuario(id);
+    await cargarUsuarios();
+  } catch (error) {
+    console.error(error);
+    alert("Error al eliminar usuario");
+  }
+
+}
 
   return (
     <div className="space-y-6">
@@ -117,162 +183,202 @@ export function GestionUsuarios() {
             </thead>
 
             <tbody className="divide-y divide-gray-100">
-              {filtrados.map((u) => (
-                <tr key={u.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-[#e3f0ff] rounded-lg flex items-center justify-center text-[#1565c0] font-bold text-sm">
-                        {u.nombre.charAt(0)}
+              {filtrados.map((u) => {
+                const nombreCompleto = `${u.nombre} ${
+                  u.apellido_paterno ?? ""
+                } ${u.apellido_materno ?? ""}`.trim();
+
+                const rol = roles[u.id_rol] ?? "Sin rol";
+                const estadoActivo = u.estado === "Activo";
+
+                return (
+                  <tr key={u.id_usuario} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-[#e3f0ff] rounded-lg flex items-center justify-center text-[#1565c0] font-bold text-sm">
+                          {u.nombre.charAt(0)}
+                        </div>
+                        <span className="text-sm font-medium text-gray-800">
+                          {nombreCompleto}
+                        </span>
                       </div>
-                      <span className="text-sm font-medium text-gray-800">
-                        {u.nombre}
-                      </span>
-                    </div>
-                  </td>
+                    </td>
 
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {u.correo}
-                  </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {u.correo}
+                    </td>
 
-                  <td className="px-6 py-4">
-                    <span
-                      className={`text-xs px-3 py-1 rounded-full font-semibold ${
-                        rolC[u.rol] || "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {u.rol}
-                    </span>
-                  </td>
-
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-semibold ${
-                        u.estado === "activo"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
+                    <td className="px-6 py-4">
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          u.estado === "activo" ? "bg-green-500" : "bg-gray-400"
+                        className={`text-xs px-3 py-1 rounded-full font-semibold ${
+                          rolC[rol] || "bg-gray-100 text-gray-600"
                         }`}
-                      />
-                      {u.estado === "activo" ? "Activo" : "Inactivo"}
-                    </span>
-                  </td>
+                      >
+                        {rol}
+                      </span>
+                    </td>
 
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-semibold ${
+                          estadoActivo
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            estadoActivo ? "bg-green-500" : "bg-gray-400"
+                          }`}
+                        />
+                        {estadoActivo ? "Activo" : "Inactivo"}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
 
                       <button
-                        onClick={() =>
-                          setUsuarios((p) =>
-                            p.map((x) =>
-                              x.id === u.id
-                                ? {
-                                    ...x,
-                                    estado:
-                                      x.estado === "activo"
-                                        ? "inactivo"
-                                        : "activo",
-                                  }
-                                : x,
-                            ),
-                          )
-                        }
+                        onClick={() => handleCambiarEstado(u.id_usuario)}
                         className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg"
-                      >
+                        >
                         <UserX className="w-3.5 h-3.5" />
-                      </button>
+                         </button>
 
-                      <button
-                        onClick={() =>
-                          setUsuarios((p) => p.filter((x) => x.id !== u.id))
-                        }
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <button
+                          onClick={() => handleEliminarUsuario(u.id_usuario)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
-      {showCreate && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowCreate(false)}
+{showCreate && (
+  <div
+    className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+    onClick={() => setShowCreate(false)}
+  >
+    <div
+      className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <h3 className="font-bold text-xl text-[#0d2b5e] mb-6">
+        Crear Nuevo Usuario
+      </h3>
+
+      <div className="space-y-4">
+        <input
+          type="text"
+          placeholder="Nombre"
+          value={nuevoUsuario.nombre}
+          onChange={(e) =>
+            setNuevoUsuario({
+              ...nuevoUsuario,
+              nombre: e.target.value,
+            })
+          }
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+        />
+
+        <input
+          type="text"
+          placeholder="Apellido paterno"
+          value={nuevoUsuario.apellido_paterno}
+          onChange={(e) =>
+            setNuevoUsuario({
+              ...nuevoUsuario,
+              apellido_paterno: e.target.value,
+            })
+          }
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+        />
+
+        <input
+          type="text"
+          placeholder="Apellido materno"
+          value={nuevoUsuario.apellido_materno}
+          onChange={(e) =>
+            setNuevoUsuario({
+              ...nuevoUsuario,
+              apellido_materno: e.target.value,
+            })
+          }
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+        />
+
+        <input
+          type="email"
+          placeholder="Correo institucional"
+          value={nuevoUsuario.correo}
+          onChange={(e) =>
+            setNuevoUsuario({
+              ...nuevoUsuario,
+              correo: e.target.value,
+            })
+          }
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+        />
+
+        <input
+          type="password"
+          placeholder="Contraseña"
+          value={nuevoUsuario.password}
+          onChange={(e) =>
+            setNuevoUsuario({
+              ...nuevoUsuario,
+              password: e.target.value,
+            })
+          }
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+        />
+
+        <select
+          value={nuevoUsuario.id_rol}
+          onChange={(e) =>
+            setNuevoUsuario({
+              ...nuevoUsuario,
+              id_rol: Number(e.target.value),
+            })
+          }
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-xl text-[#0d2b5e] mb-6">
-              Crear Nuevo Usuario
-            </h3>
+          {Object.entries(roles).map(([id, nombre]) => (
+            <option key={id} value={id}>
+              {nombre}
+            </option>
+          ))}
+        </select>
+      </div>
 
-            <div className="space-y-4">
-              {[
-                { l: "Nombre completo", t: "text", p: "Nombre completo" },
-                { l: "Correo institucional", t: "email", p: "usuario@unach.mx" },
-              ].map((f) => (
-                <div key={f.l}>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    {f.l}
-                  </label>
-                  <input
-                    type={f.t}
-                    placeholder={f.p}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#1565c0] text-sm"
-                  />
-                </div>
-              ))}
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={handleCrearUsuario}
+          className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0]"
+        >
+          Crear Usuario
+        </button>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Rol
-                </label>
-                <select className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#1565c0] text-sm bg-white">
-                  {[
-                    "Alumno",
-                    "Coordinador de Prácticas",
-                    "Coord. Unidades Receptoras",
-                    "Unidad Receptora",
-                    "Asesor Interno",
-                    "Dirección",
-                    "Administrador",
-                  ].map((r) => (
-                    <option key={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowCreate(false)}
-                className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0]"
-              >
-                Crear Usuario
-              </button>
-
-              <button
-                onClick={() => setShowCreate(false)}
-                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        <button
+          onClick={() => setShowCreate(false)}
+          className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }

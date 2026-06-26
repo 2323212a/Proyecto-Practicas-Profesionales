@@ -31,3 +31,11 @@ class UsuarioResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+class UsuarioUpdate(BaseModel):
+    id_rol: int
+    nombre: str
+    apellido_paterno: str | None = None
+    apellido_materno: str | None = None
+    correo: EmailStr
+    estado: str
