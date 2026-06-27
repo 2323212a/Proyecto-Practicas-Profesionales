@@ -44,3 +44,22 @@ export async function eliminarUsuario(id: number) {
 
   return response.data;
 }
+
+export async function actualizarUsuario(
+  id: number,
+  data: {
+    id_rol: number;
+    nombre: string;
+    apellido_paterno?: string;
+    apellido_materno?: string;
+    correo: string;
+    estado: string;
+  }
+) {
+  const response = await apiClient.put(
+    `/usuarios/${id}`,
+    data
+  );
+
+  return response.data;
+}

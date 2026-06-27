@@ -18,6 +18,7 @@ from routes.expedientes import router as expedientes_router
 from models.expediente import ExpedienteModel
 from routes.auth import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
+from routes.importacion import router as importacion_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -46,6 +47,7 @@ app.include_router(convocatorias_router)
 app.include_router(tipos_documento_router)
 app.include_router(expedientes_router)
 app.include_router(auth_router)
+app.include_router(importacion_router)
 
 @app.get("/")
 def root():

@@ -14,3 +14,7 @@ class CarreraResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+class CarreraUpdate(BaseModel):
+    clave: str
+    nombre: str

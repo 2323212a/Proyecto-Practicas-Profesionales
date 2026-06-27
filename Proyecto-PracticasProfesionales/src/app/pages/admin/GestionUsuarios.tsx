@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Users, Search, Plus, Edit2, Trash2, UserX } from "lucide-react";
-import { obtenerUsuarios } from "../../../infrastructure/usuarios/usuariosApi";
-import { crearUsuario } from "../../../infrastructure/usuarios/usuariosApi";
-import {cambiarEstadoUsuario,} from "../../../infrastructure/usuarios/usuariosApi";
-import {eliminarUsuario} from "../../../infrastructure/usuarios/usuariosApi";
-
+import {
+  obtenerUsuarios,
+  crearUsuario,
+  cambiarEstadoUsuario,
+  eliminarUsuario,
+  actualizarUsuario,
+} from "../../../infrastructure/usuarios/usuariosApi";
 
 type Usuario = {
   id_usuario: number;
@@ -40,45 +42,98 @@ export function GestionUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [q, setQ] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [usuarioEditar, setUsuarioEditar] = useState<Usuario | null>(null);
+
+  const [nuevoUsuario, setNuevoUsuario] = useState({
+    nombre: "",
+    apellido_paterno: "",
+    apellido_materno: "",
+    correo: "",
+    password: "",
+    id_rol: 1,
+  });
 
   useEffect(() => {
     cargarUsuarios();
   }, []);
 
-  const [nuevoUsuario, setNuevoUsuario] = useState({
-  nombre: "",
-  apellido_paterno: "",
-  apellido_materno: "",
-  correo: "",
-  password: "",
-  id_rol: 1,
-  });
-
-  async function handleCrearUsuario() {
-  try {
-    await crearUsuario(nuevoUsuario);
-
-    setShowCreate(false);
-
-    setNuevoUsuario({
-      nombre: "",
-      apellido_paterno: "",
-      apellido_materno: "",
-      correo: "",
-      password: "",
-      id_rol: 1,
-    });
-
-    await cargarUsuarios();
-  } catch (error) {
-    console.error(error);
-    alert("Error al crear usuario");
-  }
-  }
-
   async function cargarUsuarios() {
     const data = await obtenerUsuarios();
     setUsuarios(data);
+  }
+
+  async function handleCrearUsuario() {
+    try {
+      await crearUsuario(nuevoUsuario);
+
+      setShowCreate(false);
+
+      setNuevoUsuario({
+        nombre: "",
+        apellido_paterno: "",
+        apellido_materno: "",
+        correo: "",
+        password: "",
+        id_rol: 1,
+      });
+
+      await cargarUsuarios();
+    } catch (error) {
+      console.error(error);
+      alert("Error al crear usuario");
+    }
+  }
+
+  async function handleCambiarEstado(id: number) {
+    try {
+      await cambiarEstadoUsuario(id);
+      await cargarUsuarios();
+    } catch (error) {
+      console.error(error);
+      alert("Error al cambiar estado");
+    }
+  }
+
+  async function handleEliminarUsuario(id: number) {
+    const confirmar = window.confirm("¿Deseas eliminar este usuario?");
+
+    if (!confirmar) return;
+
+    try {
+      await eliminarUsuario(id);
+      await cargarUsuarios();
+    } catch (error) {
+      console.error(error);
+      alert("Error al eliminar usuario");
+    }
+  }
+
+  function abrirEdicion(usuario: Usuario) {
+    setUsuarioEditar({ ...usuario });
+    setShowEdit(true);
+  }
+
+  async function handleActualizarUsuario() {
+    if (!usuarioEditar) return;
+
+    try {
+      await actualizarUsuario(usuarioEditar.id_usuario, {
+        id_rol: usuarioEditar.id_rol,
+        nombre: usuarioEditar.nombre,
+        apellido_paterno: usuarioEditar.apellido_paterno ?? "",
+        apellido_materno: usuarioEditar.apellido_materno ?? "",
+        correo: usuarioEditar.correo,
+        estado: usuarioEditar.estado,
+      });
+
+      setShowEdit(false);
+      setUsuarioEditar(null);
+      await cargarUsuarios();
+    } catch (error) {
+      console.error(error);
+      alert("Error al actualizar usuario");
+    }
   }
 
   const filtrados = usuarios.filter((u) => {
@@ -94,33 +149,6 @@ export function GestionUsuarios() {
       rol.toLowerCase().includes(q.toLowerCase())
     );
   });
-
-  async function handleCambiarEstado(id: number) {
-  try {
-    await cambiarEstadoUsuario(id);
-    await cargarUsuarios();
-  } catch (error) {
-    console.error(error);
-    alert("Error al cambiar estado");
-  }
-  }
-
-  async function handleEliminarUsuario(id: number) {
-  const confirmar = window.confirm(
-    "¿Deseas eliminar este usuario?"
-  );
-
-  if (!confirmar) return;
-
-  try {
-    await eliminarUsuario(id);
-    await cargarUsuarios();
-  } catch (error) {
-    console.error(error);
-    alert("Error al eliminar usuario");
-  }
-
-}
 
   return (
     <div className="space-y-6">
@@ -146,6 +174,7 @@ export function GestionUsuarios() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+
           <input
             type="text"
             placeholder="Buscar usuario, correo o rol..."
@@ -159,9 +188,11 @@ export function GestionUsuarios() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
           <Users className="w-5 h-5 text-[#1565c0]" />
+
           <h3 className="font-bold text-[#0d2b5e]">
             Directorio de Usuarios
           </h3>
+
           <span className="ml-auto text-xs text-gray-400">
             {filtrados.length} resultados
           </span>
@@ -171,14 +202,16 @@ export function GestionUsuarios() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                {["Nombre", "Correo", "Rol", "Estado", "Acciones"].map((h) => (
-                  <th
-                    key={h}
-                    className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase"
-                  >
-                    {h}
-                  </th>
-                ))}
+                {["Nombre", "Correo", "Rol", "Estado", "Acciones"].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase"
+                    >
+                      {h}
+                    </th>
+                  )
+                )}
               </tr>
             </thead>
 
@@ -198,6 +231,7 @@ export function GestionUsuarios() {
                         <div className="w-8 h-8 bg-[#e3f0ff] rounded-lg flex items-center justify-center text-[#1565c0] font-bold text-sm">
                           {u.nombre.charAt(0)}
                         </div>
+
                         <span className="text-sm font-medium text-gray-800">
                           {nombreCompleto}
                         </span>
@@ -231,22 +265,26 @@ export function GestionUsuarios() {
                             estadoActivo ? "bg-green-500" : "bg-gray-400"
                           }`}
                         />
+
                         {estadoActivo ? "Activo" : "Inactivo"}
                       </span>
                     </td>
 
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        <button className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                        <button
+                          onClick={() => abrirEdicion(u)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                        >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
 
-                      <button
-                        onClick={() => handleCambiarEstado(u.id_usuario)}
-                        className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg"
+                        <button
+                          onClick={() => handleCambiarEstado(u.id_usuario)}
+                          className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg"
                         >
-                        <UserX className="w-3.5 h-3.5" />
-                         </button>
+                          <UserX className="w-3.5 h-3.5" />
+                        </button>
 
                         <button
                           onClick={() => handleEliminarUsuario(u.id_usuario)}
@@ -264,121 +302,234 @@ export function GestionUsuarios() {
         </div>
       </div>
 
-{showCreate && (
-  <div
-    className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-    onClick={() => setShowCreate(false)}
-  >
-    <div
-      className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <h3 className="font-bold text-xl text-[#0d2b5e] mb-6">
-        Crear Nuevo Usuario
-      </h3>
-
-      <div className="space-y-4">
-        <input
-          type="text"
-          placeholder="Nombre"
-          value={nuevoUsuario.nombre}
-          onChange={(e) =>
-            setNuevoUsuario({
-              ...nuevoUsuario,
-              nombre: e.target.value,
-            })
-          }
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-        />
-
-        <input
-          type="text"
-          placeholder="Apellido paterno"
-          value={nuevoUsuario.apellido_paterno}
-          onChange={(e) =>
-            setNuevoUsuario({
-              ...nuevoUsuario,
-              apellido_paterno: e.target.value,
-            })
-          }
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-        />
-
-        <input
-          type="text"
-          placeholder="Apellido materno"
-          value={nuevoUsuario.apellido_materno}
-          onChange={(e) =>
-            setNuevoUsuario({
-              ...nuevoUsuario,
-              apellido_materno: e.target.value,
-            })
-          }
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-        />
-
-        <input
-          type="email"
-          placeholder="Correo institucional"
-          value={nuevoUsuario.correo}
-          onChange={(e) =>
-            setNuevoUsuario({
-              ...nuevoUsuario,
-              correo: e.target.value,
-            })
-          }
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-        />
-
-        <input
-          type="password"
-          placeholder="Contraseña"
-          value={nuevoUsuario.password}
-          onChange={(e) =>
-            setNuevoUsuario({
-              ...nuevoUsuario,
-              password: e.target.value,
-            })
-          }
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-        />
-
-        <select
-          value={nuevoUsuario.id_rol}
-          onChange={(e) =>
-            setNuevoUsuario({
-              ...nuevoUsuario,
-              id_rol: Number(e.target.value),
-            })
-          }
-          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
-        >
-          {Object.entries(roles).map(([id, nombre]) => (
-            <option key={id} value={id}>
-              {nombre}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={handleCrearUsuario}
-          className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0]"
-        >
-          Crear Usuario
-        </button>
-
-        <button
+      {showCreate && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
           onClick={() => setShowCreate(false)}
-          className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50"
         >
-          Cancelar
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-xl text-[#0d2b5e] mb-6">
+              Crear Nuevo Usuario
+            </h3>
+
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Nombre"
+                value={nuevoUsuario.nombre}
+                onChange={(e) =>
+                  setNuevoUsuario({
+                    ...nuevoUsuario,
+                    nombre: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="text"
+                placeholder="Apellido paterno"
+                value={nuevoUsuario.apellido_paterno}
+                onChange={(e) =>
+                  setNuevoUsuario({
+                    ...nuevoUsuario,
+                    apellido_paterno: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="text"
+                placeholder="Apellido materno"
+                value={nuevoUsuario.apellido_materno}
+                onChange={(e) =>
+                  setNuevoUsuario({
+                    ...nuevoUsuario,
+                    apellido_materno: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="email"
+                placeholder="Correo institucional"
+                value={nuevoUsuario.correo}
+                onChange={(e) =>
+                  setNuevoUsuario({
+                    ...nuevoUsuario,
+                    correo: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="password"
+                placeholder="Contraseña"
+                value={nuevoUsuario.password}
+                onChange={(e) =>
+                  setNuevoUsuario({
+                    ...nuevoUsuario,
+                    password: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <select
+                value={nuevoUsuario.id_rol}
+                onChange={(e) =>
+                  setNuevoUsuario({
+                    ...nuevoUsuario,
+                    id_rol: Number(e.target.value),
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+              >
+                {Object.entries(roles).map(([id, nombre]) => (
+                  <option key={id} value={id}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleCrearUsuario}
+                className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0]"
+              >
+                Crear Usuario
+              </button>
+
+              <button
+                onClick={() => setShowCreate(false)}
+                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEdit && usuarioEditar && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowEdit(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-xl text-[#0d2b5e] mb-6">
+              Editar Usuario
+            </h3>
+
+            <div className="space-y-4">
+              <input
+                type="text"
+                value={usuarioEditar.nombre}
+                onChange={(e) =>
+                  setUsuarioEditar({
+                    ...usuarioEditar,
+                    nombre: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="text"
+                value={usuarioEditar.apellido_paterno ?? ""}
+                onChange={(e) =>
+                  setUsuarioEditar({
+                    ...usuarioEditar,
+                    apellido_paterno: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="text"
+                value={usuarioEditar.apellido_materno ?? ""}
+                onChange={(e) =>
+                  setUsuarioEditar({
+                    ...usuarioEditar,
+                    apellido_materno: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <input
+                type="email"
+                value={usuarioEditar.correo}
+                onChange={(e) =>
+                  setUsuarioEditar({
+                    ...usuarioEditar,
+                    correo: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+              />
+
+              <select
+                value={usuarioEditar.id_rol}
+                onChange={(e) =>
+                  setUsuarioEditar({
+                    ...usuarioEditar,
+                    id_rol: Number(e.target.value),
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+              >
+                {Object.entries(roles).map(([id, nombre]) => (
+                  <option key={id} value={id}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={usuarioEditar.estado}
+                onChange={(e) =>
+                  setUsuarioEditar({
+                    ...usuarioEditar,
+                    estado: e.target.value,
+                  })
+                }
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+              >
+                <option value="Activo">Activo</option>
+                <option value="Inactivo">Inactivo</option>
+              </select>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleActualizarUsuario}
+                className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0]"
+              >
+                Guardar Cambios
+              </button>
+
+              <button
+                onClick={() => setShowEdit(false)}
+                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

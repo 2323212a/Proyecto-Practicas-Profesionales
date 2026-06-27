@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Shield,
   Users,
@@ -5,80 +6,37 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-const roles = [
-  {
-    rol: "Administrador",
-    usuarios: 1,
-    descripcion:
-      "Administra usuarios, roles, catálogos y configuración general del sistema.",
-    acceso: [
-      "Gestión de Usuarios",
-      "Roles y Permisos",
-      "Catálogos",
-      "Reportes",
-      "Configuración",
-    ],
-  },
-  {
-    rol: "Coordinador de Prácticas",
-    usuarios: 3,
-    descripcion:
-      "Gestiona alumnos, validaciones documentales y seguimiento de prácticas.",
-    acceso: [
-      "Dashboard",
-      "Alumnos",
-      "Validaciones",
-      "Seguimiento",
-    ],
-  },
-  {
-    rol: "Coordinador de Unidades Receptoras",
-    usuarios: 2,
-    descripcion:
-      "Administra empresas, convenios y unidades receptoras.",
-    acceso: [
-      "Empresas",
-      "Convenios",
-      "Padrón",
-    ],
-  },
-  {
-    rol: "Asesor Interno / Docente",
-    usuarios: 8,
-    descripcion:
-      "Da seguimiento a alumnos asignados y registra observaciones.",
-    acceso: [
-      "Alumnos Asignados",
-      "Observaciones",
-      "Reportes",
-    ],
-  },
-  {
-    rol: "Dirección / Secretaría",
-    usuarios: 2,
-    descripcion:
-      "Consulta estadísticas, indicadores y reportes ejecutivos.",
-    acceso: [
-      "Dashboard Ejecutivo",
-      "Estadísticas",
-      "Reportes",
-    ],
-  },
-  {
-    rol: "Alumno",
-    usuarios: 844,
-    descripcion:
-      "Gestiona su documentación y seguimiento de prácticas.",
-    acceso: [
-      "Perfil",
-      "Documentación",
-      "Horas",
-      "Notificaciones",
-    ],
-  },
-];
+import { obtenerRoles } from "../../../infrastructure/roles/rolesApi";
+import { obtenerUsuarios } from "../../../infrastructure/usuarios/usuariosApi";
 
 export function AdminRolesPermisos() {
+  const [roles, setRoles] = useState<any[]>([]);
+  const [usuarios, setUsuarios] = useState<any[]>([]);
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+  async function cargarDatos() {
+    try {
+      const rolesData = await obtenerRoles();
+      const usuariosData = await obtenerUsuarios();
+
+      setRoles(rolesData);
+      setUsuarios(usuariosData);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  function obtenerCantidadUsuarios(idRol: number) {
+    return usuarios.filter(
+      (usuario) => usuario.id_rol === idRol
+    ).length;
+  }
+
+  const totalUsuarios = usuarios.length;
+
   return (
     <div className="space-y-6">
       <div>
@@ -92,38 +50,51 @@ export function AdminRolesPermisos() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
-        {[
-          ["Roles registrados", "6", Shield, "bg-blue-600"],
-          ["Usuarios activos", "859", Users, "bg-green-600"],
-          ["Roles activos", "6", CheckCircle2, "bg-purple-600"],
-        ].map(([titulo, valor, Icon, color]: any) => (
-          <div
-            key={titulo}
-            className={`${color} rounded-2xl p-5 text-white`}
-          >
-            <Icon className="w-7 h-7 mb-3 opacity-80" />
-            <div className="text-2xl font-bold">{valor}</div>
-            <div className="text-white/80 text-sm">
-              {titulo}
-            </div>
+        <div className="bg-blue-600 rounded-2xl p-5 text-white">
+          <Shield className="w-7 h-7 mb-3 opacity-80" />
+          <div className="text-2xl font-bold">
+            {roles.length}
           </div>
-        ))}
+          <div className="text-white/80 text-sm">
+            Roles registrados
+          </div>
+        </div>
+
+        <div className="bg-green-600 rounded-2xl p-5 text-white">
+          <Users className="w-7 h-7 mb-3 opacity-80" />
+          <div className="text-2xl font-bold">
+            {totalUsuarios}
+          </div>
+          <div className="text-white/80 text-sm">
+            Usuarios activos
+          </div>
+        </div>
+
+        <div className="bg-purple-600 rounded-2xl p-5 text-white">
+          <CheckCircle2 className="w-7 h-7 mb-3 opacity-80" />
+          <div className="text-2xl font-bold">
+            {roles.length}
+          </div>
+          <div className="text-white/80 text-sm">
+            Roles activos
+          </div>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {roles.map((item) => (
+        {roles.map((rol) => (
           <div
-            key={item.rol}
+            key={rol.id_rol}
             className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm"
           >
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-lg text-[#0d2b5e]">
-                  {item.rol}
+                  {rol.nombre}
                 </h3>
 
                 <p className="text-sm text-gray-500 mt-1">
-                  {item.descripcion}
+                  Rol institucional registrado en el sistema.
                 </p>
               </div>
 
@@ -132,24 +103,23 @@ export function AdminRolesPermisos() {
 
             <div className="mt-4">
               <span className="text-sm font-semibold text-[#1565c0]">
-                {item.usuarios} usuarios asignados
+                {obtenerCantidadUsuarios(rol.id_rol)} usuarios asignados
               </span>
             </div>
 
             <div className="mt-5">
               <h4 className="font-semibold text-[#0d2b5e] mb-3">
-                Accesos principales
+                Información
               </h4>
 
               <div className="flex flex-wrap gap-2">
-                {item.acceso.map((modulo) => (
-                  <span
-                    key={modulo}
-                    className="bg-blue-50 border border-blue-100 text-[#1565c0] px-3 py-1 rounded-full text-xs"
-                  >
-                    {modulo}
-                  </span>
-                ))}
+                <span className="bg-blue-50 border border-blue-100 text-[#1565c0] px-3 py-1 rounded-full text-xs">
+                  ID Rol: {rol.id_rol}
+                </span>
+
+                <span className="bg-green-50 border border-green-100 text-green-700 px-3 py-1 rounded-full text-xs">
+                  Activo
+                </span>
               </div>
             </div>
 

@@ -23,3 +23,36 @@ class CarreraService:
         self.db.refresh(nueva_carrera)
 
         return nueva_carrera
+    
+    def actualizar(self, id_carrera: int, datos):
+        carrera = (
+            self.db.query(CarreraModel)
+            .filter(CarreraModel.id_carrera == id_carrera)
+            .first()
+        )
+
+        if carrera is None:
+            return None
+
+        carrera.clave = datos.clave
+        carrera.nombre = datos.nombre
+
+        self.db.commit()
+        self.db.refresh(carrera)
+
+        return carrera
+
+    def eliminar(self, id_carrera: int):
+        carrera = (
+            self.db.query(CarreraModel)
+            .filter(CarreraModel.id_carrera == id_carrera)
+            .first()
+        )
+
+        if carrera is None:
+            return None
+
+        self.db.delete(carrera)
+        self.db.commit()
+
+        return carrera

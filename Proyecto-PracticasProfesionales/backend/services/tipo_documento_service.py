@@ -37,3 +37,45 @@ class TipoDocumentoService:
         self.db.refresh(nuevo)
 
         return nuevo
+    
+
+    def actualizar(self, id_tipo_documento: int, datos):
+        tipo = (
+            self.db.query(TipoDocumentoModel)
+            .filter(
+                TipoDocumentoModel.id_tipo_documento ==
+                id_tipo_documento
+            )
+            .first()
+        )
+
+        if tipo is None:
+            return None
+
+        tipo.nombre_documento = datos.nombre_documento
+        tipo.descripcion = datos.descripcion
+        tipo.etapa = datos.etapa
+        tipo.obligatorio = datos.obligatorio
+
+        self.db.commit()
+        self.db.refresh(tipo)
+
+        return tipo
+
+    def eliminar(self, id_tipo_documento: int):
+        tipo = (
+            self.db.query(TipoDocumentoModel)
+            .filter(
+                TipoDocumentoModel.id_tipo_documento ==
+                id_tipo_documento
+            )
+            .first()
+        )
+
+        if tipo is None:
+            return None
+
+        self.db.delete(tipo)
+        self.db.commit()
+
+        return tipo

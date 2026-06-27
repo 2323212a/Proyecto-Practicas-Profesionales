@@ -16,3 +16,9 @@ class TipoDocumentoResponse(BaseModel):
     obligatorio: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+class TipoDocumentoUpdate(BaseModel):
+    nombre_documento: str
+    descripcion: str | None = None
+    etapa: str | None = None
+    obligatorio: bool = True

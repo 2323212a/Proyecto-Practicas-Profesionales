@@ -21,3 +21,10 @@ class ConvocatoriaResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
     )
+
+class ConvocatoriaUpdate(BaseModel):
+    nombre: str | None = None
+    periodo: str | None = None
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    estado: str = "Activa"
