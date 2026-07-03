@@ -18,8 +18,19 @@ from routes.expedientes import router as expedientes_router
 from models.expediente import ExpedienteModel
 from routes.auth import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
-from routes.importacion import router as importacion_router
-from routes.admin_estadisticas import router as admin_estadisticas_router
+from routes import alumno_dashboard
+from routes import alumno_documentacion
+from routes import empresas
+from routes import coordinador_documentos
+from routes import preferencias_empresas
+from routes import coordinador_seguimiento
+from routes import notificaciones
+from models.empresa import EmpresaModel
+from models.vacante import Vacante
+from models.preferencia_empresa import PreferenciaEmpresaModel
+
+
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -47,8 +58,13 @@ app.include_router(convocatorias_router)
 app.include_router(tipos_documento_router)
 app.include_router(expedientes_router)
 app.include_router(auth_router)
-app.include_router(importacion_router)
-app.include_router(admin_estadisticas_router)
+app.include_router(alumno_dashboard.router)
+app.include_router(alumno_documentacion.router)
+app.include_router(empresas.router)
+app.include_router(coordinador_documentos.router)
+app.include_router(preferencias_empresas.router)
+app.include_router(coordinador_seguimiento.router)
+app.include_router(notificaciones.router)
 
 @app.get("/")
 def root():

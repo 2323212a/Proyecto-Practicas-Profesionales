@@ -84,35 +84,3 @@ def observar_documento(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     return documento
-
-
-@router.patch("/{id_documento}/prevalidar", response_model=DocumentoResponse)
-def prevalidar_documento(
-    id_documento: int,
-    db: Session = Depends(obtener_db)
-):
-    documento = DocumentoService(db).cambiar_estado_validacion_automatica(
-        id_documento,
-        "Prevalidado"
-    )
-
-    if documento is None:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
-
-    return documento
-
-
-@router.patch("/{id_documento}/revision-manual", response_model=DocumentoResponse)
-def revision_manual_documento(
-    id_documento: int,
-    db: Session = Depends(obtener_db)
-):
-    documento = DocumentoService(db).cambiar_estado_validacion_automatica(
-        id_documento,
-        "Revision manual"
-    )
-
-    if documento is None:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
-
-    return documento

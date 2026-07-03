@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from models.documento import DocumentoModel
 
 
@@ -25,9 +23,7 @@ class DocumentoService:
             nombre_archivo=documento.nombre_archivo,
             ruta_archivo=documento.ruta_archivo,
             generado_por_sistema=documento.generado_por_sistema,
-            requiere_validacion_automatica=documento.requiere_validacion_automatica,
             estado_documento="Pendiente",
-            validacion_automatica_estado="No validado"
         )
 
         self.db.add(nuevo)
@@ -43,24 +39,6 @@ class DocumentoService:
             return None
 
         documento.estado_documento = estado
-
-        self.db.commit()
-        self.db.refresh(documento)
-
-        return documento
-
-    def cambiar_estado_validacion_automatica(
-        self,
-        id_documento: int,
-        estado_validacion: str
-    ):
-        documento = self.obtener_por_id(id_documento)
-
-        if documento is None:
-            return None
-
-        documento.validacion_automatica_estado = estado_validacion
-        documento.fecha_validacion_automatica = datetime.now()
 
         self.db.commit()
         self.db.refresh(documento)

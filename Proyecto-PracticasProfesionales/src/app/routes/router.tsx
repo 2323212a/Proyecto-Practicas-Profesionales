@@ -4,7 +4,6 @@ import { LandingPage } from "../pages/landing/LandingPage";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { RegisterPage } from "../pages/auth/RegisterPage";
 import { MainLayout } from "../layouts/MainLayout";
-import { ProtectedRoute } from "./ProtectedRoute";
 
 // Alumno
 import { AlumnoDashboard } from "../pages/alumno/AlumnoDashboard";
@@ -81,171 +80,132 @@ export const router = createBrowserRouter([
     element: <RegisterPage />,
   },
 
-  
 {
-  element: <ProtectedRoute allowedRoles={[1]} />,
+  path: "/alumno",
+  element: <MainLayout />,
   children: [
     {
-      path: "/alumno",
-      element: <MainLayout />,
-      children: [
-        {
-          index: true,
-          element: <AlumnoDashboard />,
-        },
-        {
-          path: "perfil",
-          element: <AlumnoPerfil />,
-        },
-        {
-          path: "materias",
-          element: <ValidacionMaterias />,
-        },
-        {
-          path: "vigencia",
-          element: <VigenciaDerechos />,
-        },
-        {
-          path: "documentos",
-          element: <CargaDocumentos />,
-        },
-        {
-          path: "padron",
-          element: <PadronEmpresarial />,
-        },
-        {
-          path: "horas",
-          element: <HorasAcumuladas />,
-        },
-        {
-          path: "evaluacion",
-          element: <EvaluacionEmpresa />,
-        },
-        {
-          path: "notificaciones",
-          element: <AlumnoNotificaciones />,
-        },
-        {
-          path: "reportes",
-          element: <AlumnoReportes />,
-        },
-      ],
+      index: true,
+      element: <AlumnoDashboard />,
+    },
+    {
+      path: "perfil",
+      element: <AlumnoPerfil />,
+    },
+    {
+      path: "materias",
+      element: <ValidacionMaterias />,
+    },
+    {
+      path: "vigencia",
+      element: <VigenciaDerechos />,
+    },
+    {
+      path: "documentos",
+      element: <CargaDocumentos />,
+    },
+    {
+      path: "padron",
+      element: <PadronEmpresarial />,
+    },
+    {
+      path: "horas",
+      element: <HorasAcumuladas />,
+    },
+    {
+      path: "evaluacion",
+      element: <EvaluacionEmpresa />,
+    },
+    {
+      path: "notificaciones",
+      element: <AlumnoNotificaciones />,
+    },
+    {
+      path: "reportes",
+      element: <AlumnoReportes />,
     },
   ],
 },
-
 // Coordinador
 {
-  element: <ProtectedRoute allowedRoles={[3]} />,
+  path: "/coordinador",
+  element: <MainLayout />,
   children: [
-    {
-      path: "/coordinador",
-      element: <MainLayout />,
-      children: [
-        { index: true, element: <CoordinadorDashboard /> },
-        { path: "alumnos", element: <GestionAlumnos /> },
-        { path: "documentos", element: <RevisionDocumentos /> },
-        { path: "asignaciones", element: <CoordinadorAsignaciones /> },
-        { path: "seguimiento", element: <CoordinadorSeguimiento /> },
-        { path: "liberacion", element: <CoordinadorLiberacion /> },
-        { path: "notificaciones", element: <CoordinadorNotificaciones /> },
-      ],
-    },
+    { index: true, element: <CoordinadorDashboard /> },
+    { path: "alumnos", element: <GestionAlumnos /> },
+    { path: "documentos", element: <RevisionDocumentos /> },
+    { path: "asignaciones", element: <CoordinadorAsignaciones /> },
+    { path: "seguimiento", element: <CoordinadorSeguimiento /> },
+    { path: "liberacion", element: <CoordinadorLiberacion /> },
+    { path: "notificaciones", element: <CoordinadorNotificaciones /> },
   ],
 },
 
 // Unidad Receptora
 {
-  element: <ProtectedRoute allowedRoles={[5]} />,
+  path: "/unidad",
+  element: <MainLayout />,
   children: [
-    {
-      path: "/unidad",
-      element: <MainLayout />,
-      children: [
-        { index: true, element: <UnidadDashboard /> },
-        { path: "registro", element: <RegistroEmpresa /> },
-        { path: "perfil", element: <PerfilEmpresa /> },
-        { path: "ofertas", element: <PlanTrabajo /> },
-        { path: "alumnos", element: <AlumnosUnidad /> },
-        { path: "convenios", element: <ConveniosUnidad /> },
-        { path: "horas", element: <HorasUnidad /> },
-        { path: "evaluaciones", element: <EvaluacionesUnidad /> },
-      ],
-    },
+    { index: true, element: <UnidadDashboard /> },
+    { path: "registro", element: <RegistroEmpresa /> },
+    { path: "perfil", element: <PerfilEmpresa /> },
+    { path: "ofertas", element: <PlanTrabajo /> },
+    { path: "alumnos", element: <AlumnosUnidad /> },
+    { path: "convenios", element: <ConveniosUnidad /> },
+    { path: "horas", element: <HorasUnidad /> },
+    { path: "evaluaciones", element: <EvaluacionesUnidad /> },
   ],
 },
 
 // Coordinador de Unidades
 {
-  element: <ProtectedRoute allowedRoles={[4]} />,
+  path: "/coord-unidades",
+  element: <MainLayout />,
   children: [
-    {
-      path: "/coord-unidades",
-      element: <MainLayout />,
-      children: [
-        { index: true, element: <CoordUnidadesDashboard /> },
-        { path: "empresas", element: <ValidacionEmpresas /> },
-        { path: "empresas/expediente", element: <ExpedienteEmpresa /> },
-        { path: "convenios", element: <GestionConvenios /> },
-        { path: "vacantes", element: <GestionVacantes /> },
-        { path: "padron", element: <PadronEmpresarialCoord /> },
-        { path: "notificaciones", element: <NotificacionesCoordUnidades /> },
-      ],
-    },
+    { index: true, element: <CoordUnidadesDashboard /> },
+    { path: "empresas", element: <ValidacionEmpresas /> },
+    { path: "empresas/expediente", element: <ExpedienteEmpresa /> },
+    { path: "convenios", element: <GestionConvenios /> },
+    { path: "vacantes", element: <GestionVacantes /> },
+    { path: "padron", element: <PadronEmpresarialCoord /> },
+    { path: "notificaciones", element: <NotificacionesCoordUnidades /> },
   ],
 },
 
 // Administrador
 {
-  element: <ProtectedRoute allowedRoles={[2]} />,
+  path: "/admin",
+  element: <MainLayout />,
   children: [
-    {
-      path: "/admin",
-      element: <MainLayout />,
-      children: [
-        { index: true, element: <AdminDashboard /> },
-        { path: "usuarios", element: <GestionUsuarios /> },
-        { path: "roles", element: <AdminRolesPermisos /> },
-        { path: "catalogos", element: <AdminCatalogos /> },
-        { path: "reportes", element: <AdminReportes /> },
-        { path: "configuracion", element: <AdminConfiguracion /> },
-      ],
-    },
+    { index: true, element: <AdminDashboard /> },
+    { path: "usuarios", element: <GestionUsuarios /> },
+    { path: "roles", element: <AdminRolesPermisos /> },
+    { path: "catalogos", element: <AdminCatalogos /> },
+    { path: "reportes", element: <AdminReportes /> },
+    { path: "configuracion", element: <AdminConfiguracion /> },
   ],
 },
 
 // Asesor
 {
-  element: <ProtectedRoute allowedRoles={[6]} />,
+  path: "/asesor",
+  element: <MainLayout />,
   children: [
-    {
-      path: "/asesor",
-      element: <MainLayout />,
-      children: [
-        { index: true, element: <AsesorDashboard /> },
-        { path: "alumnos", element: <AlumnosAsignados /> },
-        { path: "reportes", element: <AsesorReportes /> },
-        { path: "observaciones", element: <AsesorObservaciones /> },
-      ],
-    },
+    { index: true, element: <AsesorDashboard /> },
+    { path: "alumnos", element: <AlumnosAsignados /> },
+    { path: "reportes", element: <AsesorReportes /> },
+    { path: "observaciones", element: <AsesorObservaciones /> },
   ],
 },
 
 // Dirección
 {
-  element: <ProtectedRoute allowedRoles={[7]} />,
+  path: "/direccion",
+  element: <MainLayout />,
   children: [
-    {
-      path: "/direccion",
-      element: <MainLayout />,
-      children: [
-        { index: true, element: <DireccionDashboard /> },
-        { path: "estadisticas", element: <DireccionEstadisticas /> },
-        { path: "reportes", element: <DireccionReportes /> },
-      ],
-    },
+    { index: true, element: <DireccionDashboard /> },
+    { path: "estadisticas", element: <DireccionEstadisticas /> },
+    { path: "reportes", element: <DireccionReportes /> },
   ],
 },
-
-
 ] );

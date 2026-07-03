@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException
-from schemas.carrera import CarreraCreate, CarreraResponse, CarreraUpdate
-from database.dependencies import obtener_db
+from database.connection import get_db
 
 from schemas.carrera import (
     CarreraCreate,
@@ -23,7 +21,7 @@ router = APIRouter(
     response_model=list[CarreraResponse]
 )
 def listar_carreras(
-    db: Session = Depends(obtener_db)
+    db: Session = Depends(get_db)
 ):
     return CarreraService(db).listar()
 
@@ -34,42 +32,6 @@ def listar_carreras(
 )
 def crear_carrera(
     carrera: CarreraCreate,
-    db: Session = Depends(obtener_db)
+    db: Session =  Depends(get_db)
 ):
     return CarreraService(db).crear(carrera)
-
-@router.put("/{id_carrera}", response_model=CarreraResponse)
-def actualizar_carrera(
-    id_carrera: int,
-    carrera: CarreraUpdate,
-    db: Session = Depends(obtener_db)
-):
-    carrera_actualizada = CarreraService(db).actualizar(
-        id_carrera,
-        carrera
-    )
-
-    if carrera_actualizada is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Carrera no encontrada"
-        )
-
-    return carrera_actualizada
-
-
-@router.delete("/{id_carrera}")
-def eliminar_carrera(
-    id_carrera: int,
-    db: Session = Depends(obtener_db)
-):
-    carrera = CarreraService(db).eliminar(id_carrera)
-
-    if carrera is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Carrera no encontrada"
-        )
-
-    return {"mensaje": "Carrera eliminada correctamente"}
-

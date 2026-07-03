@@ -59,16 +59,23 @@ export function LoginPage() {
         password: password,
       });
 
-      localStorage.setItem(
-        "token",
-        response.access_token
-      );
+  localStorage.setItem("token", response.access_token);
 
-      localStorage.setItem(
-        "usuario",
-        JSON.stringify(response)
-      );
+localStorage.setItem("usuario", JSON.stringify(response));
 
+localStorage.setItem(
+  "nombre_completo",
+  `${response.nombre} ${response.apellido_paterno ?? ""} ${response.apellido_materno ?? ""}`.trim()
+);
+
+localStorage.setItem("nombre", response.nombre);
+
+localStorage.setItem("correo", response.correo);
+
+localStorage.setItem(
+  "carrera",
+  "Ingeniería en Desarrollo de Software"
+);
       switch (response.id_rol) {
         case 1:
           navigate("/alumno");

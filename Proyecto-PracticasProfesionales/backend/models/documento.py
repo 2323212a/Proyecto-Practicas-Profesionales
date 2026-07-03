@@ -21,11 +21,3 @@ class DocumentoModel(Base):
     fecha_carga = Column(DateTime, server_default=func.now())
 
     generado_por_sistema = Column(Boolean, default=False)
-    requiere_validacion_automatica = Column(Boolean, default=False)
-
-    validacion_automatica_estado = Column(
-        Enum("No validado", "Prevalidado", "No valido", "Revision manual"),
-        default="No validado"
-    )
-
-    fecha_validacion_automatica = Column(DateTime, nullable=True)

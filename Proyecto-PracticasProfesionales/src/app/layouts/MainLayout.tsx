@@ -270,59 +270,74 @@ if (role === "alumno")
 }
 
 function getRoleInfo(pathname: string) {
+  const usuario = JSON.parse(
+    localStorage.getItem("usuario") || "{}"
+  );
+
+  const nombreCompleto =
+    `${usuario.nombre ?? ""} ${usuario.apellido_paterno ?? ""} ${usuario.apellido_materno ?? ""}`.trim() ||
+    "Usuario";
+
   if (pathname.startsWith("/alumno"))
     return {
       role: "alumno",
       label: "Alumno",
-      name: "Brayan Madain",
-      subtitle: "Ing. En desarrollo de software",
+      name: nombreCompleto,
+      subtitle: "Ingeniería en Desarrollo de Software",
     };
+
   if (pathname.startsWith("/coordinador"))
     return {
       role: "coordinador",
       label: "Coordinador de Prácticas",
-      name: "Dr. Roberto Méndez",
+      name: nombreCompleto,
       subtitle: "Coordinación de Prácticas",
     };
+
   if (pathname.startsWith("/unidad"))
     return {
       role: "unidad",
       label: "Unidad Receptora",
-      name: "TechSoft Chiapas S.A.",
+      name: nombreCompleto,
       subtitle: "Empresa asociada",
     };
+
   if (pathname.startsWith("/coord-unidades"))
     return {
       role: "coord-unidades",
       label: "Coord. Unidades Receptoras",
-      name: "Lic. Ana Torres",
+      name: nombreCompleto,
       subtitle: "Unidades Receptoras",
     };
+
   if (pathname.startsWith("/admin"))
     return {
       role: "admin",
       label: "Administrador",
-      name: "Admin Sistema",
+      name: nombreCompleto,
       subtitle: "Administración General",
     };
+
   if (pathname.startsWith("/asesor"))
     return {
       role: "asesor",
       label: "Asesor Interno",
-      name: "M.C. Pedro Ruiz",
+      name: nombreCompleto,
       subtitle: "Asesoría Académica",
     };
+
   if (pathname.startsWith("/direccion"))
     return {
       role: "direccion",
       label: "Dirección",
-      name: "Dirección General",
+      name: nombreCompleto,
       subtitle: "Solo Lectura",
     };
+
   return {
     role: "alumno",
     label: "Alumno",
-    name: "Usuario",
+    name: nombreCompleto,
     subtitle: "",
   };
 }
@@ -441,19 +456,15 @@ export function MainLayout() {
               <span className="text-sm">Inicio</span>
             )}
           </button>
-            <button
-              onClick={() => {
-                localStorage.removeItem("token");
-                localStorage.removeItem("usuario");
-                navigate("/login");
-              }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
-            >
-              <LogOut className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && (
-                <span className="text-sm">Cerrar Sesión</span>
-              )}
-            </button>
+          <button
+            onClick={() => navigate("/login")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && (
+              <span className="text-sm">Cerrar Sesión</span>
+            )}
+          </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
             className={`hidden lg:flex w-full items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}

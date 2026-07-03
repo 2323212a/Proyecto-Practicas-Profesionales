@@ -9,7 +9,12 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
     id_usuario: int
     id_rol: int
+
     nombre: str
-    correo: str
+    apellido_paterno: str | None = None
+    apellido_materno: str | None = None
+
+    correo: EmailStr

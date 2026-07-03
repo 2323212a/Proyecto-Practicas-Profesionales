@@ -1,608 +1,228 @@
-import { useState } from "react";
-import {
-  Upload,
-  Eye,
-  RefreshCw,
-  CheckCircle,
-  Clock,
-  XCircle,
-  FileText,
-  AlertCircle,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, CheckCircle, Clock, Eye, FileText, Lock, RefreshCw, Upload } from "lucide-react";
 
-type DS =
-  | "aprobado"
-  | "pendiente"
-  | "rechazado"
-  | "en_revision";
+import { apiClient } from "../../../infrastructure/api/apiClient";
 
-interface Doc {
-  id: number;
+type Etapa = "elegibilidad" | "expediente" | "seleccion_empresa" | "asignacion" | "asignacion_firmada";
+
+type Documento = {
+  id_documento: number;
   nombre: string;
-  descripcion: string;
-  instrucciones: string;
+  descripcion?: string | null;
+  instrucciones?: string | null;
+  etapa?: Etapa | string | null;
+  nombre_archivo?: string | null;
+  estado: "Pendiente" | "Aprobado" | "Observado" | "Rechazado";
+  fecha_carga?: string | null;
+  generado_por_sistema: boolean;
+  habilitado: boolean;
   nomenclatura: string;
-  estado: DS;
-  archivo?: string;
-  fecha?: string;
-  motivo?: string;
-}
+  url_archivo?: string | null;
+};
 
-const docsIni: Doc[] = [
-  {
-    id: 1,
-    nombre: "Historial Académico",
-    descripcion:
-      "Documento donde se valida que el alumno cumple con las materias necesarias para iniciar el proceso de prácticas profesionales.",
-    instrucciones:
-      "Debe subirse en formato PDF, ser legible y mostrar claramente el avance académico del alumno.",
-    nomenclatura: "historial_academico_matricula.pdf",
-    estado: "aprobado",
-  },
-  {
-    id: 2,
-    nombre: "Vigencia de Derechos",
-    descripcion:
-      "Documento que acredita que el alumno cuenta con vigencia de derechos activa para continuar con el proceso.",
-    instrucciones:
-      "Debe estar actualizado, completo, legible y subirse únicamente en formato PDF.",
-    nomenclatura: "vigencia_derechos_matricula.pdf",
-    estado: "aprobado",
-  },
-  {
-    id: 3,
-    nombre: "Carta Compromiso",
-    descripcion:
-      "Documento firmado por el alumno donde acepta cumplir con las responsabilidades del programa de prácticas profesionales.",
-    instrucciones:
-      "Debe estar completamente llenada, firmada, ser legible y subirse únicamente en formato PDF.",
-    nomenclatura: "carta_compromiso_matricula.pdf",
-    estado: "aprobado",
-  },
-  {
-    id: 4,
-    nombre: "Carta de Exoneración",
-    descripcion:
-      "Documento donde se deslinda a la institución de responsabilidades externas durante el desarrollo de las prácticas.",
-    instrucciones:
-      "Debe estar firmada, sin tachaduras, completamente llenada y en formato PDF.",
-    nomenclatura: "carta_exoneracion_matricula.pdf",
-    estado: "aprobado",
-  },
-  {
-    id: 5,
-    nombre: "Carta de Exposición de Motivos",
-    descripcion:
-      "Carta donde el alumno explica de manera formal los motivos para realizar sus prácticas profesionales.",
-    instrucciones:
-      "Debe redactarse con claridad, estar completa, ser legible y guardarse en formato PDF.",
-    nomenclatura: "exposicion_motivos_matricula.pdf",
-    estado: "aprobado",
-  },
-  {
-    id: 6,
-    nombre: "Credencial del Alumno",
-    descripcion:
-      "Copia digital de la credencial vigente del alumno.",
-    instrucciones:
-      "La credencial debe verse completa, clara, sin recortes importantes y en formato PDF.",
-    nomenclatura: "credencial_alumno_matricula.pdf",
-    estado: "aprobado",
-  },
-  {
-    id: 7,
-    nombre: "Credencial del Tutor",
-    descripcion:
-      "Copia digital de la identificación o credencial del tutor responsable.",
-    instrucciones:
-      "El documento debe ser claro, legible, completo y subirse en formato PDF.",
-    nomenclatura: "credencial_tutor_matricula.pdf",
-    estado: "aprobado",
-  },
-];
-const docsAsignacion: Doc[] = [
-  {
-    id: 101,
-    nombre: "Carta de Colaboración",
-    descripcion:
-      "Documento emitido por coordinación para formalizar la colaboración entre la institución y la unidad receptora.",
-    instrucciones:
-      "Este documento será enviado por el coordinador cuando el expediente inicial esté completamente validado.",
-    nomenclatura: "carta_colaboracion_matricula.pdf",
-    estado: "aprobado",
-    archivo: "carta_colaboracion_215A10234.pdf",
-    fecha: "04 jun 2026",
-  },
-  {
-    id: 102,
-    nombre: "Carta de Presentación",
-    descripcion:
-      "Documento oficial emitido por la institución para presentar al alumno ante la unidad receptora.",
-    instrucciones:
-      "Este documento será generado y enviado por coordinación después de aprobar la documentación inicial.",
-    nomenclatura: "carta_presentacion_matricula.pdf",
-    estado: "aprobado",
-    archivo: "carta_presentacion_215A10234.pdf",
-    fecha: "04 jun 2026",
-  },
-  {
-    id: 103,
-    nombre: "Carta de Asignación",
-    descripcion:
-      "Documento que confirma la asignación del alumno a una unidad receptora para realizar sus prácticas profesionales.",
-    instrucciones:
-      "Este documento será enviado por coordinación una vez que el alumno tenga autorización para iniciar prácticas.",
-    nomenclatura: "carta_asignacion_matricula.pdf",
-    estado: "aprobado",
-    archivo: "carta_asignacion_215A10234.pdf",
-    fecha: "04 jun 2026",
-  },
-];
+type DocumentacionResponse = {
+  expediente: {
+    expediente_inicial_aprobado: boolean;
+    seleccion_habilitada: boolean;
+    seleccion_validada: boolean;
+    asignacion_habilitada: boolean;
+  };
+  resumen: { aprobados: number; revision: number; observados: number; pendientes: number; total: number };
+  documentos: Documento[];
+};
 
-const cfg: Record<
-  DS,
-  { label: string; color: string; icon: any }
-> = {
-  aprobado: {
-    label: "Aprobado",
-    color: "bg-green-100 text-green-700",
-    icon: CheckCircle,
-  },
-  pendiente: {
-    label: "Pendiente",
-    color: "bg-gray-100 text-gray-500",
-    icon: Clock,
-  },
-  rechazado: {
-    label: "Rechazado",
-    color: "bg-red-100 text-red-700",
-    icon: XCircle,
-  },
-  en_revision: {
-    label: "En Revisión",
-    color: "bg-yellow-100 text-yellow-700",
-    icon: Clock,
-  },
+const estadoConfig = (doc: Documento) => {
+  if (doc.estado === "Aprobado") return { label: "Aprobado", color: "bg-green-100 text-green-700", icon: CheckCircle };
+  if (doc.nombre_archivo && doc.estado === "Pendiente") return { label: "En revision", color: "bg-yellow-100 text-yellow-700", icon: Clock };
+  if (doc.estado === "Observado" || doc.estado === "Rechazado") return { label: "Correccion", color: "bg-orange-100 text-orange-700", icon: AlertCircle };
+  return { label: "Pendiente", color: "bg-gray-100 text-gray-500", icon: Clock };
+};
+
+const fecha = (value?: string | null) => {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(date);
 };
 
 export function CargaDocumentos() {
-  const [docs, setDocs] = useState<Doc[]>(docsIni);
-  const [uploading, setUploading] = useState<number | null>(
-    null,
-  );
-  const [preview, setPreview] = useState<Doc | null>(null);
+  const [data, setData] = useState<DocumentacionResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState<number | null>(null);
+  const [error, setError] = useState("");
 
-  const upload = (id: number) => {
-    const doc = docs.find((d) => d.id === id);
-
-    setUploading(id);
-
-    setTimeout(() => {
-      setDocs((prev) =>
-        prev.map((d) =>
-          d.id === id
-            ? {
-                ...d,
-                estado: "en_revision",
-                archivo:
-                  doc?.nomenclatura || `documento_${id}.pdf`,
-                fecha: "03 jun 2026",
-                motivo: undefined,
-              }
-            : d,
-        ),
-      );
-
-      setUploading(null);
-    }, 1500);
+  const cargar = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const response = await apiClient.get<DocumentacionResponse>("/alumno/documentacion");
+      setData(response.data);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo cargar tu expediente documental.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const aprobados = docs.filter(
-    (d) => d.estado === "aprobado",
-  ).length;
-  const enRevision = docs.filter(
-    (d) => d.estado === "en_revision",
-  ).length;
-  const pendientes = docs.filter(
-    (d) => d.estado === "pendiente" || d.estado === "rechazado",
-  ).length;
+  useEffect(() => {
+    cargar();
+  }, []);
 
-  const expedienteCompleto = docs.every(
-    (d) => d.estado === "aprobado",
-  );
-  const documentosBaseAprobados = docs
-    .filter((d) => d.id === 1 || d.id === 2)
-    .every((d) => d.estado === "aprobado");
+  const porEtapa = useMemo(() => {
+    const docs = data?.documentos ?? [];
+    return {
+      elegibilidad: docs.filter((doc) => doc.etapa === "elegibilidad"),
+      expediente: docs.filter((doc) => doc.etapa === "expediente"),
+      seleccion: docs.filter((doc) => doc.etapa === "seleccion_empresa"),
+      asignacion: docs.filter((doc) => doc.etapa === "asignacion"),
+      firmados: docs.filter((doc) => doc.etapa === "asignacion_firmada"),
+    };
+  }, [data]);
+
+  const subir = async (doc: Documento, file?: File) => {
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setError("Solo se permiten archivos PDF.");
+      return;
+    }
+    try {
+      setUploading(doc.id_documento);
+      const formData = new FormData();
+      formData.append("archivo", file);
+      const response = await apiClient.post<DocumentacionResponse>(`/alumno/documentos/${doc.id_documento}/archivo`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setData(response.data);
+      setError("");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.response?.data?.detail ?? "No se pudo subir el PDF.");
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const abrir = async (doc: Documento) => {
+    if (!doc.url_archivo) return;
+    try {
+      const response = await apiClient.get(doc.url_archivo, { responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo abrir el PDF.");
+    }
+  };
+
+  if (loading) return <div className="text-sm text-gray-500">Cargando expediente documental...</div>;
+  if (!data) return <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-5 text-sm">{error}</div>;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">
-          Carga de Documentos
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Gestión del expediente digital para prácticas
-          profesionales.
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">Carga de Documentos</h1>
+        <p className="text-gray-500 text-sm mt-1">Carga tu expediente en PDF siguiendo el flujo por bloques.</p>
+      </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error}</div>}
+
+      <Bloque titulo="Bloque 1: Elegibilidad academica" descripcion="Primer filtro: historial academico y vigencia de derechos. Si no se aprueba este bloque, el alumno no puede continuar." validado={porEtapa.elegibilidad.every((d) => d.estado === "Aprobado")}>
+        {porEtapa.elegibilidad.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} />)}
+      </Bloque>
+
+      <Bloque titulo="Bloque 2: Expediente inicial" descripcion="Documentos personales del alumno. Se habilita unicamente cuando el alumno pasa el filtro academico." validado={porEtapa.expediente.length > 0 && porEtapa.expediente.every((d) => d.estado === "Aprobado")}>
+        {porEtapa.expediente.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} />)}
+      </Bloque>
+
+      <div className={`rounded-2xl border shadow-sm p-6 ${data.expediente.expediente_inicial_aprobado ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
+        <h3 className={`font-bold text-xl ${data.expediente.expediente_inicial_aprobado ? "text-green-700" : "text-gray-500"}`}>Habilitar seleccion de empresa</h3>
+        <p className={`text-sm mt-2 ${data.expediente.expediente_inicial_aprobado ? "text-green-600" : "text-gray-400"}`}>
+          {data.expediente.expediente_inicial_aprobado
+            ? "Tu expediente inicial fue validado. Ya puedes consultar el padron de empresas y elegir tus opciones."
+            : "Primero deben aprobarse los 7 documentos iniciales."}
         </p>
       </div>
 
-      <div className="bg-[#e3f0ff] border border-blue-200 rounded-2xl p-5 flex gap-4">
-        <AlertCircle className="w-6 h-6 text-[#1565c0] flex-shrink-0 mt-0.5" />
-        <div>
-          <div className="font-semibold text-[#0d2b5e] text-sm">
-            Indicaciones generales
-          </div>
-          <div className="text-blue-700 text-xs mt-1 leading-relaxed">
-            Todos los documentos deben subirse en formato PDF,
-            estar completos, ser legibles, claros, sin
-            tachaduras y respetar la nomenclatura indicada para
-            cada archivo.
-          </div>
-        </div>
-      </div>
+      {data.expediente.seleccion_habilitada && (
+        <Bloque titulo="Bloque 3: Seleccion de empresa" descripcion="El alumno selecciona opciones del padron. El sistema genera la Carta de Exposicion de Motivos y el alumno la sube firmada." validado={porEtapa.seleccion.every((d) => d.estado === "Aprobado")}>
+          {porEtapa.seleccion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} />)}
+        </Bloque>
+      )}
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-green-700">
-            {aprobados}
-          </div>
-          <div className="text-xs text-green-600 mt-1">
-            Aprobados
-          </div>
-        </div>
-
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-yellow-700">
-            {enRevision}
-          </div>
-          <div className="text-xs text-yellow-600 mt-1">
-            En Revisión
-          </div>
-        </div>
-
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-          <div className="text-2xl font-bold text-gray-600">
-            {pendientes}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">
-            Pendientes
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-          <FileText className="w-5 h-5 text-[#1565c0]" />
-          <h3 className="font-bold text-[#0d2b5e]">
-            Expediente Documental
-          </h3>
-          <span className="ml-auto text-xs text-gray-400">
-            {aprobados}/{docs.length}
-          </span>
-        </div>
-
-        <div className="divide-y divide-gray-100">
-          {docs.map((doc) => {
-            const c = cfg[doc.estado];
-            const Icon = c.icon;
-            const bloqueado =
-              doc.id > 2 && !documentosBaseAprobados;
-
-            return (
-              <div
-                key={doc.id}
-                className="px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4"
-              >
-                <div className="flex items-start gap-3 flex-1">
-                  <div className="w-10 h-10 bg-[#e3f0ff] rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-[#1565c0]" />
-                  </div>
-
-                  <div>
-                    <div className="font-semibold text-gray-800 text-sm">
-                      {doc.nombre}
-                    </div>
-
-                    <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                      {doc.descripcion}
-                    </div>
-
-                    <div className="text-xs text-gray-500 mt-2 leading-relaxed">
-                      <span className="font-semibold text-gray-700">
-                        Instrucciones:
-                      </span>{" "}
-                      {doc.instrucciones}
-                    </div>
-
-                    <div className="text-xs text-[#1565c0] mt-1">
-                      <span className="font-semibold">
-                        Nomenclatura:
-                      </span>{" "}
-                      {doc.nomenclatura}
-                    </div>
-                    {bloqueado && (
-                    <div className="text-xs text-red-600 mt-2 font-medium">
-                    Primero deben aprobarse el Historial Académico y la Vigencia de Derechos.
-                    </div>
-                      )}
-
-                    {doc.archivo && (
-                      <div className="text-xs text-blue-500 mt-1">
-                        📎 {doc.archivo} · {doc.fecha}
-                      </div>
-                    )}
-
-                    {doc.estado === "rechazado" &&
-                      doc.motivo && (
-                        <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
-                          <AlertCircle className="w-3 h-3" />
-                          Motivo: {doc.motivo}
-                        </div>
-                      )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-semibold ${c.color}`}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {c.label}
-                  </span>
-
-                  {doc.archivo && (
-                    <button
-                      onClick={() => setPreview(doc)}
-                      className="p-2 text-gray-400 hover:text-[#1565c0] hover:bg-blue-50 rounded-lg transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                  )}
-
-                 {(doc.estado === "pendiente" || doc.estado === "rechazado") && (
-  <button
-    onClick={() => upload(doc.id)}
-    disabled={uploading === doc.id || bloqueado}
-    className="flex items-center gap-2 px-4 py-2 bg-[#0d2b5e] text-white rounded-lg text-xs font-semibold hover:bg-[#1565c0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-  >
-    {uploading === doc.id ? (
-      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-    ) : (
-      <Upload className="w-3.5 h-3.5" />
-    )}
-
-    {bloqueado
-      ? "Bloqueado"
-      : doc.estado === "rechazado"
-        ? "Reemplazar"
-        : "Subir"}
-  </button>
-)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {expedienteCompleto ? (
-        <div className="bg-white rounded-2xl border border-green-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-green-100 bg-green-50 flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-green-600" />
+      {data.expediente.asignacion_habilitada ? (
+        <section className="bg-white rounded-2xl border border-green-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-5 border-b border-green-100 bg-green-50 flex gap-3">
+            <CheckCircle className="w-6 h-6 text-green-600" />
             <div>
-              <h3 className="font-bold text-green-700">
-                Documentación de Asignación Disponible
-              </h3>
-              <p className="text-xs text-green-600 mt-0.5">
-                Todos tus documentos iniciales fueron validados.
-                Ya puedes consultar la documentación enviada por
-                coordinación.
-              </p>
+              <h3 className="font-bold text-green-700 text-xl">Documentacion de Asignacion Disponible</h3>
+              <p className="text-sm text-green-600 mt-1">Todos tus documentos iniciales fueron validados. Ya puedes consultar la documentacion enviada por coordinacion.</p>
             </div>
           </div>
-
-          <div className="divide-y divide-gray-100">
-            {docsAsignacion.map((doc) => (
-              <div
-                key={doc.id}
-                className="px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4"
-              >
-                <div className="flex items-start gap-3 flex-1">
-                  <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-5 h-5 text-green-600" />
-                  </div>
-
-                  <div>
-                    <div className="font-semibold text-gray-800 text-sm">
-                      {doc.nombre}
-                    </div>
-
-                    <div className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                      {doc.descripcion}
-                    </div>
-
-                    <div className="text-xs text-blue-500 mt-1">
-                      📎 {doc.archivo} · {doc.fecha}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <span className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-semibold bg-green-100 text-green-700">
-                    <CheckCircle className="w-3.5 h-3.5" />
-                    Enviado por coordinación
-                  </span>
-
-                  <button
-                    onClick={() => setPreview(doc)}
-                    className="p-2 text-gray-400 hover:text-[#1565c0] hover:bg-blue-50 rounded-lg transition-colors"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-
-                  <button className="px-4 py-2 bg-[#0d2b5e] text-white rounded-lg text-xs font-semibold hover:bg-[#1565c0] transition-colors">
-                    Descargar
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="divide-y divide-gray-100">{porEtapa.asignacion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} />)}</div>
+          <div className="border-t border-blue-100 bg-[#e3f0ff] px-6 py-5">
+            <h3 className="font-bold text-[#0d2b5e] text-xl">Subir Documentos Firmados</h3>
+            <p className="text-sm text-blue-700 mt-1">Descarga los documentos enviados por coordinacion, llenalos y subelos nuevamente en formato PDF.</p>
           </div>
-          <div className="border-t border-green-100 bg-white">
-            <div className="px-6 py-4 bg-[#e3f0ff] border-b border-blue-100">
-              <h3 className="font-bold text-[#0d2b5e]">
-                Subir Documentos Firmados
-              </h3>
-              <p className="text-xs text-blue-700 mt-1">
-                Descarga los documentos enviados por
-                coordinación, llénalos y súbelos nuevamente en
-                formato PDF.
-              </p>
-            </div>
-
-            <div className="divide-y divide-gray-100">
-              {[
-                {
-                  id: 201,
-                  nombre: "Carta de Colaboración Firmada",
-                  descripcion:
-                    "Sube la carta de colaboración ya firmada y completamente llenada.",
-                  nomenclatura:
-                    "carta_colaboracion_firmada_matricula.pdf",
-                },
-                {
-                  id: 202,
-                  nombre: "Carta de Presentación Firmada",
-                  descripcion:
-                    "Sube la carta de presentación ya firmada por las partes correspondientes.",
-                  nomenclatura:
-                    "carta_presentacion_firmada_matricula.pdf",
-                },
-                {
-                  id: 203,
-                  nombre: "Carta de Asignación Firmada",
-                  descripcion:
-                    "Sube la carta de asignación ya firmada para continuar con el proceso.",
-                  nomenclatura:
-                    "carta_asignacion_firmada_matricula.pdf",
-                },
-              ].map((doc) => (
-                <div
-                  key={doc.id}
-                  className="px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4"
-                >
-                  <div className="flex items-start gap-3 flex-1">
-                    <div className="w-10 h-10 bg-[#e3f0ff] rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Upload className="w-5 h-5 text-[#1565c0]" />
-                    </div>
-
-                    <div>
-                      <div className="font-semibold text-gray-800 text-sm">
-                        {doc.nombre}
-                      </div>
-
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {doc.descripcion}
-                      </div>
-
-                      <div className="text-xs text-[#1565c0] mt-1">
-                        <span className="font-semibold">
-                          Nomenclatura:
-                        </span>{" "}
-                        {doc.nomenclatura}
-                      </div>
-
-                      <div className="text-xs text-gray-500 mt-1">
-                        Formato permitido: PDF. El documento
-                        debe ser claro, legible y estar
-                        completamente lleno.
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      className="block w-full text-xs text-gray-600
-            file:mr-3 file:py-2 file:px-3
-            file:rounded-lg file:border-0
-            file:text-xs file:font-semibold
-            file:bg-[#0d2b5e] file:text-white
-            hover:file:bg-[#1565c0]"
-                    />
-
-                    <span className="inline-flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-semibold bg-gray-100 text-gray-500">
-                      <Clock className="w-3.5 h-3.5" />
-                      Pendiente
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+          <div className="divide-y divide-gray-100">{porEtapa.firmados.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} />)}</div>
+        </section>
       ) : (
         <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 flex gap-4">
-          <Clock className="w-6 h-6 text-gray-400 flex-shrink-0 mt-0.5" />
+          <Clock className="w-6 h-6 text-gray-400" />
           <div>
-            <div className="font-semibold text-gray-700 text-sm">
-              Documentación de asignación aún no disponible
-            </div>
-            <div className="text-gray-500 text-xs mt-1 leading-relaxed">
-              La carta de colaboración, carta de presentación y
-              carta de asignación estarán disponibles cuando
-              todos los documentos iniciales estén aprobados por
-              coordinación.
-            </div>
+            <div className="font-semibold text-gray-700 text-sm">Documentacion de asignacion aun no disponible</div>
+            <div className="text-gray-500 text-xs mt-1">La carta de colaboracion, carta de presentacion y carta de asignacion estaran disponibles cuando coordinacion habilite la asignacion.</div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {preview && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-          onClick={() => setPreview(null)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <FileText className="w-8 h-8 text-[#1565c0]" />
-              <div>
-                <div className="font-bold text-[#0d2b5e]">
-                  {preview.nombre}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {preview.archivo}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-100 rounded-xl h-48 flex items-center justify-center mb-6">
-              <div className="text-center text-gray-400">
-                <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <div className="text-sm">
-                  Vista previa del documento
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-semibold hover:bg-[#1565c0] transition-colors">
-                Descargar
-              </button>
-
-              <button
-                onClick={() => setPreview(null)}
-                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
+function Bloque({ titulo, descripcion, validado, children }: { titulo: string; descripcion: string; validado: boolean; children: React.ReactNode }) {
+  return (
+    <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className={`px-6 py-5 border-b flex gap-3 ${validado ? "bg-green-50 border-green-100" : "bg-white border-gray-100"}`}>
+        {validado ? <CheckCircle className="w-6 h-6 text-green-600" /> : <Lock className="w-6 h-6 text-[#1565c0]" />}
+        <div>
+          <h3 className={`font-bold text-xl ${validado ? "text-green-700" : "text-[#0d2b5e]"}`}>{titulo}</h3>
+          <p className={`text-sm mt-1 ${validado ? "text-green-600" : "text-gray-500"}`}>{descripcion}</p>
         </div>
-      )}
+      </div>
+      <div className="divide-y divide-gray-100">{children}</div>
+    </section>
+  );
+}
+
+function DocumentoAlumno({ doc, uploading, onUpload, onOpen }: { doc: Documento; uploading: number | null; onUpload: (doc: Documento, file?: File) => void; onOpen: (doc: Documento) => void }) {
+  const cfg = estadoConfig(doc);
+  const Icon = cfg.icon;
+  const puedeSubir = doc.habilitado && !doc.generado_por_sistema && doc.estado !== "Aprobado";
+
+  return (
+    <div className={`px-6 py-6 flex flex-col lg:flex-row lg:items-center gap-4 ${doc.habilitado ? "" : "opacity-55"}`}>
+      <div className="flex items-start gap-4 flex-1">
+        <div className="w-12 h-12 bg-[#e3f0ff] rounded-2xl flex items-center justify-center flex-shrink-0"><FileText className="w-6 h-6 text-[#1565c0]" /></div>
+        <div>
+          <div className="font-semibold text-gray-800 text-base">{doc.nombre}</div>
+          <div className="text-sm text-gray-500 mt-1 leading-relaxed">{doc.descripcion}</div>
+          <div className="text-sm text-gray-500 mt-2"><span className="font-semibold text-gray-700">Instrucciones:</span> {doc.instrucciones}</div>
+          <div className="text-sm text-[#1565c0] mt-1"><span className="font-semibold">Nomenclatura:</span> {doc.nomenclatura}</div>
+          {doc.nombre_archivo && <div className="text-sm text-blue-500 mt-1">Archivo: {doc.nombre_archivo} - {fecha(doc.fecha_carga)}</div>}
+          {!doc.habilitado && <div className="text-sm text-red-600 mt-2 font-medium">Este bloque aun no esta habilitado.</div>}
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <span className={`inline-flex items-center justify-center gap-1.5 text-sm px-4 py-2 rounded-full font-semibold ${cfg.color}`}><Icon className="w-4 h-4" />{cfg.label}</span>
+        {doc.nombre_archivo && <button onClick={() => onOpen(doc)} className="p-2 text-gray-400 hover:text-[#1565c0] hover:bg-blue-50 rounded-lg"><Eye className="w-4 h-4" /></button>}
+        {puedeSubir && (
+          <label className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#0d2b5e] text-white rounded-xl text-sm font-semibold hover:bg-[#1565c0] cursor-pointer">
+            {uploading === doc.id_documento ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {doc.nombre_archivo ? "Reemplazar" : "Seleccionar archivo"}
+            <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(event) => onUpload(doc, event.target.files?.[0])} />
+          </label>
+        )}
+      </div>
     </div>
   );
 }
