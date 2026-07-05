@@ -9,8 +9,27 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+function getUsuarioActual() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const usuarioGuardado = localStorage.getItem("usuario");
+    if (!usuarioGuardado) return null;
+
+    const usuario = JSON.parse(usuarioGuardado);
+    const nombre = usuario?.nombre?.trim();
+
+    return {
+      nombre: nombre || (usuario?.id_usuario ? `Usuario ${usuario.id_usuario}` : "Usuario"),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function AlumnoDashboard() {
   const navigate = useNavigate();
+  const usuarioActual = getUsuarioActual();
   return (
     <div className="space-y-6">
       <div>
@@ -18,7 +37,7 @@ export function AlumnoDashboard() {
           Dashboard del Alumno
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Bienvenid@, Brayan Madain — Convocatoria Verano
+          Bienvenid@, {usuarioActual?.nombre ?? "Usuario"} — Convocatoria Verano
           2026
         </p>
       </div>

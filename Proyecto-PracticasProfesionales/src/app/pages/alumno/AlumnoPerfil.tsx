@@ -9,7 +9,26 @@ import {
   BadgeCheck,
 } from "lucide-react";
 
+function getUsuarioActual() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const usuarioGuardado = localStorage.getItem("usuario");
+    if (!usuarioGuardado) return null;
+
+    const usuario = JSON.parse(usuarioGuardado);
+    const nombre = usuario?.nombre?.trim();
+
+    return {
+      nombre: nombre || (usuario?.id_usuario ? `Usuario ${usuario.id_usuario}` : "Usuario"),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function AlumnoPerfil() {
+  const usuarioActual = getUsuarioActual();
   return (
     <div className="space-y-6">
       <div>
@@ -31,7 +50,7 @@ export function AlumnoPerfil() {
             </div>
 
             <h2 className="mt-4 text-xl font-bold text-[#0d2b5e]">
-              Brayan Madain
+              {usuarioActual?.nombre ?? "Usuario"}
             </h2>
 
             <p className="text-gray-500 text-sm">

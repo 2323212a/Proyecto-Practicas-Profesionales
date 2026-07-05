@@ -37,6 +37,26 @@ type NavItem = {
   badge?: number;
 };
 
+function getUsuarioActual() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const usuarioGuardado = localStorage.getItem("usuario");
+    if (!usuarioGuardado) return null;
+
+    const usuario = JSON.parse(usuarioGuardado);
+    const nombre = usuario?.nombre?.trim();
+
+    return {
+      nombre: nombre || (usuario?.id_usuario ? `Usuario ${usuario.id_usuario}` : "Usuario"),
+      correo: usuario?.correo || "",
+      id_usuario: usuario?.id_usuario ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getNav(role: string): NavItem[] {
 if (role === "alumno")
   return [
@@ -269,7 +289,7 @@ if (role === "alumno")
   return [];
 }
 
-function getRoleInfo(pathname: string) {
+function getRoleInfo(pathname: string, usuarioNombre = "Usuario") {
   if (pathname.startsWith("/alumno"))
     return {
       role: "alumno",
@@ -295,7 +315,7 @@ function getRoleInfo(pathname: string) {
     return {
       role: "coord-unidades",
       label: "Coord. Unidades Receptoras",
-      name: "Lic. Ana Torres",
+      name: usuarioNombre,
       subtitle: "Unidades Receptoras",
     };
   if (pathname.startsWith("/admin"))
@@ -333,8 +353,10 @@ export function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const usuarioActual = getUsuarioActual();
   const { role, label, name, subtitle } = getRoleInfo(
     location.pathname,
+    usuarioActual?.nombre || "Usuario",
   );
   const navItems = getNav(role);
   const breadcrumb =

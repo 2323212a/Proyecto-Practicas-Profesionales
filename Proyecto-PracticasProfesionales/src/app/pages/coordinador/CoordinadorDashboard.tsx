@@ -20,6 +20,24 @@ import {
   Legend,
 } from "recharts";
 
+function getUsuarioActual() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const usuarioGuardado = localStorage.getItem("usuario");
+    if (!usuarioGuardado) return null;
+
+    const usuario = JSON.parse(usuarioGuardado);
+    const nombre = usuario?.nombre?.trim();
+
+    return {
+      nombre: nombre || (usuario?.id_usuario ? `Usuario ${usuario.id_usuario}` : "Usuario"),
+    };
+  } catch {
+    return null;
+  }
+}
+
 const pie = [
   { name: "Aprobados", value: 142, color: "#22c55e" },
   { name: "En revisión", value: 38, color: "#f59e0b" },
@@ -50,6 +68,7 @@ const expedientes = [
 
 export function CoordinadorDashboard() {
   const navigate = useNavigate();
+  const usuarioActual = getUsuarioActual();
 
   return (
     <div className="space-y-6">
@@ -58,7 +77,7 @@ export function CoordinadorDashboard() {
           Dashboard — Coordinador de Prácticas
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Convocatoria Verano 2026 · Escuela de Tecnologías Digitales Aplicadas C-I
+          Bienvenid@, {usuarioActual?.nombre ?? "Usuario"} · Convocatoria Verano 2026
         </p>
       </div>
 

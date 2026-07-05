@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Building2,
@@ -10,60 +11,131 @@ import {
   ChevronRight,
   Bell,
 } from "lucide-react";
+import {
+  listarEmpresas,
+  listarConvenios,
+  type EmpresaApi,
+  type ConvenioApi,
+} from "../../../infrastructure/coord-unidades/coordUnidadesApi";
 
-const pipeline = [
-  {
-    etapa: "Empresas registradas",
-    cantidad: 34,
-    detalle: "Solicitudes recibidas",
-  },
-  {
-    etapa: "Documentación validada",
-    cantidad: 28,
-    detalle: "Expedientes correctos",
-  },
-  {
-    etapa: "Convenios vigentes",
-    cantidad: 24,
-    detalle: "Empresas habilitadas",
-  },
-  {
-    etapa: "Vacantes aprobadas",
-    cantidad: 24,
-    detalle: "Planes revisados",
-  },
-  {
-    etapa: "Publicadas en padrón",
-    cantidad: 24,
-    detalle: "Visibles para alumnos",
-  },
-];
-
-const actividad = [
-  "DevSolutions Chiapas registró solicitud de alta.",
-  "Innovatek envió documentación corregida.",
-  "DataLab MX actualizó su convenio.",
-  "TechSoft Chiapas está lista para publicarse en padrón.",
-];
-
-const alertas = [
-  "Chiapas Digital tiene convenio por vencer.",
-  "Innovatek mantiene observaciones en documentación.",
-  "DataLab MX tiene vacantes pendientes de aprobación.",
-  "DevSolutions Chiapas espera revisión inicial.",
-];
+function getTextoFallback() {
+  return {
+    titulo: "Dashboard — Coordinador de Unidades Receptoras",
+    subtitulo: "Seguimiento de empresas, convenios, vacantes y publicación en padrón empresarial.",
+    actividad: [
+      "Las empresas nuevas aparecerán aquí cuando el backend las registre.",
+      "Los convenios y observaciones se mostrarán conforme se actualicen.",
+    ],
+    alertas: [
+      "No hay alertas registradas en este momento.",
+    ],
+  };
+}
 
 export function CoordUnidadesDashboard() {
   const navigate = useNavigate();
+  const [empresas, setEmpresas] = useState<EmpresaApi[]>([]);
+  const [convenios, setConvenios] = useState<ConvenioApi[]>([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    async function cargarDatos() {
+      try {
+        const [empresasData, conveniosData] = await Promise.all([
+          listarEmpresas(),
+          listarConvenios(),
+        ]);
+        setEmpresas(empresasData || []);
+        setConvenios(conveniosData || []);
+      } catch {
+        setEmpresas([]);
+        setConvenios([]);
+      } finally {
+        setCargando(false);
+      }
+    }
+
+    cargarDatos();
+  }, []);
+
+  const resumen = useMemo(() => {
+    const empresasPendientes = empresas.filter((e) => e.estado_empresa !== "Aprobada").length;
+    const empresasPublicadas = empresas.filter((e) => e.estado_empresa === "Aprobada").length;
+    const conveniosVigentes = convenios.filter((c) => c.estado_convenio === "Vigente").length;
+    const conveniosPendientes = convenios.filter((c) => c.estado_convenio === "Pendiente").length;
+
+    return {
+      empresasPendientes,
+      conveniosPorActualizar: conveniosPendientes,
+      vacantesEnRevision: 0,
+      empresasPublicadas,
+      conveniosVigentes,
+    };
+  }, [empresas, convenios]);
+
+  const conveniosVigentes = convenios.filter((c) => c.estado_convenio === "Vigente").length;
+  const empresasPublicadas = empresas.filter((e) => e.estado_empresa === "Aprobada").length;
+
+  const pipeline = useMemo(() => [
+    {
+      etapa: "Empresas registradas",
+      cantidad: empresas.length,
+      detalle: "Solicitudes recibidas",
+    },
+    {
+      etapa: "Documentación validada",
+      cantidad: empresas.filter((e) => e.estado_empresa === "Aprobada").length,
+      detalle: "Expedientes correctos",
+    },
+    {
+      etapa: "Convenios vigentes",
+      cantidad: conveniosVigentes,
+      detalle: "Empresas habilitadas",
+    },
+    {
+      etapa: "Vacantes aprobadas",
+      cantidad: 0,
+      detalle: "Planes revisados",
+    },
+    {
+      etapa: "Publicadas en padrón",
+      cantidad: empresasPublicadas,
+      detalle: "Visibles para alumnos",
+    },
+  ], [empresas, convenios]);
+
+  const actividad = useMemo(() => {
+    if (!empresas.length && !convenios.length) {
+      return getTextoFallback().actividad;
+    }
+
+    return [
+      ...(empresas.slice(0, 2).map((e) => `${e.nombre_empresa} está registrada con estado ${e.estado_empresa}.`)),
+      ...(convenios.slice(0, 2).map((c) => `Convenio para empresa ${c.id_empresa} con estado ${c.estado_convenio}.`)),
+    ];
+  }, [empresas, convenios]);
+
+  const alertas = useMemo(() => {
+    if (!empresas.length && !convenios.length) {
+      return getTextoFallback().alertas;
+    }
+
+    const pendientes = empresas.filter((e) => e.estado_empresa !== "Aprobada").map((e) => `${e.nombre_empresa} espera revisión.`);
+    const conveniosPorVencer = convenios.filter((c) => c.estado_convenio === "Pendiente").map((c) => `Convenio de empresa ${c.id_empresa} pendiente.`);
+
+    return [...pendientes, ...conveniosPorVencer].slice(0, 4);
+  }, [empresas, convenios]);
+
+  const texto = getTextoFallback();
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#0d2b5e]">
-          Dashboard — Coordinador de Unidades Receptoras
+          {texto.titulo}
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Seguimiento de empresas, convenios, vacantes y publicación en padrón empresarial.
+          {cargando ? "Cargando información del backend..." : texto.subtitulo}
         </p>
       </div>
 
@@ -71,25 +143,25 @@ export function CoordUnidadesDashboard() {
         {[
           {
             label: "Empresas pendientes",
-            value: "12",
+            value: resumen.empresasPendientes.toString(),
             icon: Building2,
             color: "bg-orange-500",
           },
           {
             label: "Convenios por actualizar",
-            value: "8",
+            value: resumen.conveniosPorActualizar.toString(),
             icon: FileText,
             color: "bg-blue-600",
           },
           {
             label: "Vacantes en revisión",
-            value: "15",
+            value: resumen.vacantesEnRevision.toString(),
             icon: Briefcase,
             color: "bg-purple-600",
           },
           {
             label: "Empresas publicadas",
-            value: "24",
+            value: resumen.empresasPublicadas.toString(),
             icon: ClipboardList,
             color: "bg-green-600",
           },

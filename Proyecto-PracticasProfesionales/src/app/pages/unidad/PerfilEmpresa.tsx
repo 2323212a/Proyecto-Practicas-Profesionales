@@ -12,7 +12,26 @@ import {
   BadgeCheck,
 } from "lucide-react";
 
+function getUsuarioActual() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const usuarioGuardado = localStorage.getItem("usuario");
+    if (!usuarioGuardado) return null;
+
+    const usuario = JSON.parse(usuarioGuardado);
+    const nombre = usuario?.nombre?.trim();
+
+    return {
+      nombre: nombre || (usuario?.id_usuario ? `Usuario ${usuario.id_usuario}` : "Usuario"),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function PerfilEmpresa() {
+  const usuarioActual = getUsuarioActual();
   const datosEmpresa = [
     {
       label: "Razón Social",
@@ -232,7 +251,7 @@ export function PerfilEmpresa() {
                 Responsable de validación
               </div>
               <div className="text-sm font-semibold text-gray-700">
-                Lic. Ana Torres
+                {usuarioActual?.nombre ?? "Usuario"}
               </div>
             </div>
 
