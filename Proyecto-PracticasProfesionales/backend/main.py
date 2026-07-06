@@ -20,6 +20,10 @@ from routes.auth import router as auth_router
 from fastapi.middleware.cors import CORSMiddleware
 from routes.importacion import router as importacion_router
 from routes.admin_estadisticas import router as admin_estadisticas_router
+from routes.empresas import router as empresas_router
+from routes.responsables_empresa import router as responsables_empresa_router
+from models.responsable_empresa import ResponsableEmpresaModel
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -49,6 +53,8 @@ app.include_router(expedientes_router)
 app.include_router(auth_router)
 app.include_router(importacion_router)
 app.include_router(admin_estadisticas_router)
+app.include_router(empresas_router)
+app.include_router(responsables_empresa_router)
 
 @app.get("/")
 def root():

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { EmpresaApiRepository } from "../../infrastructure/repositories/EmpresaApiRepository";
+
 import {
   CheckCircle,
 } from "lucide-react";
@@ -333,9 +335,41 @@ export function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const [empresaNombre, setEmpresaNombre] = useState("");
+
+useEffect(() => {
+  const cargarEmpresa = async () => {
+    if (!location.pathname.startsWith("/unidad")) return;
+
+    const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
+
+    try {
+      const repo = new EmpresaApiRepository();
+
+      const empresas = await repo.listar();
+
+      const miEmpresa = empresas.find(
+        (empresa) => empresa.id_usuario === usuario.id_usuario
+      );
+
+      if (miEmpresa) {
+        setEmpresaNombre(miEmpresa.nombre_empresa);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  cargarEmpresa();
+}, [location.pathname]);
+
   const { role, label, name, subtitle } = getRoleInfo(
     location.pathname,
   );
+
+  const nombreMostrado =
+  role === "unidad" && empresaNombre ? empresaNombre : name;
+
   const navItems = getNav(role);
   const breadcrumb =
     navItems.find((n) => n.path === location.pathname)?.label ||
@@ -383,7 +417,7 @@ export function MainLayout() {
           <div className="px-4 py-3 border-b border-white/10">
             <div className="bg-white/10 rounded-xl px-3 py-2">
               <div className="text-white font-semibold text-xs">
-                {name}
+                {nombreMostrado}
               </div>
               <div className="text-blue-300 text-xs mt-0.5">
                 {label}
@@ -504,7 +538,7 @@ export function MainLayout() {
               </div>
               <div className="hidden md:block">
                 <div className="text-sm font-semibold text-gray-800">
-                  {name}
+                  {nombreMostrado}
                 </div>
                 <div className="text-xs text-gray-400">
                   {subtitle}
