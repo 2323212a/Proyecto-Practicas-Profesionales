@@ -35,6 +35,18 @@ export interface ResponsableEmpresaApi {
   activo: boolean;
 }
 
+export interface PadronEmpresarialApi {
+  id_empresa: number;
+  nombre_empresa: string;
+  rfc: string;
+  estado_empresa: string;
+  id_convenio?: number | null;
+  estado_convenio?: string | null;
+  id_vacante?: number | null;
+  titulo?: string | null;
+  estado_vacante?: string | null;
+}
+
 export async function listarEmpresas() {
   const { data } = await apiClient.get<EmpresaApi[]>("/empresas/");
   return data;
@@ -67,5 +79,10 @@ export async function listarResponsablesEmpresa(idEmpresa: number) {
 
 export async function crearResponsableEmpresa(payload: Omit<ResponsableEmpresaApi, "id_responsable">) {
   const { data } = await apiClient.post<ResponsableEmpresaApi>("/responsables/", payload);
+  return data;
+}
+
+export async function listarPadronEmpresarial() {
+  const { data } = await apiClient.get<PadronEmpresarialApi[]>("/padron-empresarial/");
   return data;
 }
