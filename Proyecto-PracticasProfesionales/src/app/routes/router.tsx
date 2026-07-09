@@ -6,6 +6,7 @@ import { RegisterPage } from "../pages/auth/RegisterPage";
 import { MainLayout } from "../layouts/MainLayout";
 import { ProtectedRoute } from "./ProtectedRoute";
 
+
 // Alumno
 import { AlumnoDashboard } from "../pages/alumno/AlumnoDashboard";
 import { AlumnoPerfil } from "../pages/alumno/AlumnoPerfil";
@@ -65,7 +66,7 @@ import { AsesorObservaciones } from "../pages/asesor/AsesorObservaciones";
 import { DireccionDashboard } from "../pages/direccion/DireccionDashboard";
 import { DireccionEstadisticas } from "../pages/direccion/DireccionEstadisticas";
 import { DireccionReportes } from "../pages/direccion/DireccionReportes";
-
+import { SolicitudEmpresaPublica } from "../pages/landing/SolicitudEmpresaPublica";
 
 export const router = createBrowserRouter([
   {
@@ -80,8 +81,12 @@ export const router = createBrowserRouter([
     path: "/registro",
     element: <RegisterPage />,
   },
+  {
+  path: "/solicitud-empresa",
+  element: <SolicitudEmpresaPublica />,
+},
 
-  
+
 {
   element: <ProtectedRoute allowedRoles={[1]} />,
   children: [

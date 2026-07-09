@@ -236,7 +236,7 @@ export function LandingPage() {
                 </div>
               ),
               b: "Registrar Unidad",
-              p: "/unidad/registro",
+              p: "/solicitud-empresa",
               c: "bg-green-600",
             },
             {
