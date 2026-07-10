@@ -1,23 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import {
-  FileText,
-  Search,
-  Clock,
-  CheckCircle2,
   AlertTriangle,
-  XCircle,
-  Eye,
-  RefreshCcw,
-  Download,
-  Upload,
-  Filter,
-  RotateCcw,
   Building2,
   CalendarDays,
+  CheckCircle2,
+  Clock,
+  Download,
+  Eye,
+  FileText,
+  Filter,
+  RefreshCcw,
+  RotateCcw,
+  Save,
+  Search,
+  Upload,
+  UserPlus,
+  X,
+  XCircle,
 } from "lucide-react";
 import {
+  crearResponsableEmpresa,
   listarConvenios,
-  crearConvenio,
+  listarEmpresas,
+  listarResponsablesEmpresa,
   type ConvenioApi,
 } from "../../../infrastructure/coord-unidades/coordUnidadesApi";
 
@@ -34,44 +40,84 @@ const estadoColor: Record<string, string> = {
 };
 
 export function GestionConvenios() {
+  const navigate = useNavigate();
   const [convenios, setConvenios] = useState<Convenio[]>([]);
+  const [convenioSeleccionado, setConvenioSeleccionado] =
+    useState<Convenio | null>(null);
+  const [responsableForm, setResponsableForm] = useState({
+    nombre_completo: "",
+    cargo: "",
+    correo: "",
+    telefono: "",
+  });
   const [busqueda, setBusqueda] = useState("");
   const [estado, setEstado] = useState("Todos");
   const [tipo, setTipo] = useState("Todos");
   const [cargando, setCargando] = useState(true);
+  const [guardandoResponsable, setGuardandoResponsable] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchConvenios() {
-      try {
-        const data = await listarConvenios();
-        setConvenios(data || []);
-      } catch (err) {
-        setError("No se pudieron cargar los convenios.");
-      } finally {
-        setCargando(false);
-      }
-    }
-
-    fetchConvenios();
-  }, []);
-
-  async function handleRegistrarConvenio() {
+  async function cargarConvenios() {
     try {
-      await crearConvenio({
-        id_empresa: 1,
-        fecha_inicio: "2026-07-01",
-        fecha_fin: "2026-12-31",
-        documento_convenio: "convenio_generado.pdf",
-        tipo_convenio: "Nuevo convenio",
-        observaciones: "Convenio registrado desde la interfaz del coordinador.",
-      });
-      const data = await listarConvenios();
-      setConvenios(data || []);
-    } catch (err) {
-      setError("No se pudo registrar el convenio.");
+      setCargando(true);
+      setError(null);
+
+      const [conveniosData, empresasData] = await Promise.all([
+        listarConvenios(),
+        listarEmpresas(),
+      ]);
+
+      const empresasPorId = new Map(
+        (empresasData || []).map((empresa) => [
+          empresa.id_empresa,
+          empresa.nombre_empresa,
+        ]),
+      );
+
+      const idsEmpresa = Array.from(
+        new Set((conveniosData || []).map((convenio) => convenio.id_empresa)),
+      );
+      const responsablesPorEmpresa = new Map<number, string>();
+
+      await Promise.all(
+        idsEmpresa.map(async (idEmpresa) => {
+          try {
+            const responsables = await listarResponsablesEmpresa(idEmpresa);
+            const responsable =
+              responsables.find((item) => item.activo) ?? responsables[0];
+
+            if (responsable) {
+              responsablesPorEmpresa.set(
+                idEmpresa,
+                responsable.nombre_completo,
+              );
+            }
+          } catch {
+            responsablesPorEmpresa.set(idEmpresa, "");
+          }
+        }),
+      );
+
+      setConvenios(
+        (conveniosData || []).map((convenio) => ({
+          ...convenio,
+          empresaNombre:
+            empresasPorId.get(convenio.id_empresa) ??
+            `Empresa ${convenio.id_empresa}`,
+          responsableNombre:
+            responsablesPorEmpresa.get(convenio.id_empresa) || undefined,
+        })),
+      );
+    } catch {
+      setError("No se pudieron cargar los convenios.");
+    } finally {
+      setCargando(false);
     }
   }
+
+  useEffect(() => {
+    cargarConvenios();
+  }, []);
 
   const filtrados = useMemo(() => {
     return convenios.filter((c) => {
@@ -79,20 +125,15 @@ export function GestionConvenios() {
       const responsable = c.responsableNombre ?? "";
       const coincideBusqueda =
         empresa.toLowerCase().includes(busqueda.toLowerCase()) ||
-        responsable.toLowerCase().includes(busqueda.toLowerCase());
+        responsable.toLowerCase().includes(busqueda.toLowerCase()) ||
+        c.tipo_convenio.toLowerCase().includes(busqueda.toLowerCase());
 
       const coincideEstado = estado === "Todos" || c.estado_convenio === estado;
       const coincideTipo = tipo === "Todos" || c.tipo_convenio === tipo;
 
       return coincideBusqueda && coincideEstado && coincideTipo;
     });
-  }, [busqueda, estado, tipo, convenios]);
-
-  const limpiarFiltros = () => {
-    setBusqueda("");
-    setEstado("Todos");
-    setTipo("Todos");
-  };
+  }, [busqueda, convenios, estado, tipo]);
 
   const resumen = {
     vigentes: convenios.filter((c) => c.estado_convenio === "Vigente").length,
@@ -101,15 +142,80 @@ export function GestionConvenios() {
     vencidos: convenios.filter((c) => c.estado_convenio === "Vencido").length,
   };
 
+  const limpiarFiltros = () => {
+    setBusqueda("");
+    setEstado("Todos");
+    setTipo("Todos");
+  };
+
+  const abrirAsignarResponsable = (convenio: Convenio) => {
+    setConvenioSeleccionado(convenio);
+    setResponsableForm({
+      nombre_completo: "",
+      cargo: "",
+      correo: "",
+      telefono: "",
+    });
+    setError(null);
+  };
+
+  const cerrarAsignarResponsable = () => {
+    setConvenioSeleccionado(null);
+    setResponsableForm({
+      nombre_completo: "",
+      cargo: "",
+      correo: "",
+      telefono: "",
+    });
+  };
+
+  const actualizarResponsableForm = (
+    campo: keyof typeof responsableForm,
+    valor: string,
+  ) => {
+    setResponsableForm((actual) => ({
+      ...actual,
+      [campo]: valor,
+    }));
+  };
+
+  const guardarResponsable = async () => {
+    if (!convenioSeleccionado) return;
+
+    if (!responsableForm.nombre_completo.trim()) {
+      setError("Captura el nombre completo del responsable.");
+      return;
+    }
+
+    try {
+      setGuardandoResponsable(true);
+      setError(null);
+      await crearResponsableEmpresa({
+        id_empresa: convenioSeleccionado.id_empresa,
+        nombre_completo: responsableForm.nombre_completo.trim(),
+        cargo: responsableForm.cargo.trim() || null,
+        correo: responsableForm.correo.trim() || null,
+        telefono: responsableForm.telefono.trim() || null,
+        activo: true,
+      });
+      cerrarAsignarResponsable();
+      await cargarConvenios();
+    } catch {
+      setError("No se pudo asignar el responsable.");
+    } finally {
+      setGuardandoResponsable(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#0d2b5e]">
-          Gestión de Convenios
+          Gestion de Convenios
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Control de vigencias, documentos y renovación de convenios con unidades
-          receptoras.
+          Control de vigencias, documentos y renovacion de convenios con
+          unidades receptoras.
         </p>
       </div>
 
@@ -183,13 +289,13 @@ export function GestionConvenios() {
           >
             <option>Todos</option>
             <option>Nuevo convenio</option>
-            <option>Renovación</option>
+            <option>Renovacion</option>
             <option>Convenio vigente</option>
             <option>Convenio vencido</option>
           </select>
 
           <button
-            onClick={handleRegistrarConvenio}
+            onClick={() => navigate("/coord-unidades/convenios/nuevo")}
             className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2"
           >
             <Upload className="w-4 h-4" />
@@ -253,7 +359,7 @@ export function GestionConvenios() {
                     <td className="text-gray-600">
                       <div className="flex items-center gap-1">
                         <CalendarDays className="w-3.5 h-3.5 text-gray-400" />
-                        {c.fecha_inicio} — {c.fecha_fin}
+                        {c.fecha_inicio} - {c.fecha_fin}
                       </div>
                     </td>
 
@@ -265,9 +371,13 @@ export function GestionConvenios() {
                       </span>
                     </td>
 
-                    <td className="text-gray-600">{c.responsableNombre ?? "Sin responsable"}</td>
+                    <td className="text-gray-600">
+                      {c.responsableNombre ?? "Sin responsable"}
+                    </td>
 
-                    <td className="text-gray-500 text-xs">{c.documento_convenio}</td>
+                    <td className="text-gray-500 text-xs">
+                      {c.documento_convenio}
+                    </td>
 
                     <td>
                       <div className="flex flex-wrap gap-2">
@@ -279,6 +389,14 @@ export function GestionConvenios() {
                         <button className="border border-purple-200 text-purple-600 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1">
                           <RefreshCcw className="w-3 h-3" />
                           Renovar
+                        </button>
+
+                        <button
+                          onClick={() => abrirAsignarResponsable(c)}
+                          className="border border-orange-200 text-orange-600 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          Responsable
                         </button>
 
                         <button
@@ -301,10 +419,117 @@ export function GestionConvenios() {
       <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-start gap-3">
         <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
         <p className="text-sm text-orange-700">
-          Una empresa solo debe permanecer disponible en el padrón cuando cuenta
-          con convenio vigente, documentación validada y vacantes activas.
+          Una empresa solo debe permanecer disponible en el padron cuando cuenta
+          con convenio vigente, documentacion validada y vacantes activas.
         </p>
       </div>
+
+      {convenioSeleccionado && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-2xl">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-[#0d2b5e]">
+                  Asignar responsable
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {convenioSeleccionado.empresaNombre ??
+                    `Empresa ${convenioSeleccionado.id_empresa}`}
+                </p>
+              </div>
+
+              <button
+                onClick={cerrarAsignarResponsable}
+                className="w-9 h-9 rounded-lg border border-gray-200 text-gray-500 flex items-center justify-center hover:bg-gray-50"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-sm font-semibold text-[#0d2b5e]">
+                    Nombre completo
+                  </span>
+                  <input
+                    value={responsableForm.nombre_completo}
+                    onChange={(e) =>
+                      actualizarResponsableForm(
+                        "nombre_completo",
+                        e.target.value,
+                      )
+                    }
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    placeholder="Ej. Lic. Ana Martinez Lopez"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-semibold text-[#0d2b5e]">
+                    Cargo
+                  </span>
+                  <input
+                    value={responsableForm.cargo}
+                    onChange={(e) =>
+                      actualizarResponsableForm("cargo", e.target.value)
+                    }
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    placeholder="Ej. Coordinadora de vinculacion"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-semibold text-[#0d2b5e]">
+                    Telefono
+                  </span>
+                  <input
+                    value={responsableForm.telefono}
+                    onChange={(e) =>
+                      actualizarResponsableForm("telefono", e.target.value)
+                    }
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    placeholder="Ej. 9611234567"
+                  />
+                </label>
+
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-sm font-semibold text-[#0d2b5e]">
+                    Correo
+                  </span>
+                  <input
+                    type="email"
+                    value={responsableForm.correo}
+                    onChange={(e) =>
+                      actualizarResponsableForm("correo", e.target.value)
+                    }
+                    className="w-full border rounded-xl px-3 py-2 text-sm"
+                    placeholder="responsable@empresa.com"
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-2">
+                <button
+                  onClick={cerrarAsignarResponsable}
+                  className="border border-gray-200 text-gray-600 rounded-xl px-4 py-2 text-sm font-semibold"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  onClick={guardarResponsable}
+                  disabled={guardandoResponsable}
+                  className="bg-[#1565c0] disabled:bg-blue-300 text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  {guardandoResponsable ? "Guardando..." : "Guardar responsable"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

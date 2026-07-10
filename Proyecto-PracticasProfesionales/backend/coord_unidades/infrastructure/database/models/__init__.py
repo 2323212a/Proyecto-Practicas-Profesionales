@@ -3,3 +3,5 @@ from .convenio_model import ConvenioModel
 from .documento_empresa_model import DocumentoEmpresaModel, TipoDocumentoEmpresaModel
 from .responsable_empresa_model import ResponsableEmpresaModel
 from .vacante_model import VacanteModel
+from .notificacion_model import NotificacionModel
+from .solicitud_unidad_model import SolicitudUnidadModel

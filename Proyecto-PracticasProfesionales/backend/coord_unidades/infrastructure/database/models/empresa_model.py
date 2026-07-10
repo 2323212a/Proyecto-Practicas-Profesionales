@@ -16,6 +16,7 @@ class EmpresaModel(Base):
     domicilio = Column(Text, nullable=False)
     telefono = Column(String(15))
     correo_contacto = Column(String(100))
+    motivo_rechazo = Column(Text, nullable=True)
 
     estado_empresa = Column(
         Enum(
@@ -36,3 +37,4 @@ class EmpresaModel(Base):
     convenios = relationship("ConvenioModel", back_populates="empresa")
     vacantes = relationship("VacanteModel", back_populates="empresa")
     documentos = relationship("DocumentoEmpresaModel", back_populates="empresa")
+    solicitudes = relationship("SolicitudUnidadModel", back_populates="empresa")

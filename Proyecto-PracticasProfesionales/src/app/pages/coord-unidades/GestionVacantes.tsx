@@ -1,154 +1,130 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Briefcase,
-  Search,
-  CheckCircle2,
   AlertTriangle,
-  Eye,
-  FileText,
   Building2,
-  MapPin,
-  Users,
+  CheckCircle2,
+  Clock,
   Filter,
   RotateCcw,
-  ClipboardList,
-  Clock,
+  Search,
   XCircle,
+  Mail,
+  FileText,
 } from "lucide-react";
-
-const solicitudes = [
-  {
-    empresa: "TechSoft Chiapas",
-    area: "Desarrollo Web",
-    carrera: "Desarrollo y Tec. Software",
-    vacantes: 6,
-    modalidad: "Presencial",
-    responsable: "Lic. Gabriela Reyes",
-    convenio: "Vigente",
-    estado: "Aprobada",
-    plan: "Validado",
-    observacion: "Plan de trabajo completo y acorde a la carrera.",
-  },
-  {
-    empresa: "DataLab MX",
-    area: "Análisis de Datos",
-    carrera: "IA y Ciencia de Datos",
-    vacantes: 4,
-    modalidad: "Híbrida",
-    responsable: "Mtra. Ana Ruiz",
-    convenio: "En actualización",
-    estado: "En revisión",
-    plan: "En revisión",
-    observacion:
-      "Revisar actividades propuestas para alumnos de IA y Ciencia de Datos.",
-  },
-  {
-    empresa: "Innovatek",
-    area: "Software Empresarial",
-    carrera: "Sistemas Computacionales",
-    vacantes: 3,
-    modalidad: "Presencial",
-    responsable: "C.P. Jorge Méndez",
-    convenio: "Vence pronto",
-    estado: "Corrección",
-    plan: "Con observaciones",
-    observacion:
-      "Falta especificar responsable directo y actividades por semana.",
-  },
-];
+import {
+  listarSolicitudes,
+  aprobarSolicitud,
+  rechazarSolicitud,
+  type SolicitudUnidadListado,
+} from "../../../infrastructure/coord-unidades/coordUnidadesApi";
 
 const estadoColor: Record<string, string> = {
   Aprobada: "bg-green-100 text-green-700",
-  "En revisión": "bg-yellow-100 text-yellow-700",
-  Corrección: "bg-orange-100 text-orange-700",
-};
-
-const convenioColor: Record<string, string> = {
-  Vigente: "bg-green-100 text-green-700",
-  "En actualización": "bg-blue-100 text-blue-700",
-  "Vence pronto": "bg-orange-100 text-orange-700",
-};
-
-const planColor: Record<string, string> = {
-  Validado: "bg-green-100 text-green-700",
-  "En revisión": "bg-yellow-100 text-yellow-700",
-  "Con observaciones": "bg-orange-100 text-orange-700",
+  Pendiente: "bg-yellow-100 text-yellow-700",
+  "En Revision": "bg-blue-100 text-blue-700",
+  Rechazada: "bg-red-100 text-red-700",
 };
 
 export function GestionVacantes() {
+  const [solicitudes, setSolicitudes] = useState<SolicitudUnidadListado[]>([]);
   const [busqueda, setBusqueda] = useState("");
-  const [modalidad, setModalidad] = useState("Todas");
   const [estado, setEstado] = useState("Todos");
-  const [convenio, setConvenio] = useState("Todos");
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [procesandoId, setProcessandoId] = useState<number | null>(null);
+
+  // Modal state
+  const [modalAprobar, setModalAprobar] = useState<number | null>(null);
+  const [modalRechazar, setModalRechazar] = useState<number | null>(null);
+  const [rechazoForm, setRechazoForm] = useState({ motivo_rechazo: "", observaciones: "" });
+
+  const cargarSolicitudes = async () => {
+    try {
+      setCargando(true);
+      setError(null);
+      const estadoFiltro = estado === "Todos" ? undefined : estado;
+      const data = await listarSolicitudes(estadoFiltro, undefined, undefined);
+      setSolicitudes(data || []);
+    } catch {
+      setError("No se pudieron cargar las solicitudes.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  useEffect(() => {
+    cargarSolicitudes();
+  }, [estado]);
 
   const filtradas = useMemo(() => {
     return solicitudes.filter((s) => {
-      const coincideBusqueda =
-        s.empresa.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.area.toLowerCase().includes(busqueda.toLowerCase()) ||
-        s.carrera.toLowerCase().includes(busqueda.toLowerCase());
-
-      const coincideModalidad =
-        modalidad === "Todas" || s.modalidad === modalidad;
-
-      const coincideEstado = estado === "Todos" || s.estado === estado;
-
-      const coincideConvenio =
-        convenio === "Todos" || s.convenio === convenio;
-
-      return (
-        coincideBusqueda &&
-        coincideModalidad &&
-        coincideEstado &&
-        coincideConvenio
-      );
+      const texto = `${s.nombre_empresa || ""} ${s.rfc || ""}`.toLowerCase();
+      const coincideBusqueda = texto.includes(busqueda.toLowerCase());
+      return coincideBusqueda;
     });
-  }, [busqueda, modalidad, estado, convenio]);
-
-  const limpiarFiltros = () => {
-    setBusqueda("");
-    setModalidad("Todas");
-    setEstado("Todos");
-    setConvenio("Todos");
-  };
+  }, [busqueda, solicitudes]);
 
   const resumen = {
     total: solicitudes.length,
     aprobadas: solicitudes.filter((s) => s.estado === "Aprobada").length,
-    revision: solicitudes.filter((s) => s.estado === "En revisión").length,
-    correccion: solicitudes.filter((s) => s.estado === "Corrección").length,
+    pendientes: solicitudes.filter((s) => s.estado === "Pendiente").length,
+    rechazadas: solicitudes.filter((s) => s.estado === "Rechazada").length,
   };
 
-  const puedePublicarse = (s: (typeof solicitudes)[number]) =>
-    s.estado === "Aprobada" &&
-    s.plan === "Validado" &&
-    s.convenio === "Vigente";
+  const limpiarFiltros = () => {
+    setBusqueda("");
+    setEstado("Todos");
+  };
+
+  const handleAprobar = async (idSolicitud: number) => {
+    try {
+      setProcessandoId(idSolicitud);
+      setError(null);
+      await aprobarSolicitud(idSolicitud);
+      setModalAprobar(null);
+      await cargarSolicitudes();
+    } catch {
+      setError("No se pudo aprobar la solicitud.");
+    } finally {
+      setProcessandoId(null);
+    }
+  };
+
+  const handleRechazar = async (idSolicitud: number) => {
+    if (!rechazoForm.motivo_rechazo.trim()) {
+      setError("El motivo del rechazo es obligatorio.");
+      return;
+    }
+
+    try {
+      setProcessandoId(idSolicitud);
+      setError(null);
+      await rechazarSolicitud(idSolicitud, rechazoForm);
+      setModalRechazar(null);
+      setRechazoForm({ motivo_rechazo: "", observaciones: "" });
+      await cargarSolicitudes();
+    } catch {
+      setError("No se pudo rechazar la solicitud.");
+    } finally {
+      setProcessandoId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-[#0d2b5e]">
-            Revisión de Vacantes
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Validación de vacantes, plan de trabajo, modalidad, cupo y convenio
-            antes de publicar la empresa en el padrón.
-          </p>
-        </div>
-
-        <button className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4" />
-          Publicar aprobadas
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">Solicitudes de Unidades Receptoras</h1>
+        <p className="text-gray-500 text-sm mt-1">
+          Revisión y gestión de solicitudes de registro de nuevas unidades receptoras de prácticas profesionales
+        </p>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {[
-          ["Solicitudes", resumen.total, ClipboardList],
+          ["Solicitudes", resumen.total, Building2],
           ["Aprobadas", resumen.aprobadas, CheckCircle2],
-          ["En revisión", resumen.revision, Clock],
-          ["Con corrección", resumen.correccion, AlertTriangle],
+          ["Pendientes", resumen.pendientes, Clock],
+          ["Rechazadas", resumen.rechazadas, XCircle],
         ].map(([label, value, Icon]: any) => (
           <div
             key={label}
@@ -169,9 +145,7 @@ export function GestionVacantes() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-[#1565c0]" />
-            <h3 className="font-bold text-[#0d2b5e] text-sm">
-              Filtros de revisión
-            </h3>
+            <h3 className="font-bold text-[#0d2b5e] text-sm">Filtros de búsqueda</h3>
           </div>
 
           <button
@@ -183,27 +157,16 @@ export function GestionVacantes() {
           </button>
         </div>
 
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           <div className="border rounded-xl px-3 py-2 flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400" />
             <input
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="outline-none text-sm w-full"
-              placeholder="Buscar empresa, área o carrera..."
+              placeholder="Buscar por nombre de empresa o RFC..."
             />
           </div>
-
-          <select
-            value={modalidad}
-            onChange={(e) => setModalidad(e.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option>Todas</option>
-            <option>Presencial</option>
-            <option>Híbrida</option>
-            <option>Remota</option>
-          </select>
 
           <select
             value={estado}
@@ -211,176 +174,209 @@ export function GestionVacantes() {
             className="border rounded-xl px-3 py-2 text-sm bg-white"
           >
             <option>Todos</option>
+            <option>Pendiente</option>
+            <option>En Revision</option>
             <option>Aprobada</option>
-            <option>En revisión</option>
-            <option>Corrección</option>
-          </select>
-
-          <select
-            value={convenio}
-            onChange={(e) => setConvenio(e.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option>Todos</option>
-            <option>Vigente</option>
-            <option>En actualización</option>
-            <option>Vence pronto</option>
+            <option>Rechazada</option>
           </select>
         </div>
       </div>
 
-      <div className="grid xl:grid-cols-3 gap-5">
-        {filtradas.map((s) => {
-          const publicable = puedePublicarse(s);
-
-          return (
-            <div
-              key={s.empresa}
-              className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="font-bold text-[#0d2b5e]">{s.empresa}</h3>
-                  <p className="text-sm text-gray-500 mt-1">{s.area}</p>
-                  <p className="text-xs text-gray-400 mt-1">{s.carrera}</p>
-                </div>
-
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-semibold ${estadoColor[s.estado]}`}
-                >
-                  {s.estado}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 mt-5">
-                <div className="border rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <Users className="w-4 h-4" />
-                    Vacantes
-                  </div>
-                  <p className="font-bold text-[#0d2b5e] mt-1">
-                    {s.vacantes} espacios
-                  </p>
-                </div>
-
-                <div className="border rounded-xl p-3">
-                  <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <MapPin className="w-4 h-4" />
-                    Modalidad
-                  </div>
-                  <p className="font-bold text-[#0d2b5e] mt-1">
-                    {s.modalidad}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 border rounded-xl p-4">
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <FileText className="w-4 h-4" />
-                  Plan de trabajo
-                </div>
-
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${planColor[s.plan]}`}
-                  >
-                    {s.plan}
-                  </span>
-
-                  <button className="text-[#1565c0] text-xs font-semibold flex items-center gap-1">
-                    <Eye className="w-3 h-3" />
-                    Ver plan
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 border rounded-xl p-4">
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  <Building2 className="w-4 h-4" />
-                  Convenio
-                </div>
-
-                <span
-                  className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${convenioColor[s.convenio]}`}
-                >
-                  {s.convenio}
-                </span>
-              </div>
-
-              <div
-                className={`mt-4 rounded-xl p-4 border ${
-                  publicable
-                    ? "bg-green-50 border-green-200"
-                    : "bg-orange-50 border-orange-200"
-                }`}
-              >
-                <p
-                  className={`text-xs font-semibold mb-1 ${
-                    publicable ? "text-green-700" : "text-orange-700"
-                  }`}
-                >
-                  {publicable
-                    ? "Lista para padrón"
-                    : "No publicable todavía"}
-                </p>
-
-                <p
-                  className={`text-sm ${
-                    publicable ? "text-green-700" : "text-orange-700"
-                  }`}
-                >
-                  {publicable
-                    ? "La vacante cumple convenio, plan de trabajo y validación."
-                    : s.observacion}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mt-5">
-                <button className="border border-blue-200 text-[#1565c0] rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1">
-                  <Eye className="w-3 h-3" />
-                  Revisar
-                </button>
-
-                {!publicable && (
-                  <button className="border border-orange-200 text-orange-600 rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Solicitar cambios
-                  </button>
-                )}
-
-                {s.estado !== "Aprobada" && (
-                  <button className="bg-green-600 text-white rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Aprobar vacante
-                  </button>
-                )}
-
-                {s.estado === "Aprobada" && !publicable && (
-                  <button className="border border-red-200 text-red-600 rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1">
-                    <XCircle className="w-3 h-3" />
-                    Retener padrón
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {filtradas.length === 0 && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
-          No hay vacantes que coincidan con los filtros seleccionados.
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-4 text-sm">
+          {error}
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 flex items-start gap-3">
-        <Briefcase className="w-5 h-5 text-[#1565c0] mt-0.5" />
-        <p className="text-sm text-[#0d2b5e]">
-          Una vacante solo debe pasar al padrón cuando el convenio esté vigente,
-          el plan de trabajo esté validado, la modalidad sea clara y existan
-          espacios disponibles para la carrera correspondiente.
-        </p>
-      </div>
+      {cargando && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
+          Cargando solicitudes...
+        </div>
+      )}
+
+      {!cargando && filtradas.length === 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
+          No hay solicitudes que coincidan con los filtros seleccionados.
+        </div>
+      )}
+
+      {!cargando && filtradas.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Empresa</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">RFC</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Giro</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Correo</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Teléfono</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Estado</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Fecha Solicitud</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filtradas.map((s) => (
+                  <tr key={s.id_solicitud} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-[#0d2b5e]">{s.nombre_empresa}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-gray-600">{s.rfc}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-gray-600">{s.giro}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-gray-600 flex items-center gap-1">
+                        <Mail className="w-3.5 h-3.5 text-gray-400" />
+                        {s.correo_contacto || "—"}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-gray-600">{s.telefono || "—"}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          estadoColor[s.estado] || "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {s.estado}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-gray-600">
+                        {s.fecha_solicitud
+                          ? new Date(s.fecha_solicitud).toLocaleDateString("es-MX")
+                          : "—"}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        {s.estado !== "Aprobada" && s.estado !== "Rechazada" && (
+                          <>
+                            <button
+                              onClick={() => setModalAprobar(s.id_solicitud)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
+                            >
+                              <CheckCircle2 className="w-3 h-3" />
+                              Aprobar
+                            </button>
+                            <button
+                              onClick={() => setModalRechazar(s.id_solicitud)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                            >
+                              <XCircle className="w-3 h-3" />
+                              Rechazar
+                            </button>
+                          </>
+                        )}
+                        {(s.estado === "Aprobada" || s.estado === "Rechazada") && (
+                          <span className="text-xs text-gray-500">Sin acciones</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Aprobar */}
+      {modalAprobar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="bg-[#0d2b5e] px-6 py-4 flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 text-white" />
+              <h3 className="font-bold text-white">Confirmar Aprobación</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-gray-700 text-sm">
+                ¿Deseas aprobar esta solicitud de unidad receptora? La empresa podrá acceder al sistema tras la aprobación.
+              </p>
+            </div>
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 justify-end">
+              <button
+                onClick={() => setModalAprobar(null)}
+                className="px-4 py-2 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleAprobar(modalAprobar)}
+                disabled={procesandoId !== null}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold disabled:bg-gray-400"
+              >
+                {procesandoId !== null ? "Aprobando..." : "Aceptar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Rechazar */}
+      {modalRechazar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="bg-[#0d2b5e] px-6 py-4 flex items-center gap-3">
+              <XCircle className="w-5 h-5 text-white" />
+              <h3 className="font-bold text-white">Rechazar Solicitud</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Motivo del Rechazo *
+                </label>
+                <input
+                  type="text"
+                  value={rechazoForm.motivo_rechazo}
+                  onChange={(e) =>
+                    setRechazoForm({ ...rechazoForm, motivo_rechazo: e.target.value })
+                  }
+                  placeholder="Ej: Documentación incompleta"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1565c0]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Observaciones
+                </label>
+                <textarea
+                  value={rechazoForm.observaciones}
+                  onChange={(e) =>
+                    setRechazoForm({ ...rechazoForm, observaciones: e.target.value })
+                  }
+                  placeholder="Detalles adicionales..."
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-[#1565c0] resize-none"
+                />
+              </div>
+            </div>
+            <div className="border-t border-gray-200 px-6 py-4 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setModalRechazar(null);
+                  setRechazoForm({ motivo_rechazo: "", observaciones: "" });
+                }}
+                className="px-4 py-2 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleRechazar(modalRechazar)}
+                disabled={procesandoId !== null}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-semibold disabled:bg-gray-400"
+              >
+                {procesandoId !== null ? "Rechazando..." : "Confirmar Rechazo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

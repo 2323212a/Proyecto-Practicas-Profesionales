@@ -42,6 +42,7 @@ import { EvaluacionesUnidad } from "../pages/unidad/EvaluacionesUnidad";
 import { CoordUnidadesDashboard } from "../pages/coord-unidades/CoordUnidadesDashboard";
 import { ValidacionEmpresas } from "../pages/coord-unidades/ValidacionEmpresas";
 import { GestionConvenios } from "../pages/coord-unidades/GestionConvenios";
+import { RegistrarConvenio } from "../pages/coord-unidades/RegistrarConvenio";
 import { ExpedienteEmpresa } from "../pages/coord-unidades/ExpedienteEmpresa";
 import { GestionVacantes } from "../pages/coord-unidades/GestionVacantes";
 import { PadronEmpresarial as PadronEmpresarialCoord } from "../pages/coord-unidades/PadronEmpresarial";
@@ -79,6 +80,10 @@ export const router = createBrowserRouter([
   {
     path: "/registro",
     element: <RegisterPage />,
+  },
+  {
+    path: "/unidad/registro",
+    element: <RegistroEmpresa />,
   },
 
   
@@ -163,7 +168,6 @@ export const router = createBrowserRouter([
       element: <MainLayout />,
       children: [
         { index: true, element: <UnidadDashboard /> },
-        { path: "registro", element: <RegistroEmpresa /> },
         { path: "perfil", element: <PerfilEmpresa /> },
         { path: "ofertas", element: <PlanTrabajo /> },
         { path: "alumnos", element: <AlumnosUnidad /> },
@@ -187,6 +191,7 @@ export const router = createBrowserRouter([
         { path: "empresas", element: <ValidacionEmpresas /> },
         { path: "empresas/expediente", element: <ExpedienteEmpresa /> },
         { path: "convenios", element: <GestionConvenios /> },
+        { path: "convenios/nuevo", element: <RegistrarConvenio /> },
         { path: "vacantes", element: <GestionVacantes /> },
         { path: "padron", element: <PadronEmpresarialCoord /> },
         { path: "notificaciones", element: <NotificacionesCoordUnidades /> },

@@ -32,6 +32,18 @@ from coord_unidades.presentation.routers.responsable_empresa_router import (
 from coord_unidades.presentation.routers.padron_empresarial_router import (
     router as padron_empresarial_router,
 )
+from coord_unidades.presentation.routers.vacante_router import (
+    router as vacante_router,
+)
+from coord_unidades.presentation.routers.notificacion_router import (
+    router as notificacion_router,
+)
+from coord_unidades.presentation.routers.solicitud_unidad_router import (
+    router as solicitud_unidad_router,
+)
+from coord_unidades.presentation.routers.solicitud_unidad_coordinador_router import (
+    router as solicitud_unidad_coordinador_router,
+)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -65,6 +77,10 @@ app.include_router(empresa_router)
 app.include_router(convenio_router)
 app.include_router(responsable_empresa_router)
 app.include_router(padron_empresarial_router)
+app.include_router(vacante_router)
+app.include_router(notificacion_router)
+app.include_router(solicitud_unidad_router)
+app.include_router(solicitud_unidad_coordinador_router)
 
 @app.get("/")
 def root():
