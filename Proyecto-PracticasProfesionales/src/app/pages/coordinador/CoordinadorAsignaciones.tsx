@@ -1,270 +1,379 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  Briefcase,
   Building2,
   CheckCircle2,
-  ClipboardList,
-  RefreshCw,
+  Filter,
+  RotateCcw,
+  Save,
   Search,
-  Star,
   Users,
-  XCircle,
 } from "lucide-react";
 
-import { apiClient } from "../../../infrastructure/api/apiClient";
+import { gestionConfirmacionAsignacionesUseCase } from "../../dependencies";
+import type { AlumnoConfirmacion } from "../../../domain/coordinador/ConfirmacionAsignacion";
 
-type Preferencia = {
-  id_preferencia: number;
-  id_alumno: number;
-  alumno: string;
-  matricula?: string | null;
-  carrera?: string | null;
-  id_empresa: number;
-  empresa?: string | null;
-  titulo?: string | null;
-  orden_preferencia: number;
-  prioritaria: boolean;
-  estado_preferencia: "Pendiente" | "Aprobada" | "Rechazada" | "Cancelada";
-  cupo_disponible: number;
-  cupo_total: number;
-  fecha_registro?: string | null;
-};
-
-type GrupoAlumno = {
-  id_alumno: number;
-  alumno: string;
-  matricula?: string | null;
-  carrera?: string | null;
-  fecha_registro?: string | null;
-  preferencias: Preferencia[];
-};
+type EstadoFiltro = "pendientes" | "asignados" | "todos" | "sin_opciones";
 
 export function CoordinadorAsignaciones() {
-  const [preferencias, setPreferencias] = useState<Preferencia[]>([]);
+  const [alumnos, setAlumnos] = useState<AlumnoConfirmacion[]>([]);
+  const [convocatoria, setConvocatoria] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [procesando, setProcesando] = useState<number | null>(null);
+  const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltro>("pendientes");
+  const [selecciones, setSelecciones] = useState<Record<number, string>>({});
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const [mensaje, setMensaje] = useState("");
 
   useEffect(() => {
-    cargarPreferencias();
+    cargarDatos();
   }, []);
 
-  const cargarPreferencias = async () => {
+  async function cargarDatos() {
     try {
-      setLoading(true);
+      setCargando(true);
       setError("");
-      const response = await apiClient.get<Preferencia[]>("/coordinador/asignaciones/preferencias");
-      setPreferencias(response.data || []);
-    } catch (err: any) {
+      const data = await gestionConfirmacionAsignacionesUseCase.listar();
+      setAlumnos(data.alumnos);
+      setConvocatoria(data.convocatoria);
+      setSelecciones(crearSeleccionesIniciales(data.alumnos));
+    } catch (err) {
       console.error(err);
-      setError(err.response?.data?.detail || "No se pudieron cargar las preferencias de empresa.");
+      setError("No se pudieron cargar las solicitudes de asignacion.");
     } finally {
-      setLoading(false);
+      setCargando(false);
     }
-  };
+  }
 
-  const validarPreferencia = async (idPreferencia: number, estado: "Aprobada" | "Rechazada") => {
-    try {
-      setProcesando(idPreferencia);
-      setError("");
-      setMensaje("");
-      await apiClient.patch(`/coordinador/asignaciones/preferencias/${idPreferencia}`, { estado });
-      setMensaje(estado === "Aprobada" ? "Asignacion aprobada correctamente." : "Preferencia rechazada y cupo liberado.");
-      await cargarPreferencias();
-    } catch (err: any) {
-      console.error(err);
-      setError(err.response?.data?.detail || "No se pudo actualizar la preferencia.");
-    } finally {
-      setProcesando(null);
-    }
-  };
+  function crearSeleccionesIniciales(lista: AlumnoConfirmacion[]) {
+    return Object.fromEntries(
+      lista
+        .filter((alumno) => !alumno.ya_asignado)
+        .map((alumno) => {
+          const primeraPreferencia = alumno.preferencias.find(
+            (preferencia) =>
+              preferencia.estado_empresa === "Activa" &&
+              preferencia.vacantes.length > 0
+          );
+          const primeraVacante = primeraPreferencia?.vacantes[0];
 
-  const grupos = useMemo(() => {
-    const mapa = new Map<number, GrupoAlumno>();
-    preferencias.forEach((pref) => {
-      const actual = mapa.get(pref.id_alumno);
-      if (actual) {
-        actual.preferencias.push(pref);
-        return;
-      }
-      mapa.set(pref.id_alumno, {
-        id_alumno: pref.id_alumno,
-        alumno: pref.alumno,
-        matricula: pref.matricula,
-        carrera: pref.carrera,
-        fecha_registro: pref.fecha_registro,
-        preferencias: [pref],
-      });
-    });
-    return Array.from(mapa.values()).map((grupo) => ({
-      ...grupo,
-      preferencias: grupo.preferencias.sort((a, b) => a.orden_preferencia - b.orden_preferencia),
-    }));
-  }, [preferencias]);
-
-  const gruposFiltrados = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
-    if (!texto) return grupos;
-    return grupos.filter((grupo) =>
-      [grupo.alumno, grupo.matricula || "", grupo.carrera || "", ...grupo.preferencias.map((p) => p.empresa || "")].some((value) =>
-        value.toLowerCase().includes(texto),
-      ),
+          return [
+            alumno.id_alumno,
+            primeraPreferencia && primeraVacante
+              ? `${primeraPreferencia.id_empresa}:${primeraVacante.id_vacante}`
+              : "",
+          ];
+        })
     );
-  }, [busqueda, grupos]);
+  }
 
-  const totalAlumnos = grupos.length;
-  const totalPrioritarias = preferencias.filter((pref) => pref.prioritaria).length;
-  const totalOpciones = preferencias.length;
-  const vacantesReservadas = preferencias.length;
+  const resumen = useMemo(() => {
+    const pendientes = alumnos.filter((alumno) => !alumno.ya_asignado);
+    return {
+      total: alumnos.length,
+      asignados: alumnos.filter((alumno) => alumno.ya_asignado).length,
+      pendientes: pendientes.length,
+      sinOpciones: pendientes.filter((alumno) => !tieneOpciones(alumno)).length,
+    };
+  }, [alumnos]);
 
-  if (loading) {
-    return <div className="text-sm text-gray-500">Cargando asignaciones pendientes...</div>;
+  const filtrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+
+    return alumnos.filter((alumno) => {
+      const coincideBusqueda =
+        alumno.nombre.toLowerCase().includes(q) ||
+        alumno.matricula.toLowerCase().includes(q) ||
+        alumno.carrera.toLowerCase().includes(q) ||
+        alumno.preferencias.some((preferencia) =>
+          preferencia.empresa.toLowerCase().includes(q)
+        );
+
+      const coincideEstado =
+        estadoFiltro === "todos" ||
+        (estadoFiltro === "pendientes" && !alumno.ya_asignado) ||
+        (estadoFiltro === "asignados" && alumno.ya_asignado) ||
+        (estadoFiltro === "sin_opciones" &&
+          !alumno.ya_asignado &&
+          !tieneOpciones(alumno));
+
+      return coincideBusqueda && coincideEstado;
+    });
+  }, [alumnos, busqueda, estadoFiltro]);
+
+  function tieneOpciones(alumno: AlumnoConfirmacion) {
+    return alumno.preferencias.some(
+      (preferencia) =>
+        preferencia.estado_empresa === "Activa" && preferencia.vacantes.length > 0
+    );
+  }
+
+  function limpiarFiltros() {
+    setBusqueda("");
+    setEstadoFiltro("pendientes");
+  }
+
+  async function confirmar(alumno: AlumnoConfirmacion) {
+    const valor = selecciones[alumno.id_alumno];
+    if (!valor) return;
+
+    const [idEmpresa, idVacante] = valor.split(":").map(Number);
+
+    try {
+      setGuardando(alumno.id_alumno);
+      await gestionConfirmacionAsignacionesUseCase.confirmar({
+        id_alumno: alumno.id_alumno,
+        id_empresa: idEmpresa,
+        id_vacante: idVacante,
+        tipo_asignacion: tieneOpciones(alumno) ? "Normal" : "Rezagado",
+      });
+      await cargarDatos();
+    } catch (err: any) {
+      console.error(err);
+      alert(
+        err?.response?.data?.detail ??
+          "No se pudo confirmar la asignacion del alumno."
+      );
+    } finally {
+      setGuardando(null);
+    }
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Asignacion de Alumnos</h1>
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">
+          Asignacion de Alumnos
+        </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Revisa las preferencias enviadas desde el padron empresarial y valida la empresa asignada.
+          Confirma la empresa y vacante a partir de las preferencias guardadas
+          por cada alumno.
         </p>
       </div>
 
-      {error ? <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">{error}</div> : null}
-      {mensaje ? <div className="bg-green-50 border border-green-200 text-green-700 rounded-xl p-4 text-sm">{mensaje}</div> : null}
+      {error && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+          {error}
+        </div>
+      )}
 
       <div className="bg-[#0d2b5e] rounded-2xl p-6 text-white">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-5">
           <div>
-            <h2 className="text-xl font-bold">Preferencias pendientes</h2>
+            <h2 className="text-xl font-bold">
+              {convocatoria ?? "Convocatoria sin seleccionar"}
+            </h2>
             <p className="text-blue-200 text-sm mt-1">
-              Al aprobar una opcion, las demas preferencias pendientes del alumno se rechazan y liberan sus cupos.
+              Al confirmar se crea la asignacion formal, se descuenta el cupo y
+              el alumno queda listo para asignarle asesor.
             </p>
           </div>
-          <button onClick={cargarPreferencias} className="bg-white/10 hover:bg-white/20 rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 w-fit">
-            <RefreshCw className="w-4 h-4" />
-            Actualizar
-          </button>
-        </div>
 
-        <div className="grid md:grid-cols-4 gap-4 mt-6">
-          <Metric icon={<Users className="w-5 h-5 text-blue-200" />} label="Alumnos" value={totalAlumnos} />
-          <Metric icon={<ClipboardList className="w-5 h-5 text-blue-200" />} label="Opciones enviadas" value={totalOpciones} />
-          <Metric icon={<Star className="w-5 h-5 text-blue-200" />} label="Prioritarias" value={totalPrioritarias} />
-          <Metric icon={<Briefcase className="w-5 h-5 text-blue-200" />} label="Cupos reservados" value={vacantesReservadas} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              ["Alumnos", resumen.total, Users],
+              ["Pendientes", resumen.pendientes, AlertTriangle],
+              ["Asignados", resumen.asignados, CheckCircle2],
+              ["Sin cupo", resumen.sinOpciones, Building2],
+            ].map(([titulo, valor, Icon]: any) => (
+              <div
+                key={titulo}
+                className="bg-white/10 rounded-xl px-4 py-3 min-w-32"
+              >
+                <Icon className="w-4 h-4 mb-2 text-blue-100" />
+                <div className="text-xl font-bold">
+                  {cargando ? "..." : valor}
+                </div>
+                <div className="text-xs text-blue-100">{titulo}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="border rounded-xl px-3 py-2 flex items-center gap-2 md:w-96">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-[#1565c0]" />
+            <h3 className="font-bold text-[#0d2b5e] text-sm">
+              Filtros de revision
+            </h3>
+          </div>
+          <button
+            onClick={limpiarFiltros}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#1565c0]"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Limpiar filtros
+          </button>
+        </div>
+
+        <div className="grid md:grid-cols-[1fr_240px] gap-3">
+          <label className="border rounded-xl px-3 py-2 flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400" />
             <input
               value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
+              onChange={(event) => setBusqueda(event.target.value)}
               className="outline-none text-sm w-full"
-              placeholder="Buscar alumno, matricula o empresa..."
+              placeholder="Buscar alumno, matricula, carrera o empresa..."
             />
-          </div>
-          <span className="text-sm text-gray-500">{gruposFiltrados.length} alumnos por revisar</span>
+          </label>
+
+          <select
+            value={estadoFiltro}
+            onChange={(event) => setEstadoFiltro(event.target.value as EstadoFiltro)}
+            className="border rounded-xl px-3 py-2 text-sm outline-none"
+          >
+            <option value="pendientes">Pendientes</option>
+            <option value="asignados">Asignados</option>
+            <option value="sin_opciones">Sin opciones disponibles</option>
+            <option value="todos">Todos</option>
+          </select>
         </div>
       </div>
 
-      {gruposFiltrados.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center">
-          <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-50 text-[#1565c0] flex items-center justify-center mb-4">
-            <CheckCircle2 className="w-7 h-7" />
-          </div>
-          <h3 className="font-bold text-[#0d2b5e]">No hay preferencias pendientes</h3>
-          <p className="text-sm text-gray-500 mt-2">Cuando un alumno guarde sus opciones del padron empresarial apareceran aqui.</p>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-[#0d2b5e]">
+            Solicitudes de asignacion
+          </h3>
+          <span className="text-xs text-gray-500">
+            {filtrados.length} registros
+          </span>
         </div>
-      ) : (
-        <div className="space-y-5">
-          {gruposFiltrados.map((grupo) => (
-            <div key={grupo.id_alumno} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="bg-blue-50 border-b border-blue-100 p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+
+        {cargando ? (
+          <div className="px-5 py-10 text-sm text-gray-500">
+            Cargando solicitudes...
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div className="px-5 py-10 text-sm text-gray-500">
+            No hay alumnos con los filtros seleccionados.
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filtrados.map((alumno) => (
+              <div
+                key={alumno.id_alumno}
+                className="p-5 grid xl:grid-cols-[1.1fr_1.6fr_1fr] gap-5"
+              >
                 <div>
-                  <h3 className="font-bold text-[#0d2b5e]">{grupo.alumno}</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {grupo.matricula || "Sin matricula"} {grupo.carrera ? `- ${grupo.carrera}` : ""}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <span className="bg-white text-[#1565c0] border border-blue-200 px-3 py-1 rounded-full text-xs font-semibold">
-                    {grupo.preferencias.length} opciones
-                  </span>
-                  {grupo.preferencias.some((p) => p.prioritaria) ? (
-                    <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
-                      <Star className="w-3 h-3" /> Prioritaria
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="divide-y divide-gray-100">
-                {grupo.preferencias.map((pref) => (
-                  <div key={pref.id_preferencia} className="p-5 flex flex-col xl:flex-row xl:items-center gap-5">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold flex-shrink-0">
-                      {pref.orden_preferencia}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-bold text-[#0d2b5e]">{pref.empresa || "Empresa"}</h4>
-                        {pref.prioritaria ? <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs font-semibold">Prioritaria</span> : null}
-                      </div>
-                      <p className="text-sm text-gray-500 mt-1">{pref.titulo || "Vacante de practicas profesionales"}</p>
-                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
-                        <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5" /> Empresa #{pref.id_empresa}</span>
-                        <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> Cupo disponible: {pref.cupo_disponible}/{pref.cupo_total}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-2 xl:w-auto">
-                      <button
-                        onClick={() => validarPreferencia(pref.id_preferencia, "Aprobada")}
-                        disabled={procesando === pref.id_preferencia}
-                        className="bg-green-600 hover:bg-green-700 text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        Aprobar
-                      </button>
-                      <button
-                        onClick={() => validarPreferencia(pref.id_preferencia, "Rechazada")}
-                        disabled={procesando === pref.id_preferencia}
-                        className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        Rechazar
-                      </button>
-                    </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <h4 className="font-bold text-[#0d2b5e]">
+                      {alumno.nombre}
+                    </h4>
+                    {alumno.ya_asignado && (
+                      <span className="text-xs px-2 py-1 rounded-full bg-green-50 text-green-700">
+                        Asignado
+                      </span>
+                    )}
                   </div>
-                ))}
+                  <div className="text-sm text-gray-500">
+                    {alumno.matricula}
+                  </div>
+                  <div className="text-sm text-gray-500">{alumno.carrera}</div>
+                  <div className="text-xs mt-3 text-gray-400">
+                    Estado: {alumno.estado_alumno}
+                  </div>
+                </div>
+
+                <div>
+                  {alumno.ya_asignado ? (
+                    <div className="border border-green-100 bg-green-50 rounded-xl px-4 py-3 text-sm">
+                      <div className="font-semibold text-green-800">
+                        {alumno.empresa_asignada}
+                      </div>
+                      <div className="text-green-700 mt-1">
+                        {alumno.vacante_asignada}
+                      </div>
+                    </div>
+                  ) : alumno.preferencias.length === 0 ? (
+                    <div className="border border-orange-100 bg-orange-50 rounded-xl px-4 py-3 text-sm text-orange-700">
+                      El alumno aun no guarda preferencias de empresa.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {alumno.preferencias.map((preferencia) => (
+                        <div
+                          key={preferencia.id_seleccion}
+                          className="border rounded-xl px-4 py-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-[#0d2b5e]">
+                                {preferencia.prioridad}. {preferencia.empresa}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {preferencia.estado_empresa === "Activa"
+                                  ? `${preferencia.vacantes.length} vacantes compatibles`
+                                  : "Empresa no activa"}
+                              </div>
+                            </div>
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full ${
+                                preferencia.estado_empresa === "Activa"
+                                  ? "bg-green-50 text-green-700"
+                                  : "bg-gray-100 text-gray-500"
+                              }`}
+                            >
+                              {preferencia.estado_empresa}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col justify-center gap-3">
+                  {!alumno.ya_asignado && (
+                    <>
+                      <select
+                        value={selecciones[alumno.id_alumno] ?? ""}
+                        onChange={(event) =>
+                          setSelecciones((actuales) => ({
+                            ...actuales,
+                            [alumno.id_alumno]: event.target.value,
+                          }))
+                        }
+                        className="border rounded-xl px-3 py-2 text-sm outline-none"
+                        disabled={!tieneOpciones(alumno)}
+                      >
+                        <option value="">Seleccionar vacante</option>
+                        {alumno.preferencias.flatMap((preferencia) =>
+                          preferencia.vacantes.map((vacante) => (
+                            <option
+                              key={`${preferencia.id_empresa}:${vacante.id_vacante}`}
+                              value={`${preferencia.id_empresa}:${vacante.id_vacante}`}
+                            >
+                              {preferencia.prioridad}. {preferencia.empresa} -{" "}
+                              {vacante.titulo} ({vacante.cupo_disponible})
+                            </option>
+                          ))
+                        )}
+                      </select>
+
+                      <button
+                        onClick={() => confirmar(alumno)}
+                        disabled={
+                          !selecciones[alumno.id_alumno] ||
+                          guardando === alumno.id_alumno
+                        }
+                        className="bg-[#1565c0] text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:bg-gray-300"
+                      >
+                        <Save className="w-4 h-4" />
+                        {guardando === alumno.id_alumno
+                          ? "Confirmando..."
+                          : "Confirmar asignacion"}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex gap-3">
-        <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-orange-700">
-          Los cupos se reservan desde que el alumno envia sus preferencias. Si rechazas una opcion, ese cupo vuelve a quedar disponible en el padron empresarial.
-        </p>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
-  );
-}
-
-function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
-  return (
-    <div className="bg-white/10 rounded-xl p-4">
-      <div className="mb-2">{icon}</div>
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-blue-200 text-sm">{label}</div>
     </div>
   );
 }

@@ -1,150 +1,78 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  FileText,
-  Download,
-  Users,
-  Building2,
-  Briefcase,
   AlertTriangle,
-  Database,
-  Eye,
-  Filter,
-  RotateCcw,
-  FileSpreadsheet,
-  Clock,
+  Briefcase,
+  Building2,
   CheckCircle2,
+  Clock,
+  Database,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  FileText,
+  Users,
 } from "lucide-react";
 
-const reportes = [
-  {
-    tipo: "alumnos",
-    titulo: "Reporte de Alumnos",
-    descripcion:
-      "Alumnos registrados, estado documental, asignación, carrera y avance.",
-    icono: Users,
-    registros: 844,
-  },
-  {
-    tipo: "empresas",
-    titulo: "Reporte de Empresas",
-    descripcion:
-      "Unidades receptoras activas, vencidas, con cupo y sin disponibilidad.",
-    icono: Building2,
-    registros: 48,
-  },
-  {
-    tipo: "convenios",
-    titulo: "Reporte de Convenios",
-    descripcion:
-      "Convenios vigentes, próximos a vencer, vencidos y renovaciones.",
-    icono: FileText,
-    registros: 22,
-  },
-  {
-    tipo: "practicas",
-    titulo: "Reporte de Prácticas",
-    descripcion:
-      "Prácticas en proceso, concluidas, rezagadas y liberadas.",
-    icono: Briefcase,
-    registros: 844,
-  },
-  {
-    tipo: "incidencias",
-    titulo: "Reporte de Incidencias",
-    descripcion:
-      "Observaciones de alumnos, empresas, docentes y documentos.",
-    icono: AlertTriangle,
-    registros: 46,
-  },
-  {
-    tipo: "brutos",
-    titulo: "Datos Brutos para Auditoría",
-    descripcion:
-      "Exportación completa de registros sin modificar para revisión institucional.",
-    icono: Database,
-    registros: 1248,
-  },
-];
+import type { DireccionIndicadoresResponse } from "../../../domain/direccion/DireccionIndicadores";
+import { descargarDireccionCsv, obtenerIndicadoresDireccion } from "../../../infrastructure/direccion/direccionApi";
 
-const historico = [
-  {
-    convocatoria: "Verano 2026",
-    alumnos: 844,
-    empresas: 48,
-    convenios: 22,
-    incidencias: 46,
-    concluidas: 312,
-    estado: "Activa",
-  },
-  {
-    convocatoria: "Primavera 2026",
-    alumnos: 720,
-    empresas: 42,
-    convenios: 19,
-    incidencias: 38,
-    concluidas: 690,
-    estado: "Finalizada",
-  },
-  {
-    convocatoria: "Otoño 2025",
-    alumnos: 650,
-    empresas: 39,
-    convenios: 17,
-    incidencias: 29,
-    concluidas: 640,
-    estado: "Archivada",
-  },
-];
+const iconos: Record<string, any> = {
+  alumnos: Users,
+  empresas: Building2,
+  convenios: FileText,
+  practicas: Briefcase,
+  incidencias: AlertTriangle,
+  brutos: Database,
+};
+
+function estadoColor(estado: string) {
+  if (estado === "Activa") return "bg-green-100 text-green-700";
+  if (estado === "Finalizada") return "bg-blue-100 text-blue-700";
+  return "bg-gray-100 text-gray-700";
+}
 
 export function DireccionReportes() {
-  const [convocatoria, setConvocatoria] = useState("Verano 2026");
-  const [carrera, setCarrera] = useState("Todas");
+  const [datos, setDatos] = useState<DireccionIndicadoresResponse | null>(null);
   const [tipoReporte, setTipoReporte] = useState("Todos");
-  const [formato, setFormato] = useState("PDF");
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
 
-  const reportesFiltrados = useMemo(() => {
-    return reportes.filter(
-      (r) => tipoReporte === "Todos" || r.tipo === tipoReporte,
-    );
-  }, [tipoReporte]);
+  useEffect(() => {
+    void cargar();
+  }, []);
 
-  const limpiarFiltros = () => {
-    setConvocatoria("Verano 2026");
-    setCarrera("Todas");
-    setTipoReporte("Todos");
-    setFormato("PDF");
-  };
+  async function cargar() {
+    try {
+      setCargando(true);
+      setError("");
+      setDatos(await obtenerIndicadoresDireccion());
+    } catch (err) {
+      console.error(err);
+      setError("No se pudieron cargar los reportes ejecutivos.");
+    } finally {
+      setCargando(false);
+    }
+  }
 
-  const generarReporte = (tipo?: string, formatoFinal = formato) => {
-    alert(
-      `Generando reporte ${
-        tipo ?? tipoReporte
-      } en formato ${formatoFinal} · ${convocatoria} · ${carrera}`,
-    );
-  };
+  const reportesFiltrados = useMemo(
+    () => (datos?.reportes ?? []).filter((r) => tipoReporte === "Todos" || r.tipo === tipoReporte),
+    [datos, tipoReporte],
+  );
 
-  const estadoColor = (estado: string) => {
-    if (estado === "Activa") return "bg-green-100 text-green-700";
-    if (estado === "Finalizada") return "bg-blue-100 text-blue-700";
-    return "bg-gray-100 text-gray-700";
-  };
+  const resumen = datos?.resumen;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#0d2b5e]">
-            Reportes Ejecutivos
-          </h1>
-
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Reportes Ejecutivos</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Generación, consulta y exportación de información histórica para
-            Dirección / Secretaría.
+            Consulta y exportacion de informacion historica para Direccion / Secretaria.
           </p>
         </div>
 
         <button
-          onClick={() => generarReporte("datos brutos", "Excel")}
+          onClick={() => void descargarDireccionCsv("brutos")}
           className="bg-[#0d2b5e] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 hover:bg-[#1565c0]"
         >
           <Database className="w-4 h-4" />
@@ -152,97 +80,44 @@ export function DireccionReportes() {
         </button>
       </div>
 
+      {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
+
       <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-[#1565c0]" />
-            <h3 className="font-bold text-[#0d2b5e] text-sm">
-              Filtros de generación
-            </h3>
-          </div>
-
-          <button
-            onClick={limpiarFiltros}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#1565c0]"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Limpiar filtros
-          </button>
-        </div>
-
-        <div className="grid md:grid-cols-5 gap-4">
-          <select
-            value={convocatoria}
-            onChange={(e) => setConvocatoria(e.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option>Verano 2026</option>
-            <option>Primavera 2026</option>
-            <option>Otoño 2025</option>
-          </select>
-
-          <select
-            value={carrera}
-            onChange={(e) => setCarrera(e.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option>Todas</option>
-            <option>Sistemas Computacionales</option>
-            <option>Ing. en Semiconductores</option>
-            <option>IA y Ciencia de Datos</option>
-            <option>Arquitectura de Sistemas IA</option>
-            <option>Desarrollo y Tec. Software</option>
-          </select>
-
+        <div className="grid md:grid-cols-[1fr_auto] gap-4">
           <select
             value={tipoReporte}
             onChange={(e) => setTipoReporte(e.target.value)}
             className="border rounded-xl px-3 py-2 text-sm bg-white"
           >
             <option value="Todos">Todos los reportes</option>
-            {reportes.map((r) => (
-              <option key={r.tipo} value={r.tipo}>
-                {r.titulo}
-              </option>
+            {(datos?.reportes ?? []).map((r) => (
+              <option key={r.tipo} value={r.tipo}>{r.titulo}</option>
             ))}
           </select>
 
-          <select
-            value={formato}
-            onChange={(e) => setFormato(e.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option>PDF</option>
-            <option>Excel</option>
-            <option>CSV</option>
-          </select>
-
           <button
-            onClick={() => generarReporte()}
+            onClick={() => void descargarDireccionCsv(tipoReporte === "Todos" ? "brutos" : tipoReporte)}
             className="bg-[#1565c0] text-white rounded-xl px-4 py-2 font-semibold flex items-center justify-center gap-2"
           >
             <Download className="w-4 h-4" />
-            Generar
+            Exportar CSV
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {[
-          { l: "Reportes disponibles", v: reportes.length, I: FileText },
-          { l: "Convocatorias", v: historico.length, I: Clock },
-          { l: "Registros auditables", v: "1,248", I: Database },
-          { l: "Prácticas concluidas", v: 312, I: CheckCircle2 },
+          { l: "Reportes disponibles", v: datos?.reportes.length ?? 0, I: FileText },
+          { l: "Convocatorias", v: datos?.convocatorias.length ?? 0, I: Clock },
+          { l: "Registros auditables", v: (resumen?.alumnos ?? 0) + (resumen?.documentos ?? 0), I: Database },
+          { l: "Practicas concluidas", v: resumen?.concluidos ?? 0, I: CheckCircle2 },
         ].map((item) => (
-          <div
-            key={item.l}
-            className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3"
-          >
+          <div key={item.l} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
             <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-gray-500">
               <item.I className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-lg font-bold text-[#0d2b5e]">{item.v}</div>
+              <div className="text-lg font-bold text-[#0d2b5e]">{cargando ? "..." : item.v}</div>
               <div className="text-xs text-gray-500">{item.l}</div>
             </div>
           </div>
@@ -250,60 +125,42 @@ export function DireccionReportes() {
       </div>
 
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {reportesFiltrados.map((reporte) => (
-          <div
-            key={reporte.titulo}
-            className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center">
-                <reporte.icono className="w-6 h-6 text-[#1565c0]" />
+        {reportesFiltrados.map((reporte) => {
+          const Icon = iconos[reporte.tipo] ?? FileText;
+          return (
+            <div key={reporte.titulo} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all">
+              <div className="flex items-start justify-between mb-4">
+                <div className="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center">
+                  <Icon className="w-6 h-6 text-[#1565c0]" />
+                </div>
+                <span className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
+                  {reporte.registros} registros
+                </span>
               </div>
 
-              <span className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
-                {reporte.registros} registros
-              </span>
+              <h3 className="font-bold text-[#0d2b5e] mb-2">{reporte.titulo}</h3>
+              <p className="text-sm text-gray-500 mb-5">{reporte.descripcion}</p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button className="border border-blue-200 text-[#1565c0] rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1">
+                  <Eye className="w-3.5 h-3.5" />
+                  Ver
+                </button>
+                <button
+                  onClick={() => void descargarDireccionCsv(reporte.tipo)}
+                  className="bg-[#1565c0] text-white rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  CSV
+                </button>
+              </div>
             </div>
-
-            <h3 className="font-bold text-[#0d2b5e] mb-2">
-              {reporte.titulo}
-            </h3>
-
-            <p className="text-sm text-gray-500 mb-5">
-              {reporte.descripcion}
-            </p>
-
-            <div className="grid grid-cols-3 gap-2">
-              <button className="border border-blue-200 text-[#1565c0] rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1">
-                <Eye className="w-3.5 h-3.5" />
-                Ver
-              </button>
-
-              <button
-                onClick={() => generarReporte(reporte.tipo, "PDF")}
-                className="bg-[#1565c0] text-white rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1"
-              >
-                <Download className="w-3.5 h-3.5" />
-                PDF
-              </button>
-
-              <button
-                onClick={() => generarReporte(reporte.tipo, "Excel")}
-                className="border border-green-200 text-green-700 rounded-xl py-2 text-xs font-semibold flex items-center justify-center gap-1 hover:bg-green-50"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                Excel
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-        <h3 className="font-bold text-[#0d2b5e] mb-5">
-          Historial de convocatorias
-        </h3>
-
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 overflow-x-auto">
+        <h3 className="font-bold text-[#0d2b5e] mb-5">Historial de convocatorias</h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-gray-500">
@@ -314,38 +171,38 @@ export function DireccionReportes() {
               <th>Incidencias</th>
               <th>Concluidas</th>
               <th>Estado</th>
-              <th>Acción</th>
+              <th>Accion</th>
             </tr>
           </thead>
-
           <tbody>
-            {historico.map((row) => (
-              <tr key={row.convocatoria} className="border-b last:border-0">
-                <td className="py-3 font-medium text-[#0d2b5e]">
-                  {row.convocatoria}
-                </td>
+            {(datos?.convocatorias ?? []).map((row) => (
+              <tr key={`${row.convocatoria}-${row.periodo}`} className="border-b last:border-0">
+                <td className="py-3 font-medium text-[#0d2b5e]">{row.convocatoria}</td>
                 <td>{row.alumnos}</td>
                 <td>{row.empresas}</td>
                 <td>{row.convenios}</td>
                 <td>{row.incidencias}</td>
                 <td>{row.concluidas}</td>
                 <td>
-                  <span
-                    className={`${estadoColor(row.estado)} px-2 py-1 rounded-full text-xs font-semibold`}
-                  >
+                  <span className={`${estadoColor(row.estado)} px-2 py-1 rounded-full text-xs font-semibold`}>
                     {row.estado}
                   </span>
                 </td>
                 <td>
                   <button
-                    onClick={() => generarReporte(row.convocatoria, "PDF")}
+                    onClick={() => void descargarDireccionCsv(row.convocatoria)}
                     className="text-xs text-[#1565c0] font-semibold hover:underline"
                   >
-                    Ver reporte
+                    Exportar
                   </button>
                 </td>
               </tr>
             ))}
+            {!cargando && (datos?.convocatorias ?? []).length === 0 && (
+              <tr>
+                <td colSpan={8} className="py-8 text-center text-gray-400">No hay convocatorias registradas.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

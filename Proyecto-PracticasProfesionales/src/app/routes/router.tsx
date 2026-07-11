@@ -2,20 +2,19 @@ import { createBrowserRouter } from "react-router";
 
 import { LandingPage } from "../pages/landing/LandingPage";
 import { LoginPage } from "../pages/auth/LoginPage";
-import { RegisterPage } from "../pages/auth/RegisterPage";
 import { MainLayout } from "../layouts/MainLayout";
+import { ProtectedRoute } from "./ProtectedRoute";
 
 // Alumno
 import { AlumnoDashboard } from "../pages/alumno/AlumnoDashboard";
 import { AlumnoPerfil } from "../pages/alumno/AlumnoPerfil";
-import { ValidacionMaterias } from "../pages/alumno/ValidacionMaterias";
-import { VigenciaDerechos } from "../pages/alumno/VigenciaDerechos";
 import { PadronEmpresarial } from "../pages/alumno/PadronEmpresarial";
 import { HorasAcumuladas } from "../pages/alumno/HorasAcumuladas";
 import { EvaluacionEmpresa } from "../pages/alumno/EvaluacionEmpresa";
 import { AlumnoNotificaciones } from "../pages/alumno/AlumnoNotificaciones";
 import { CargaDocumentos } from "../pages/alumno/CargaDocumentos";
 import { AlumnoReportes } from "../pages/alumno/AlumnoReportes";
+import { AlumnoLiberacion } from "../pages/alumno/AlumnoLiberacion";
 
 // Otras páginas para admin, coordinador, etc. se agregarían aquí
 // Coordinador
@@ -23,6 +22,7 @@ import { CoordinadorDashboard } from "../pages/coordinador/CoordinadorDashboard"
 import { GestionAlumnos } from "../pages/coordinador/GestionAlumnos";
 import { RevisionDocumentos } from "../pages/coordinador/RevisionDocumentos";
 import { CoordinadorAsignaciones } from "../pages/coordinador/CoordinadorAsignaciones";
+import { AsignarAsesores } from "../pages/coordinador/AsignarAsesores";
 import { CoordinadorSeguimiento } from "../pages/coordinador/CoordinadorSeguimiento";
 import { CoordinadorLiberacion } from "../pages/coordinador/CoordinadorLiberacion";
 import { CoordinadorNotificaciones } from "../pages/coordinador/CoordinadorNotificaciones";
@@ -76,136 +76,171 @@ export const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
-    path: "/registro",
-    element: <RegisterPage />,
+    path: "/registro-empresa",
+    element: <RegistroEmpresa />,
   },
 
+  
 {
-  path: "/alumno",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[1]} />,
   children: [
     {
-      index: true,
-      element: <AlumnoDashboard />,
-    },
-    {
-      path: "perfil",
-      element: <AlumnoPerfil />,
-    },
-    {
-      path: "materias",
-      element: <ValidacionMaterias />,
-    },
-    {
-      path: "vigencia",
-      element: <VigenciaDerechos />,
-    },
-    {
-      path: "documentos",
-      element: <CargaDocumentos />,
-    },
-    {
-      path: "padron",
-      element: <PadronEmpresarial />,
-    },
-    {
-      path: "horas",
-      element: <HorasAcumuladas />,
-    },
-    {
-      path: "evaluacion",
-      element: <EvaluacionEmpresa />,
-    },
-    {
-      path: "notificaciones",
-      element: <AlumnoNotificaciones />,
-    },
-    {
-      path: "reportes",
-      element: <AlumnoReportes />,
+      path: "/alumno",
+      element: <MainLayout />,
+      children: [
+        {
+          index: true,
+          element: <AlumnoDashboard />,
+        },
+        {
+          path: "perfil",
+          element: <AlumnoPerfil />,
+        },
+        {
+          path: "documentos",
+          element: <CargaDocumentos />,
+        },
+        {
+          path: "padron",
+          element: <PadronEmpresarial />,
+        },
+        {
+          path: "horas",
+          element: <HorasAcumuladas />,
+        },
+        {
+          path: "evaluacion",
+          element: <EvaluacionEmpresa />,
+        },
+        {
+          path: "notificaciones",
+          element: <AlumnoNotificaciones />,
+        },
+        {
+          path: "reportes",
+          element: <AlumnoReportes />,
+        },
+        {
+          path: "liberacion",
+          element: <AlumnoLiberacion />,
+        },
+      ],
     },
   ],
 },
+
 // Coordinador
 {
-  path: "/coordinador",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[3]} />,
   children: [
-    { index: true, element: <CoordinadorDashboard /> },
-    { path: "alumnos", element: <GestionAlumnos /> },
-    { path: "documentos", element: <RevisionDocumentos /> },
-    { path: "asignaciones", element: <CoordinadorAsignaciones /> },
-    { path: "seguimiento", element: <CoordinadorSeguimiento /> },
-    { path: "liberacion", element: <CoordinadorLiberacion /> },
-    { path: "notificaciones", element: <CoordinadorNotificaciones /> },
+    {
+      path: "/coordinador",
+      element: <MainLayout />,
+      children: [
+        { index: true, element: <CoordinadorDashboard /> },
+        { path: "alumnos", element: <GestionAlumnos /> },
+        { path: "documentos", element: <RevisionDocumentos /> },
+        { path: "asignaciones", element: <CoordinadorAsignaciones /> },
+        { path: "asesores", element: <AsignarAsesores /> },
+        { path: "seguimiento", element: <CoordinadorSeguimiento /> },
+        { path: "liberacion", element: <CoordinadorLiberacion /> },
+        { path: "notificaciones", element: <CoordinadorNotificaciones /> },
+      ],
+    },
   ],
 },
 
 // Unidad Receptora
 {
-  path: "/unidad",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[5]} />,
   children: [
-    { index: true, element: <UnidadDashboard /> },
-    { path: "registro", element: <RegistroEmpresa /> },
-    { path: "perfil", element: <PerfilEmpresa /> },
-    { path: "ofertas", element: <PlanTrabajo /> },
-    { path: "alumnos", element: <AlumnosUnidad /> },
-    { path: "convenios", element: <ConveniosUnidad /> },
-    { path: "horas", element: <HorasUnidad /> },
-    { path: "evaluaciones", element: <EvaluacionesUnidad /> },
+    {
+      path: "/unidad",
+      element: <MainLayout />,
+      children: [
+        { index: true, element: <UnidadDashboard /> },
+        { path: "perfil", element: <PerfilEmpresa /> },
+        { path: "ofertas", element: <PlanTrabajo /> },
+        { path: "alumnos", element: <AlumnosUnidad /> },
+        { path: "convenios", element: <ConveniosUnidad /> },
+        { path: "horas", element: <HorasUnidad /> },
+        { path: "evaluaciones", element: <EvaluacionesUnidad /> },
+      ],
+    },
   ],
 },
 
 // Coordinador de Unidades
 {
-  path: "/coord-unidades",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[4]} />,
   children: [
-    { index: true, element: <CoordUnidadesDashboard /> },
-    { path: "empresas", element: <ValidacionEmpresas /> },
-    { path: "empresas/expediente", element: <ExpedienteEmpresa /> },
-    { path: "convenios", element: <GestionConvenios /> },
-    { path: "vacantes", element: <GestionVacantes /> },
-    { path: "padron", element: <PadronEmpresarialCoord /> },
-    { path: "notificaciones", element: <NotificacionesCoordUnidades /> },
+    {
+      path: "/coord-unidades",
+      element: <MainLayout />,
+      children: [
+        { index: true, element: <CoordUnidadesDashboard /> },
+        { path: "empresas", element: <ValidacionEmpresas /> },
+        { path: "empresas/expediente", element: <ExpedienteEmpresa /> },
+        { path: "convenios", element: <GestionConvenios /> },
+        { path: "vacantes", element: <GestionVacantes /> },
+        { path: "padron", element: <PadronEmpresarialCoord /> },
+        { path: "notificaciones", element: <NotificacionesCoordUnidades /> },
+      ],
+    },
   ],
 },
 
 // Administrador
 {
-  path: "/admin",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[2]} />,
   children: [
-    { index: true, element: <AdminDashboard /> },
-    { path: "usuarios", element: <GestionUsuarios /> },
-    { path: "roles", element: <AdminRolesPermisos /> },
-    { path: "catalogos", element: <AdminCatalogos /> },
-    { path: "reportes", element: <AdminReportes /> },
-    { path: "configuracion", element: <AdminConfiguracion /> },
+    {
+      path: "/admin",
+      element: <MainLayout />,
+      children: [
+        { index: true, element: <AdminDashboard /> },
+        { path: "usuarios", element: <GestionUsuarios /> },
+        { path: "roles", element: <AdminRolesPermisos /> },
+        { path: "catalogos", element: <AdminCatalogos /> },
+        { path: "reportes", element: <AdminReportes /> },
+        { path: "configuracion", element: <AdminConfiguracion /> },
+      ],
+    },
   ],
 },
 
 // Asesor
 {
-  path: "/asesor",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[6]} />,
   children: [
-    { index: true, element: <AsesorDashboard /> },
-    { path: "alumnos", element: <AlumnosAsignados /> },
-    { path: "reportes", element: <AsesorReportes /> },
-    { path: "observaciones", element: <AsesorObservaciones /> },
+    {
+      path: "/asesor",
+      element: <MainLayout />,
+      children: [
+        { index: true, element: <AsesorDashboard /> },
+        { path: "alumnos", element: <AlumnosAsignados /> },
+        { path: "reportes", element: <AsesorReportes /> },
+        { path: "observaciones", element: <AsesorObservaciones /> },
+      ],
+    },
   ],
 },
 
 // Dirección
 {
-  path: "/direccion",
-  element: <MainLayout />,
+  element: <ProtectedRoute allowedRoles={[7]} />,
   children: [
-    { index: true, element: <DireccionDashboard /> },
-    { path: "estadisticas", element: <DireccionEstadisticas /> },
-    { path: "reportes", element: <DireccionReportes /> },
+    {
+      path: "/direccion",
+      element: <MainLayout />,
+      children: [
+        { index: true, element: <DireccionDashboard /> },
+        { path: "estadisticas", element: <DireccionEstadisticas /> },
+        { path: "reportes", element: <DireccionReportes /> },
+      ],
+    },
   ],
 },
+
+
 ] );

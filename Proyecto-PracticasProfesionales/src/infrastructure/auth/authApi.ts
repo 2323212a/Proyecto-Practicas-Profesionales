@@ -10,10 +10,14 @@ export interface LoginResponse {
   token_type: string;
   id_usuario: number;
   id_rol: number;
+  rol: string | null;
   nombre: string;
-  apellido_paterno?: string;
-  apellido_materno?: string;
+  apellido_paterno?: string | null;
+  apellido_materno?: string | null;
+  nombre_completo: string;
   correo: string;
+  perfil_tipo: string | null;
+  perfil: Record<string, unknown> | null;
 }
 
 export const login = async (

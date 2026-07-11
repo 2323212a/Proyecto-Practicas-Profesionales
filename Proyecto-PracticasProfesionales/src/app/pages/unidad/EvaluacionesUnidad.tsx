@@ -1,403 +1,273 @@
-import { useState } from "react";
-import {
-  Star,
-  Users,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  Search,
-  Filter,
-  Eye,
-  FileText,
-  CalendarDays,
-  Save,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import { AlertTriangle, CheckCircle, MessageSquare, Save, Search, Star, Users } from "lucide-react";
+import { gestionSeguimientoPracticasUseCase } from "../../dependencies";
+import type { PrioridadIncidencia, SeguimientoUnidadAlumno, SeguimientoUnidadResponse } from "../../../domain/seguimiento/SeguimientoPracticas";
 
-type Evaluacion = {
-  id: number;
-  alumno: string;
-  matricula: string;
-  carrera: string;
-  proyecto: string;
-  periodo: string;
-  tipo: "Parcial" | "Final";
-  estado: "Pendiente" | "Completada" | "En revisión";
-  calificacion?: number;
-  fechaLimite: string;
-  responsable: string;
-  observaciones: string;
-};
+type UsuarioSesion = { perfil?: { id_empresa?: number } };
+
+function obtenerIdEmpresa() {
+  const raw = localStorage.getItem("usuario");
+  if (!raw) return null;
+  try {
+    return (JSON.parse(raw) as UsuarioSesion).perfil?.id_empresa ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function EvaluacionesUnidad() {
+  const [datos, setDatos] = useState<SeguimientoUnidadResponse | null>(null);
   const [q, setQ] = useState("");
-  const [filtro, setFiltro] = useState("todos");
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [evaluando, setEvaluando] = useState<SeguimientoUnidadAlumno | null>(null);
+  const [incidenciaAlumno, setIncidenciaAlumno] = useState<SeguimientoUnidadAlumno | null>(null);
+  const [calificacion, setCalificacion] = useState(90);
+  const [comentarios, setComentarios] = useState("");
+  const [tipoIncidencia, setTipoIncidencia] = useState("Desempeno");
+  const [prioridad, setPrioridad] = useState<PrioridadIncidencia>("Media");
+  const [descripcion, setDescripcion] = useState("");
+  const [confirmandoIncidencia, setConfirmandoIncidencia] = useState(false);
+  const [segundosConfirmacion, setSegundosConfirmacion] = useState(0);
+  const idEmpresa = obtenerIdEmpresa();
 
-  const evaluaciones: Evaluacion[] = [
-    {
-      id: 1,
-      alumno: "María García López",
-      matricula: "215A10234",
-      carrera: "Ing. Sistemas",
-      proyecto: "Módulo de Control Documental",
-      periodo: "Mayo–Agosto 2026",
-      tipo: "Parcial",
-      estado: "Pendiente",
-      fechaLimite: "15 junio 2026",
-      responsable: "Mtro. Daniel Pérez Castillo",
-      observaciones: "Pendiente de capturar evaluación parcial.",
-    },
-    {
-      id: 2,
-      alumno: "Juan Pérez Núñez",
-      matricula: "216B20145",
-      carrera: "Ing. Sistemas",
-      proyecto: "Portal de Seguimiento Interno",
-      periodo: "Mayo–Agosto 2026",
-      tipo: "Parcial",
-      estado: "Pendiente",
-      fechaLimite: "15 junio 2026",
-      responsable: "Lic. Fernanda Torres Gómez",
-      observaciones: "El alumno debe entregar reporte de avances.",
-    },
-    {
-      id: 3,
-      alumno: "Rosa Díaz Morales",
-      matricula: "214C30067",
-      carrera: "Administración",
-      proyecto: "Organización de Procesos Administrativos",
-      periodo: "Mayo–Agosto 2026",
-      tipo: "Parcial",
-      estado: "Completada",
-      calificacion: 95,
-      fechaLimite: "15 junio 2026",
-      responsable: "Ing. Alejandro Méndez Ruiz",
-      observaciones: "Excelente desempeño y buena organización.",
-    },
-    {
-      id: 4,
-      alumno: "Oscar Gonzalez",
-      matricula: "215D40189",
-      carrera: "Ing. Desarrollo de Software",
-      proyecto: "Sistema de Gestión Documental",
-      periodo: "Mayo–Agosto 2026",
-      tipo: "Parcial",
-      estado: "Completada",
-      calificacion: 98,
-      fechaLimite: "15 junio 2026",
-      responsable: "Mtro. Daniel Pérez Castillo",
-      observaciones: "Buen avance técnico en el sistema documental.",
-    },
-    {
-      id: 5,
-      alumno: "Brayan Hernandez",
-      matricula: "216E50234",
-      carrera: "Ing. Desarrollo de Software",
-      proyecto: "Portal de Prácticas Profesionales",
-      periodo: "Mayo–Agosto 2026",
-      tipo: "Parcial",
-      estado: "En revisión",
-      calificacion: 90,
-      fechaLimite: "15 junio 2026",
-      responsable: "Lic. Fernanda Torres Gómez",
-      observaciones: "Evaluación capturada, pendiente de validación.",
-    },
-    {
-      id: 6,
-      alumno: "Javier Molina",
-      matricula: "213F60321",
-      carrera: "Inteligencia Artificial",
-      proyecto: "Análisis de Datos Empresariales",
-      periodo: "Mayo–Agosto 2026",
-      tipo: "Final",
-      estado: "Pendiente",
-      fechaLimite: "20 agosto 2026",
-      responsable: "Ing. Alejandro Méndez Ruiz",
-      observaciones: "Evaluación final pendiente hasta completar el periodo.",
-    },
-  ];
+  async function cargar() {
+    if (!idEmpresa) {
+      setError("No se encontro la empresa asociada a esta sesion.");
+      setCargando(false);
+      return;
+    }
+    try {
+      setCargando(true);
+      setError("");
+      setDatos(await gestionSeguimientoPracticasUseCase.obtenerUnidad(idEmpresa));
+    } catch (err) {
+      console.error(err);
+      setError("No se pudieron cargar las evaluaciones.");
+    } finally {
+      setCargando(false);
+    }
+  }
 
-  const estadoColor: Record<string, string> = {
-    Pendiente: "bg-gray-100 text-gray-600",
-    Completada: "bg-green-100 text-green-700",
-    "En revisión": "bg-yellow-100 text-yellow-700",
-  };
+  useEffect(() => {
+    void cargar();
+  }, []);
 
-  const evaluacionesFiltradas = evaluaciones.filter((e) => {
-    const busqueda =
-      e.alumno.toLowerCase().includes(q.toLowerCase()) ||
-      e.matricula.toLowerCase().includes(q.toLowerCase()) ||
-      e.carrera.toLowerCase().includes(q.toLowerCase()) ||
-      e.proyecto.toLowerCase().includes(q.toLowerCase());
+  useEffect(() => {
+    if (!confirmandoIncidencia || segundosConfirmacion <= 0) return;
 
-    const filtroEstado = filtro === "todos" || e.estado === filtro;
+    const timer = window.setTimeout(() => {
+      setSegundosConfirmacion((segundos) => segundos - 1);
+    }, 1000);
 
-    return busqueda && filtroEstado;
-  });
+    return () => window.clearTimeout(timer);
+  }, [confirmandoIncidencia, segundosConfirmacion]);
 
-  const pendientes = evaluaciones.filter((e) => e.estado === "Pendiente").length;
-  const completadas = evaluaciones.filter(
-    (e) => e.estado === "Completada",
-  ).length;
-  const enRevision = evaluaciones.filter(
-    (e) => e.estado === "En revisión",
-  ).length;
+  const alumnos = useMemo(() => {
+    const texto = q.toLowerCase();
+    return (datos?.alumnos ?? []).filter((a) =>
+      [a.alumno, a.matricula ?? "", a.carrera, a.vacante].join(" ").toLowerCase().includes(texto),
+    );
+  }, [datos, q]);
 
-  const promedio = Math.round(
-    evaluaciones
-      .filter((e) => typeof e.calificacion === "number")
-      .reduce((acc, e) => acc + (e.calificacion || 0), 0) /
-      evaluaciones.filter((e) => typeof e.calificacion === "number").length,
-  );
+  function abrirEvaluacion(alumno: SeguimientoUnidadAlumno) {
+    setEvaluando(alumno);
+    setCalificacion(alumno.evaluacion_alumno?.calificacion ?? 90);
+    setComentarios(alumno.evaluacion_alumno?.comentarios ?? "");
+  }
+
+  function abrirIncidencia(alumno: SeguimientoUnidadAlumno) {
+    setIncidenciaAlumno(alumno);
+    setConfirmandoIncidencia(false);
+    setSegundosConfirmacion(0);
+  }
+
+  async function guardarEvaluacion(event: FormEvent) {
+    event.preventDefault();
+    if (!idEmpresa || !evaluando) return;
+    try {
+      setGuardando(true);
+      await gestionSeguimientoPracticasUseCase.guardarEvaluacionEmpresaAlumno(idEmpresa, {
+        id_asignacion: evaluando.id_asignacion,
+        calificacion,
+        comentarios: comentarios || undefined,
+      });
+      setEvaluando(null);
+      await cargar();
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar la evaluacion. El alumno debe estar en cierre de practicas.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  async function guardarIncidencia(event: FormEvent) {
+    event.preventDefault();
+    if (!idEmpresa || !incidenciaAlumno || !descripcion.trim()) return;
+
+    if (!confirmandoIncidencia) {
+      setConfirmandoIncidencia(true);
+      setSegundosConfirmacion(5);
+      return;
+    }
+
+    if (segundosConfirmacion > 0) return;
+
+    try {
+      setGuardando(true);
+      await gestionSeguimientoPracticasUseCase.crearIncidenciaEmpresa(idEmpresa, incidenciaAlumno.id_asignacion, {
+        tipo_incidencia: tipoIncidencia,
+        prioridad,
+        descripcion,
+      });
+      setIncidenciaAlumno(null);
+      setDescripcion("");
+      setConfirmandoIncidencia(false);
+      setSegundosConfirmacion(0);
+      await cargar();
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo registrar la incidencia.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  if (cargando) return <div className="bg-white rounded-2xl border p-10 text-center text-gray-500">Cargando evaluaciones...</div>;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">
-          Evaluaciones
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Captura y seguimiento de evaluaciones de alumnos en prácticas.
-        </p>
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">Evaluaciones e Incidencias</h1>
+        <p className="text-gray-500 text-sm mt-1">Evalua alumnos al cierre y reporta incidencias durante sus practicas.</p>
       </div>
-
-      <div className="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-2xl p-6 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="font-bold text-xl">
-            Evaluaciones de desempeño
-          </div>
-          <div className="text-yellow-100 text-sm mt-1">
-            TechSoft Chiapas S.A. de C.V. · Periodo Mayo–Agosto 2026
-          </div>
-        </div>
-
-        <div className="bg-white/20 px-4 py-2 rounded-xl">
-          <div className="text-white font-bold text-sm">
-            PROMEDIO {promedio}
-          </div>
-        </div>
-      </div>
+      {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
         {[
-          {
-            label: "Evaluaciones",
-            value: evaluaciones.length,
-            icon: Star,
-            color: "bg-yellow-50 text-yellow-600",
-          },
-          {
-            label: "Completadas",
-            value: completadas,
-            icon: CheckCircle,
-            color: "bg-green-50 text-green-600",
-          },
-          {
-            label: "Pendientes",
-            value: pendientes,
-            icon: Clock,
-            color: "bg-gray-50 text-gray-600",
-          },
-          {
-            label: "En revisión",
-            value: enRevision,
-            icon: AlertCircle,
-            color: "bg-orange-50 text-orange-600",
-          },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5"
-          >
-            <div
-              className={`w-10 h-10 ${item.color} rounded-xl flex items-center justify-center mb-3`}
-            >
-              <item.icon className="w-5 h-5" />
-            </div>
-
-            <div className="text-2xl font-bold text-[#0d2b5e]">
-              {item.value}
-            </div>
-
-            <div className="text-gray-500 text-sm mt-0.5">
-              {item.label}
-            </div>
+          ["Alumnos", datos?.resumen.total ?? 0, Users, "bg-blue-50 text-blue-600"],
+          ["Evaluados", datos?.resumen.evaluados ?? 0, CheckCircle, "bg-green-50 text-green-600"],
+          ["Pendientes", datos?.resumen.pendientes ?? 0, Star, "bg-yellow-50 text-yellow-600"],
+          ["Incidencias", datos?.alumnos.reduce((s, a) => s + a.incidencias, 0) ?? 0, AlertTriangle, "bg-orange-50 text-orange-600"],
+        ].map(([label, value, Icon, color]: any) => (
+          <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+            <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center mb-3`}><Icon className="w-5 h-5" /></div>
+            <div className="text-2xl font-bold text-[#0d2b5e]">{value}</div>
+            <div className="text-gray-500 text-sm mt-0.5">{label}</div>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col lg:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-
-          <input
-            type="text"
-            placeholder="Buscar por alumno, matrícula, carrera o proyecto..."
-            value={q}
-            onChange={(ev) => setQ(ev.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#1565c0]"
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-
-          <select
-            value={filtro}
-            onChange={(ev) => setFiltro(ev.target.value)}
-            className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#1565c0]"
-          >
-            <option value="todos">Todos</option>
-            <option value="Pendiente">Pendiente</option>
-            <option value="Completada">Completada</option>
-            <option value="En revisión">En revisión</option>
-          </select>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <div className="border rounded-xl px-3 py-2 flex items-center gap-2">
+          <Search className="w-4 h-4 text-gray-400" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} className="outline-none text-sm w-full" placeholder="Buscar alumno, matricula o proyecto..." />
         </div>
       </div>
 
-      <div className="grid xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-            <Star className="w-5 h-5 text-[#1565c0]" />
-            <h3 className="font-bold text-[#0d2b5e]">
-              Lista de Evaluaciones
-            </h3>
-            <span className="ml-auto text-xs text-gray-400">
-              {evaluacionesFiltradas.length} resultados
-            </span>
-          </div>
-
-          <div className="divide-y divide-gray-100">
-            {evaluacionesFiltradas.map((e) => (
-              <div key={e.id} className="px-6 py-5 hover:bg-gray-50">
-                <div className="flex flex-col xl:flex-row xl:items-center gap-5">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="w-11 h-11 bg-[#e3f0ff] rounded-xl flex items-center justify-center text-[#1565c0] font-bold flex-shrink-0">
-                      {e.alumno.charAt(0)}
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-bold text-gray-800 text-sm">
-                          {e.alumno}
-                        </h4>
-
-                        <span
-                          className={`text-xs px-3 py-1 rounded-full font-semibold ${
-                            estadoColor[e.estado]
-                          }`}
-                        >
-                          {e.estado}
-                        </span>
-
-                        <span className="text-xs px-3 py-1 rounded-full font-semibold bg-blue-100 text-blue-700">
-                          {e.tipo}
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-gray-500 mt-1">
-                        Matrícula: {e.matricula} · {e.carrera}
-                      </div>
-
-                      <div className="text-xs text-[#1565c0] mt-1 font-medium">
-                        Proyecto: {e.proyecto}
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-3 mt-3">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <CalendarDays className="w-4 h-4 text-[#1565c0]" />
-                          Fecha límite: {e.fechaLimite}
-                        </div>
-
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <FileText className="w-4 h-4 text-[#1565c0]" />
-                          Responsable: {e.responsable}
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-gray-500 mt-3 leading-relaxed">
-                        {e.observaciones}
-                      </p>
-                    </div>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="divide-y divide-gray-100">
+          {alumnos.map((alumno) => (
+            <div key={alumno.id_asignacion} className="p-5 hover:bg-gray-50">
+              <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-[#0d2b5e]">{alumno.alumno}</h4>
+                  <p className="text-sm text-gray-500 mt-1">{alumno.matricula ?? "Sin matricula"} · {alumno.carrera}</p>
+                  <p className="text-sm text-gray-500 mt-1">{alumno.vacante}</p>
+                  <div className="grid md:grid-cols-4 gap-3 mt-4">
+                    <div className="border rounded-xl px-3 py-2"><div className="text-xs text-gray-500">Horas</div><div className="font-bold">{alumno.horas_aprobadas}/480</div></div>
+                    <div className="border rounded-xl px-3 py-2"><div className="text-xs text-gray-500">Reportes pendientes</div><div className="font-bold">{alumno.reportes_pendientes}</div></div>
+                    <div className="border rounded-xl px-3 py-2"><div className="text-xs text-gray-500">Reportes rechazados</div><div className="font-bold">{alumno.reportes_rechazados}</div></div>
+                    <div className="border rounded-xl px-3 py-2"><div className="text-xs text-gray-500">Incidencias</div><div className="font-bold">{alumno.incidencias}</div></div>
                   </div>
-
-                  <div className="flex flex-wrap gap-2 xl:flex-col xl:w-40">
-                    {typeof e.calificacion === "number" && (
-                      <div className="text-center px-4 py-2 rounded-xl bg-green-50 border border-green-100">
-                        <div className="text-xs text-green-600">
-                          Calificación
-                        </div>
-                        <div className="text-xl font-bold text-green-700">
-                          {e.calificacion}
-                        </div>
-                      </div>
-                    )}
-
-                    <button className="flex items-center justify-center gap-2 px-4 py-2 bg-[#0d2b5e] text-white rounded-lg text-xs font-semibold hover:bg-[#1565c0] transition-colors">
-                      <Eye className="w-3.5 h-3.5" />
-                      Ver detalle
-                    </button>
-
-                    {e.estado === "Pendiente" && (
-                      <button className="flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-xs font-semibold hover:bg-gray-50 transition-colors">
-                        <Save className="w-3.5 h-3.5" />
-                        Capturar
-                      </button>
-                    )}
-                  </div>
+                  {alumno.evaluacion_alumno && <p className="text-sm text-green-700 mt-3">Evaluado con {alumno.evaluacion_alumno.calificacion}/100.</p>}
+                  {!alumno.puede_evaluar && <p className="text-xs text-yellow-700 mt-3">{alumno.motivo_bloqueo}</p>}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => abrirEvaluacion(alumno)} disabled={!alumno.puede_evaluar} className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-xs font-semibold disabled:opacity-50"><Star className="inline w-4 h-4 mr-1" /> Evaluar</button>
+                  <button onClick={() => abrirIncidencia(alumno)} className="border border-orange-200 text-orange-600 rounded-xl px-4 py-2 text-xs font-semibold"><MessageSquare className="inline w-4 h-4 mr-1" /> Queja</button>
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
+          {alumnos.length === 0 && <div className="p-10 text-center text-gray-400">No hay alumnos asignados.</div>}
+        </div>
+      </div>
 
-            {evaluacionesFiltradas.length === 0 && (
-              <div className="px-6 py-10 text-center">
-                <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                <div className="text-sm text-gray-500">
-                  No se encontraron evaluaciones con los filtros seleccionados.
-                </div>
+      {evaluando && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+          <form onSubmit={guardarEvaluacion} className="bg-white rounded-2xl p-6 w-full max-w-xl">
+            <h3 className="font-bold text-[#0d2b5e]">Evaluar alumno</h3>
+            <p className="text-sm text-gray-500 mt-1">{evaluando.alumno}</p>
+            <input type="number" min={0} max={100} value={calificacion} onChange={(e) => setCalificacion(Number(e.target.value))} className="mt-4 w-full border rounded-xl px-3 py-2 text-sm" />
+            <textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} rows={5} className="mt-4 w-full border rounded-xl p-3 text-sm" placeholder="Comentarios sobre puntualidad, responsabilidad, desempeno y cumplimiento..." />
+            <div className="flex justify-end gap-3 mt-5">
+              <button type="button" onClick={() => setEvaluando(null)} className="border rounded-xl px-4 py-2 text-sm">Cancelar</button>
+              <button disabled={guardando} className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm flex items-center gap-2"><Save className="w-4 h-4" /> Guardar</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {incidenciaAlumno && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+          <form onSubmit={guardarIncidencia} className="bg-white rounded-2xl p-6 w-full max-w-xl">
+            <h3 className="font-bold text-[#0d2b5e]">Registrar queja/incidencia</h3>
+            <p className="text-sm text-gray-500 mt-1">{incidenciaAlumno.alumno}</p>
+            <div className="grid md:grid-cols-2 gap-4 mt-4">
+              <input value={tipoIncidencia} onChange={(e) => setTipoIncidencia(e.target.value)} className="border rounded-xl px-3 py-2 text-sm" />
+              <select value={prioridad} onChange={(e) => setPrioridad(e.target.value as PrioridadIncidencia)} className="border rounded-xl px-3 py-2 text-sm bg-white"><option>Baja</option><option>Media</option><option>Alta</option></select>
+            </div>
+            <textarea
+              value={descripcion}
+              onChange={(e) => {
+                setDescripcion(e.target.value);
+                setConfirmandoIncidencia(false);
+                setSegundosConfirmacion(0);
+              }}
+              required
+              rows={5}
+              className="mt-4 w-full border rounded-xl p-3 text-sm"
+              placeholder="Describe la situacion..."
+            />
+            {confirmandoIncidencia && (
+              <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+                {segundosConfirmacion > 0
+                  ? `Espera ${segundosConfirmacion} segundo(s) para confirmar el envio.`
+                  : "Confirma si realmente quieres enviar esta incidencia."}
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-            <h3 className="font-bold text-[#0d2b5e] mb-4">
-              Criterios de Evaluación
-            </h3>
-
-            <div className="space-y-3">
-              {[
-                { criterio: "Responsabilidad", valor: "20%" },
-                { criterio: "Puntualidad", valor: "15%" },
-                { criterio: "Calidad del trabajo", valor: "25%" },
-                { criterio: "Comunicación", valor: "15%" },
-                { criterio: "Cumplimiento de actividades", valor: "25%" },
-              ].map((c) => (
-                <div
-                  key={c.criterio}
-                  className="flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-gray-50"
-                >
-                  <span className="text-sm text-gray-700">{c.criterio}</span>
-                  <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-blue-100 text-blue-700">
-                    {c.valor}
-                  </span>
-                </div>
-              ))}
+            <div className="flex justify-end gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIncidenciaAlumno(null);
+                  setConfirmandoIncidencia(false);
+                  setSegundosConfirmacion(0);
+                }}
+                className="border rounded-xl px-4 py-2 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={guardando || !descripcion.trim() || (confirmandoIncidencia && segundosConfirmacion > 0)}
+                className="bg-orange-600 text-white rounded-xl px-4 py-2 text-sm disabled:opacity-50"
+              >
+                {guardando
+                  ? "Enviando..."
+                  : confirmandoIncidencia
+                    ? segundosConfirmacion > 0
+                      ? `Confirmar en ${segundosConfirmacion}s`
+                      : "Confirmar envio"
+                    : "Registrar"}
+              </button>
             </div>
-          </div>
-
-          <div className="bg-[#e3f0ff] border border-blue-200 rounded-2xl p-5">
-            <div className="font-bold text-[#0d2b5e] text-sm">
-              Indicaciones
-            </div>
-            <p className="text-blue-700 text-xs mt-2 leading-relaxed">
-              Las evaluaciones deben capturarse al finalizar cada periodo de
-              seguimiento. La calificación será revisada por coordinación antes
-              de integrarse al expediente final del alumno.
-            </p>
-          </div>
+          </form>
         </div>
-      </div>
+      )}
     </div>
   );
 }

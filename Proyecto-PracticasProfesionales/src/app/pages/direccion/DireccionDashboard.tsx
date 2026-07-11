@@ -1,145 +1,101 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  Clock,
+  Database,
+  Download,
+  Eye,
+  FileText,
   TrendingUp,
   Users,
-  Building2,
-  FileText,
-  Award,
-  Eye,
-  Download,
-  Filter,
-  AlertTriangle,
-  Clock,
-  CheckCircle2,
-  Database,
-  RotateCcw,
 } from "lucide-react";
 
-const carrerasData = [
-  { c: "Sistemas Computacionales", a: 245 },
-  { c: "Ing. en Semiconductores", a: 189 },
-  { c: "IA y Ciencia de Datos", a: 156 },
-  { c: "Arquitectura de Sistemas IA", a: 134 },
-  { c: "Desarrollo y Tec. Software", a: 120 },
-];
+import type { DireccionIndicadoresResponse } from "../../../domain/direccion/DireccionIndicadores";
+import { descargarDireccionCsv, obtenerIndicadoresDireccion } from "../../../infrastructure/direccion/direccionApi";
 
-const horasData = [
-  { m: "Jun", h: 10400 },
-  { m: "Jul", h: 15800 },
-  { m: "Ago", h: 18200 },
-  { m: "Sep", h: 22100 },
-  { m: "Oct", h: 28400 },
-  { m: "Nov", h: 31560 },
-];
-
-const estadoData = [
-  { name: "Concluidos", value: 312, color: "#22c55e" },
-  { name: "En prácticas", value: 648, color: "#1565c0" },
-  { name: "Rezagados", value: 43, color: "#f59e0b" },
-  { name: "Pendientes", value: 245, color: "#94a3b8" },
-];
-
-const conveniosData = [
-  { estado: "Vigentes", total: 22 },
-  { estado: "Por vencer", total: 8 },
-  { estado: "Vencidos", total: 3 },
-];
+const colores = ["#1565c0", "#22c55e", "#f59e0b", "#ef4444", "#94a3b8", "#7c3aed"];
 
 export function DireccionDashboard() {
-  const [convocatoria, setConvocatoria] = useState("Verano 2026");
-  const [carrera, setCarrera] = useState("Todas");
-  const [estado, setEstado] = useState("Todos");
-  const [tipo, setTipo] = useState("Todos");
+  const [datos, setDatos] = useState<DireccionIndicadoresResponse | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
 
-  const totalAlumnos = 844;
-  const concluidos = 312;
-  const enPracticas = 648;
-  const rezagados = 43;
-  const empresasActivas = 48;
-  const conveniosActivos = 22;
-  const conveniosPorVencer = 8;
-  const horasRegistradas = 48560;
-  const avanceGeneral = Math.round((concluidos / totalAlumnos) * 100);
+  useEffect(() => {
+    void cargar();
+  }, []);
 
-  const resumen = useMemo(
-    () => [
-      {
-        l: "Alumnos registrados",
-        v: totalAlumnos.toLocaleString(),
-        I: Users,
-      },
-      {
-        l: "En prácticas",
-        v: enPracticas.toLocaleString(),
-        I: Clock,
-      },
-      {
-        l: "Empresas activas",
-        v: empresasActivas.toString(),
-        I: Building2,
-      },
-      {
-        l: "Convenios vigentes",
-        v: conveniosActivos.toString(),
-        I: FileText,
-      },
-      {
-        l: "Avance general",
-        v: `${avanceGeneral}%`,
-        I: TrendingUp,
-      },
-    ],
-    [avanceGeneral],
+  async function cargar() {
+    try {
+      setCargando(true);
+      setError("");
+      setDatos(await obtenerIndicadoresDireccion());
+    } catch (err) {
+      console.error(err);
+      setError("No se pudieron cargar los indicadores institucionales.");
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  const resumen = datos?.resumen;
+  const avanceGeneral = resumen?.alumnos ? Math.round((resumen.concluidos / resumen.alumnos) * 100) : 0;
+
+  const estadoData = useMemo(
+    () =>
+      (datos?.alumnos_por_estado ?? []).map((item, index) => ({
+        name: item.nombre,
+        value: item.total,
+        color: colores[index % colores.length],
+      })),
+    [datos],
   );
 
-  const limpiarFiltros = () => {
-    setConvocatoria("Verano 2026");
-    setCarrera("Todas");
-    setEstado("Todos");
-    setTipo("Todos");
-  };
+  const conveniosData = datos?.convenios_por_estado ?? [];
 
-  const exportarDatos = () => {
-    alert("Exportación de datos brutos generada para auditoría.");
-  };
+  const tarjetas = [
+    { l: "Alumnos registrados", v: resumen?.alumnos ?? 0, I: Users },
+    { l: "En practicas", v: resumen?.en_practicas ?? 0, I: Clock },
+    { l: "Empresas activas", v: resumen?.empresas_activas ?? 0, I: Building2 },
+    { l: "Convenios vigentes", v: resumen?.convenios_vigentes ?? 0, I: FileText },
+    { l: "Avance general", v: `${avanceGeneral}%`, I: TrendingUp },
+  ];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[#0d2b5e]">
-            Dashboard Institucional — Prácticas Profesionales
+            Dashboard Institucional - Practicas Profesionales
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            Vista de consulta para Dirección / Secretaría · Datos actualizados al
-            03 jun 2026.
+            Vista de consulta para Direccion / Secretaria. Actualizado: {datos?.contexto.fecha_actualizacion ?? "..."}.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 px-4 py-2 rounded-xl">
             <Eye className="w-4 h-4 text-[#1565c0]" />
-            <span className="text-xs text-[#1565c0] font-semibold">
-              Solo lectura
-            </span>
+            <span className="text-xs text-[#1565c0] font-semibold">Solo lectura</span>
           </div>
 
           <button
-            onClick={exportarDatos}
+            onClick={() => void descargarDireccionCsv("brutos")}
             className="flex items-center gap-2 bg-[#0d2b5e] text-white px-4 py-2 rounded-xl text-xs font-semibold hover:bg-[#1565c0]"
           >
             <Download className="w-4 h-4" />
@@ -148,112 +104,42 @@ export function DireccionDashboard() {
         </div>
       </div>
 
-      {/* Filtros institucionales */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-[#1565c0]" />
-            <h3 className="font-bold text-[#0d2b5e] text-sm">
-              Filtros de consulta institucional
-            </h3>
-          </div>
+      {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
 
-          <button
-            onClick={limpiarFiltros}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#1565c0]"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Limpiar filtros
-          </button>
-        </div>
-
-        <div className="grid md:grid-cols-4 gap-3">
-          <select
-            value={convocatoria}
-            onChange={(e) => setConvocatoria(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white"
-          >
-            <option>Verano 2026</option>
-            <option>Agosto-Diciembre 2026</option>
-            <option>Verano 2025</option>
-          </select>
-
-          <select
-            value={carrera}
-            onChange={(e) => setCarrera(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white"
-          >
-            <option>Todas</option>
-            {carrerasData.map((c) => (
-              <option key={c.c}>{c.c}</option>
-            ))}
-          </select>
-
-          <select
-            value={estado}
-            onChange={(e) => setEstado(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white"
-          >
-            <option>Todos</option>
-            <option>En prácticas</option>
-            <option>Concluidos</option>
-            <option>Rezagados</option>
-            <option>Pendientes</option>
-          </select>
-
-          <select
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white"
-          >
-            <option>Todos</option>
-            <option>Semestral</option>
-            <option>Cuatrimestral</option>
-            <option>Residencia</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Indicadores discretos */}
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
-        {resumen.map((k) => (
-          <div
-            key={k.l}
-            className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3"
-          >
+        {tarjetas.map((k) => (
+          <div key={k.l} className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
             <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-gray-500">
               <k.I className="w-4 h-4" />
             </div>
-
             <div>
-              <div className="text-lg font-bold text-[#0d2b5e]">{k.v}</div>
+              <div className="text-lg font-bold text-[#0d2b5e]">{cargando ? "..." : k.v}</div>
               <div className="text-xs text-gray-500">{k.l}</div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Alertas institucionales */}
       <div className="grid md:grid-cols-3 gap-4">
         {[
           {
-            t: "Convenios próximos a vencer",
-            v: conveniosPorVencer,
-            s: "Requieren seguimiento por vinculación.",
+            t: "Convenios proximos a vencer",
+            v: resumen?.convenios_por_vencer ?? 0,
+            s: "Requieren seguimiento institucional.",
             c: "bg-orange-50 border-orange-200 text-orange-700",
             I: AlertTriangle,
           },
           {
             t: "Alumnos rezagados",
-            v: rezagados,
-            s: "Pendientes de asignación o seguimiento.",
+            v: resumen?.rezagados ?? 0,
+            s: "Asignaciones marcadas como rezagadas.",
             c: "bg-yellow-50 border-yellow-200 text-yellow-700",
             I: Clock,
           },
           {
-            t: "Prácticas concluidas",
-            v: concluidos,
-            s: "Expedientes cerrados satisfactoriamente.",
+            t: "Practicas concluidas",
+            v: resumen?.concluidos ?? 0,
+            s: "Liberaciones registradas en el sistema.",
             c: "bg-green-50 border-green-200 text-green-700",
             I: CheckCircle2,
           },
@@ -273,80 +159,33 @@ export function DireccionDashboard() {
 
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-5">
-            Alumnos por carrera
-          </h3>
-
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart
-              data={carrerasData.map((d) => ({
-                carrera: d.c,
-                alumnos: d.a,
-              }))}
-              layout="vertical"
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="#f0f0f0"
-                horizontal={false}
-              />
+          <h3 className="font-bold text-[#0d2b5e] mb-5">Alumnos por carrera</h3>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={datos?.alumnos_por_carrera ?? []} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11, fill: "#9ca3af" }} />
-              <YAxis
-                type="category"
-                dataKey="carrera"
-                width={115}
-                tick={{ fontSize: 10, fill: "#6b7280" }}
-              />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: "12px",
-                  border: "1px solid #e5e7eb",
-                  fontSize: "12px",
-                }}
-              />
+              <YAxis type="category" dataKey="carrera" width={130} tick={{ fontSize: 10, fill: "#6b7280" }} />
+              <Tooltip />
               <Bar dataKey="alumnos" fill="#1565c0" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-5">
-            Estado general del proceso
-          </h3>
-
+          <h3 className="font-bold text-[#0d2b5e] mb-5">Estado general de alumnos</h3>
           <ResponsiveContainer width="100%" height={240}>
             <PieChart>
-              <Pie
-                data={estadoData}
-                cx="50%"
-                cy="50%"
-                outerRadius={85}
-                dataKey="value"
-              >
-                {estadoData.map((e, i) => (
-                  <Cell key={i} fill={e.color} />
-                ))}
+              <Pie data={estadoData} cx="50%" cy="50%" outerRadius={85} dataKey="value">
+                {estadoData.map((e, i) => <Cell key={i} fill={e.color} />)}
               </Pie>
-
-              <Tooltip
-                contentStyle={{
-                  borderRadius: "12px",
-                  border: "1px solid #e5e7eb",
-                }}
-              />
+              <Tooltip />
             </PieChart>
           </ResponsiveContainer>
-
           <div className="flex flex-wrap justify-center gap-4 mt-2">
             {estadoData.map((item) => (
               <div key={item.name} className="flex items-center gap-1.5">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ background: item.color }}
-                />
-                <span className="text-xs text-gray-500">
-                  {item.name}: {item.value}
-                </span>
+                <div className="w-3 h-3 rounded-full" style={{ background: item.color }} />
+                <span className="text-xs text-gray-500">{item.name}: {item.value}</span>
               </div>
             ))}
           </div>
@@ -355,71 +194,29 @@ export function DireccionDashboard() {
 
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-5">
-            Horas registradas por mes
-          </h3>
-
+          <h3 className="font-bold text-[#0d2b5e] mb-5">Horas registradas por mes</h3>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart
-              data={horasData.map((d) => ({
-                mes: d.m,
-                horas: d.h,
-              }))}
-            >
+            <LineChart data={datos?.horas_por_mes ?? []}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey="mes"
-                tick={{ fontSize: 12, fill: "#9ca3af" }}
-              />
+              <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#9ca3af" }} />
               <YAxis tick={{ fontSize: 12, fill: "#9ca3af" }} />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: "12px",
-                  border: "1px solid #e5e7eb",
-                }}
-                formatter={(v: any) => [
-                  `${Number(v).toLocaleString()} hrs`,
-                ]}
-              />
-              <Line
-                type="monotone"
-                dataKey="horas"
-                stroke="#1565c0"
-                strokeWidth={3}
-                dot={{ fill: "#1565c0", r: 5 }}
-              />
+              <Tooltip formatter={(v: any) => [`${Number(v).toLocaleString()} hrs`]} />
+              <Line type="monotone" dataKey="horas" stroke="#1565c0" strokeWidth={3} dot={{ fill: "#1565c0", r: 5 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-5">
-            Estado de convenios
-          </h3>
-
+          <h3 className="font-bold text-[#0d2b5e] mb-5">Estado de convenios</h3>
           <div className="space-y-4">
             {conveniosData.map((c) => (
-              <div key={c.estado}>
+              <div key={c.nombre}>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span className="text-gray-600">{c.estado}</span>
-                  <span className="font-semibold text-[#0d2b5e]">
-                    {c.total}
-                  </span>
+                  <span className="text-gray-600">{c.nombre}</span>
+                  <span className="font-semibold text-[#0d2b5e]">{c.total}</span>
                 </div>
-
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-2 rounded-full ${
-                      c.estado === "Vigentes"
-                        ? "bg-green-500"
-                        : c.estado === "Por vencer"
-                          ? "bg-orange-500"
-                          : "bg-red-500"
-                    }`}
-                    style={{
-                      width: `${(c.total / 33) * 100}%`,
-                    }}
-                  />
+                  <div className="h-2 rounded-full bg-[#1565c0]" style={{ width: `${Math.min(100, c.total * 10)}%` }} />
                 </div>
               </div>
             ))}
@@ -428,8 +225,7 @@ export function DireccionDashboard() {
           <div className="mt-5 bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-start gap-3">
             <Database className="w-5 h-5 text-gray-500 mt-0.5" />
             <p className="text-xs text-gray-500">
-              Esta vista no modifica registros. Su propósito es consultar
-              indicadores, históricos y datos brutos para revisión institucional.
+              Esta vista consulta indicadores reales y no modifica registros.
             </p>
           </div>
         </div>

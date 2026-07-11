@@ -12,7 +12,14 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  const usuario = JSON.parse(usuarioGuardado);
+  let usuario;
+  try {
+    usuario = JSON.parse(usuarioGuardado);
+  } catch {
+    localStorage.removeItem("token");
+    localStorage.removeItem("usuario");
+    return <Navigate to="/login" replace />;
+  }
 
   if (
     allowedRoles &&

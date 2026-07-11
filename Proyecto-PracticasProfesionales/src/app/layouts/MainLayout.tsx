@@ -1,35 +1,41 @@
 import { useState } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import {
-  CheckCircle,
-} from "lucide-react";
-import { Outlet, useNavigate, useLocation } from "react-router";
-import {
-  GraduationCap,
-  LayoutDashboard,
-  BookOpen,
-  Shield,
-  FileText,
-  Clock,
-  Bell,
-  User,
-  ChevronRight,
-  Building2,
-  Users,
-  FileCheck,
+  Award,
   BarChart3,
-  Settings,
-  Clock3,
+  Bell,
   Briefcase,
-  Home,
+  Building2,
+  CheckCircle,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Clock3,
   ClipboardList,
+  FileCheck,
+  FileText,
+  Home,
+  LayoutDashboard,
   LogOut,
   Menu,
-  ChevronLeft,
-  ChevronDown,
+  Settings,
+  Shield,
   Star,
-  MessageSquare,
+  User,
+  UserCheck,
+  Users,
 } from "lucide-react";
-import unachlogo from "../../assets/unachlogo1.jpg";
+
+import logoInstitucional from "../../assets/Ocelote1.png";
+
+type UsuarioSesion = {
+  nombre?: string;
+  nombre_completo?: string;
+  rol?: string | null;
+  correo?: string;
+};
+
 type NavItem = {
   label: string;
   icon: any;
@@ -37,308 +43,142 @@ type NavItem = {
   badge?: number;
 };
 
+function obtenerUsuarioSesion(): UsuarioSesion | null {
+  const usuario = localStorage.getItem("usuario");
+  if (!usuario) return null;
+
+  try {
+    return JSON.parse(usuario);
+  } catch {
+    return null;
+  }
+}
+
 function getNav(role: string): NavItem[] {
-if (role === "alumno")
-  return [
-    {
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      path: "/alumno",
-    },
-    {
-      label: "Documentación",
-      icon: FileText,
-      path: "/alumno/documentos",
-    },
-    {
-      label: "Padrón Empresarial",
-      icon: Building2,
-      path: "/alumno/padron",
-    },
-    {
-      label: "Mis Reportes",
-      icon: ClipboardList,
-      path: "/alumno/reportes",
-    },
-    {
-      label: "Horas Acumuladas",
-      icon: Clock3,
-      path: "/alumno/horas",
-    },
-    {
-      label: "Evaluación Empresa",
-      icon: Star,
-      path: "/alumno/evaluacion",
-    },
-    {
-      label: "Notificaciones",
-      icon: Bell,
-      path: "/alumno/notificaciones",
-    },
-    {
-      label: "Perfil",
-      icon: User,
-      path: "/alumno/perfil",
-    },
-  ];
- if (role === "coordinador")
-  return [
-    {
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      path: "/coordinador",
-    },
-    {
-      label: "Gestión de Alumnos",
-      icon: Users,
-      path: "/coordinador/alumnos",
-    },
-    {
-      label: "Revisión de Documentos",
-      icon: FileCheck,
-      path: "/coordinador/documentos",
-    },
-    {
-      label: "Asignaciones",
-      icon: ClipboardList,
-      path: "/coordinador/asignaciones",
-    },
-    {
-      label: "Seguimiento",
-      icon: Clock,
-      path: "/coordinador/seguimiento",
-    },
-    {
-      label: "Liberación",
-      icon: CheckCircle,
-      path: "/coordinador/liberacion",
-    },
-    {
-      label: "Notificaciones",
-      icon: Bell,
-      path: "/coordinador/notificaciones",
-      badge: 5,
-    },
-  ];
-  if (role === "unidad")
+  if (role === "alumno") {
     return [
-      {
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        path: "/unidad",
-      },
-      {
-        label: "Perfil Empresa",
-        icon: Building2,
-        path: "/unidad/perfil",
-      },
-      {
-        label: "Plan de trabajo",
-        icon: Briefcase,
-        path: "/unidad/ofertas",
-      },
-      {
-        label: "Alumnos",
-        icon: Users,
-        path: "/unidad/alumnos",
-      },
-      {
-        label: "Convenios",
-        icon: FileText,
-        path: "/unidad/convenios",
-      },
+      { label: "Dashboard", icon: LayoutDashboard, path: "/alumno" },
+      { label: "Documentacion", icon: FileText, path: "/alumno/documentos" },
+      { label: "Padron Empresarial", icon: Building2, path: "/alumno/padron" },
+      { label: "Mis Reportes", icon: ClipboardList, path: "/alumno/reportes" },
+      { label: "Horas Acumuladas", icon: Clock3, path: "/alumno/horas" },
+      { label: "Evaluacion Empresa", icon: Star, path: "/alumno/evaluacion" },
+      { label: "Mi Liberacion", icon: Award, path: "/alumno/liberacion" },
+      { label: "Notificaciones", icon: Bell, path: "/alumno/notificaciones" },
+      { label: "Perfil", icon: User, path: "/alumno/perfil" },
+    ];
+  }
+
+  if (role === "coordinador") {
+    return [
+      { label: "Dashboard", icon: LayoutDashboard, path: "/coordinador" },
+      { label: "Gestion de Alumnos", icon: Users, path: "/coordinador/alumnos" },
+      { label: "Revision de Documentos", icon: FileCheck, path: "/coordinador/documentos" },
+      { label: "Asignaciones", icon: ClipboardList, path: "/coordinador/asignaciones" },
+      { label: "Asignar Asesores", icon: UserCheck, path: "/coordinador/asesores" },
+      { label: "Seguimiento", icon: Clock, path: "/coordinador/seguimiento" },
+      { label: "Liberacion", icon: CheckCircle, path: "/coordinador/liberacion" },
+      { label: "Notificaciones", icon: Bell, path: "/coordinador/notificaciones" },
+    ];
+  }
+
+  if (role === "unidad") {
+    return [
+      { label: "Dashboard", icon: LayoutDashboard, path: "/unidad" },
+      { label: "Perfil Empresa", icon: Building2, path: "/unidad/perfil" },
+      { label: "Plan de trabajo", icon: Briefcase, path: "/unidad/ofertas" },
+      { label: "Alumnos", icon: Users, path: "/unidad/alumnos" },
+      { label: "Convenios", icon: FileText, path: "/unidad/convenios" },
       { label: "Horas", icon: Clock, path: "/unidad/horas" },
-      {
-        label: "Evaluaciones",
-        icon: Star,
-        path: "/unidad/evaluaciones",
-      },
-      {
-        label: "Registro de Empresa",
-        icon: ClipboardList,
-        path: "/unidad/registro",
-      },
+      { label: "Evaluaciones", icon: Star, path: "/unidad/evaluaciones" },
     ];
-  if (role === "coord-unidades")
-  return [
-    {
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      path: "/coord-unidades",
-    },
-    {
-      label: "Empresas",
-      icon: Building2,
-      path: "/coord-unidades/empresas",
-    },
-    {
-      label: "Convenios",
-      icon: FileText,
-      path: "/coord-unidades/convenios",
-    },
-    {
-      label: "Vacantes",
-      icon: Briefcase,
-      path: "/coord-unidades/vacantes",
-    },
-    {
-      label: "Padrón Empresarial",
-      icon: ClipboardList,
-      path: "/coord-unidades/padron",
-    },
-    {
-      label: "Notificaciones",
-      icon: Bell,
-      path: "/coord-unidades/notificaciones",
-    },
-  ];
-  if (role === "admin")
+  }
+
+  if (role === "coord-unidades") {
     return [
-      {
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        path: "/admin",
-      },
-      {
-        label: "Gestión de Usuarios",
-        icon: Users,
-        path: "/admin/usuarios",
-      },
-      {
-        label: "Roles y Permisos",
-        icon: Shield,
-        path: "/admin/roles",
-      },
-      {
-        label: "Catálogos",
-        icon: ClipboardList,
-        path: "/admin/catalogos",
-      },
-      {
-        label: "Reportes",
-        icon: BarChart3,
-        path: "/admin/reportes",
-      },
-      {
-        label: "Configuración",
-        icon: Settings,
-        path: "/admin/configuracion",
-      },
+      { label: "Dashboard", icon: LayoutDashboard, path: "/coord-unidades" },
+      { label: "Empresas", icon: Building2, path: "/coord-unidades/empresas" },
+      { label: "Convenios", icon: FileText, path: "/coord-unidades/convenios" },
+      { label: "Vacantes", icon: Briefcase, path: "/coord-unidades/vacantes" },
+      { label: "Padron Empresarial", icon: ClipboardList, path: "/coord-unidades/padron" },
+      { label: "Notificaciones", icon: Bell, path: "/coord-unidades/notificaciones" },
     ];
-  if (role === "asesor")
+  }
+
+  if (role === "admin") {
     return [
-      {
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        path: "/asesor",
-      },
-      {
-        label: "Alumnos Asignados",
-        icon: Users,
-        path: "/asesor/alumnos",
-      },
-      {
-        label: "Reportes",
-        icon: BarChart3,
-        path: "/asesor/reportes",
-      },
-      {
-        label: "Observaciones",
-        icon: MessageSquare,
-        path: "/asesor/observaciones",
-      },
+      { label: "Dashboard", icon: LayoutDashboard, path: "/admin" },
+      { label: "Gestion de Usuarios", icon: Users, path: "/admin/usuarios" },
+      { label: "Roles y Permisos", icon: Shield, path: "/admin/roles" },
+      { label: "Catalogos", icon: ClipboardList, path: "/admin/catalogos" },
+      { label: "Reportes", icon: BarChart3, path: "/admin/reportes" },
+      { label: "Configuracion", icon: Settings, path: "/admin/configuracion" },
     ];
-  if (role === "direccion")
+  }
+
+  if (role === "asesor") {
     return [
-      {
-        label: "Dashboard Ejecutivo",
-        icon: LayoutDashboard,
-        path: "/direccion",
-      },
-      {
-        label: "Estadísticas",
-        icon: BarChart3,
-        path: "/direccion/estadisticas",
-      },
-      {
-        label: "Reportes",
-        icon: FileText,
-        path: "/direccion/reportes",
-      },
+      { label: "Dashboard", icon: LayoutDashboard, path: "/asesor" },
+      { label: "Alumnos Asignados", icon: Users, path: "/asesor/alumnos" },
+      { label: "Reportes", icon: BarChart3, path: "/asesor/reportes" },
+      { label: "Evaluaciones", icon: Star, path: "/asesor/observaciones" },
     ];
+  }
+
+  if (role === "direccion") {
+    return [
+      { label: "Dashboard Ejecutivo", icon: LayoutDashboard, path: "/direccion" },
+      { label: "Estadisticas", icon: BarChart3, path: "/direccion/estadisticas" },
+      { label: "Reportes", icon: FileText, path: "/direccion/reportes" },
+    ];
+  }
+
   return [];
 }
 
-function getRoleInfo(pathname: string) {
-  const usuario = JSON.parse(
-    localStorage.getItem("usuario") || "{}"
-  );
+function normalizarRol(raw?: string | null) {
+  const rol = (raw ?? "").toLowerCase();
 
-  const nombreCompleto =
-    `${usuario.nombre ?? ""} ${usuario.apellido_paterno ?? ""} ${usuario.apellido_materno ?? ""}`.trim() ||
-    "Usuario";
+  if (rol.includes("alumno")) return "alumno";
+  if (rol.includes("coordinador de unidades")) return "coord-unidades";
+  if (rol.includes("coordinador")) return "coordinador";
+  if (rol.includes("unidad") || rol.includes("empresa")) return "unidad";
+  if (rol.includes("admin")) return "admin";
+  if (rol.includes("asesor") || rol.includes("docente")) return "asesor";
+  if (rol.includes("direccion")) return "direccion";
 
-  if (pathname.startsWith("/alumno"))
-    return {
-      role: "alumno",
-      label: "Alumno",
-      name: nombreCompleto,
-      subtitle: "Ingeniería en Desarrollo de Software",
-    };
+  return null;
+}
 
-  if (pathname.startsWith("/coordinador"))
-    return {
-      role: "coordinador",
-      label: "Coordinador de Prácticas",
-      name: nombreCompleto,
-      subtitle: "Coordinación de Prácticas",
-    };
+function getRoleInfo(pathname: string, usuario: UsuarioSesion | null) {
+  const rolSesion = normalizarRol(usuario?.rol);
 
-  if (pathname.startsWith("/unidad"))
-    return {
-      role: "unidad",
-      label: "Unidad Receptora",
-      name: nombreCompleto,
-      subtitle: "Empresa asociada",
-    };
-
-  if (pathname.startsWith("/coord-unidades"))
-    return {
-      role: "coord-unidades",
-      label: "Coord. Unidades Receptoras",
-      name: nombreCompleto,
-      subtitle: "Unidades Receptoras",
-    };
-
-  if (pathname.startsWith("/admin"))
-    return {
-      role: "admin",
-      label: "Administrador",
-      name: nombreCompleto,
-      subtitle: "Administración General",
-    };
-
-  if (pathname.startsWith("/asesor"))
-    return {
-      role: "asesor",
-      label: "Asesor Interno",
-      name: nombreCompleto,
-      subtitle: "Asesoría Académica",
-    };
-
-  if (pathname.startsWith("/direccion"))
-    return {
-      role: "direccion",
-      label: "Dirección",
-      name: nombreCompleto,
-      subtitle: "Solo Lectura",
-    };
+  if (pathname.startsWith("/alumno")) {
+    return { role: "alumno", label: "Alumno", subtitle: usuario?.rol ?? "Alumno" };
+  }
+  if (pathname.startsWith("/coordinador")) {
+    return { role: "coordinador", label: "Coordinador de Practicas", subtitle: usuario?.rol ?? "Coordinacion" };
+  }
+  if (pathname.startsWith("/unidad")) {
+    return { role: "unidad", label: "Unidad Receptora", subtitle: usuario?.rol ?? "Empresa asociada" };
+  }
+  if (pathname.startsWith("/coord-unidades")) {
+    return { role: "coord-unidades", label: "Coord. Unidades Receptoras", subtitle: usuario?.rol ?? "Unidades receptoras" };
+  }
+  if (pathname.startsWith("/admin")) {
+    return { role: "admin", label: "Administrador", subtitle: usuario?.rol ?? "Administracion general" };
+  }
+  if (pathname.startsWith("/asesor")) {
+    return { role: "asesor", label: "Asesor Interno", subtitle: usuario?.rol ?? "Asesoria academica" };
+  }
+  if (pathname.startsWith("/direccion")) {
+    return { role: "direccion", label: "Direccion", subtitle: usuario?.rol ?? "Solo lectura" };
+  }
 
   return {
-    role: "alumno",
-    label: "Alumno",
-    name: nombreCompleto,
-    subtitle: "",
+    role: rolSesion ?? "alumno",
+    label: usuario?.rol ?? "Usuario",
+    subtitle: usuario?.rol ?? "",
   };
 }
 
@@ -348,17 +188,14 @@ export function MainLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const { role, label, name, subtitle } = getRoleInfo(
-    location.pathname,
-  );
+  const usuarioSesion = obtenerUsuarioSesion();
+  const { role, label, subtitle } = getRoleInfo(location.pathname, usuarioSesion);
+  const displayName =
+    usuarioSesion?.nombre_completo || usuarioSesion?.nombre || usuarioSesion?.correo || "Usuario";
+  const displaySubtitle = usuarioSesion?.rol || subtitle;
   const navItems = getNav(role);
-  const breadcrumb =
-    navItems.find((n) => n.path === location.pathname)?.label ||
-    "Inicio";
-  const notifCount = navItems.reduce(
-    (a, n) => a + (n.badge || 0),
-    0,
-  );
+  const breadcrumb = navItems.find((n) => n.path === location.pathname)?.label || "Inicio";
+  const notifCount = navItems.reduce((a, n) => a + (n.badge || 0), 0);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -370,44 +207,30 @@ export function MainLayout() {
       )}
 
       <aside
-        className={`fixed top-0 left-0 h-full bg-[#0d2b5e] z-30 flex flex-col transition-all duration-300 ${collapsed ? "w-16" : "w-64"} ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        className={`fixed top-0 left-0 h-full bg-[#0d2b5e] z-30 flex flex-col transition-all duration-300 ${collapsed ? "w-14" : "w-56"} ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
       >
-        <div
-          className={`flex items-center gap-3 px-4 py-5 border-b border-white/10 ${collapsed ? "justify-center" : ""}`}
-        >
-          <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
-  <img
-    src={unachlogo}
-    alt="UNACH"
-    className="w-full h-full object-contain"
-  />
-</div>
+        <div className={`flex items-center gap-3 px-3 py-3 border-b border-white/10 ${collapsed ? "justify-center" : ""}`}>
+          <div className="w-12 h-12 bg-[#0d2b5e] rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden">
+            <img src={logoInstitucional} alt="UNACH" className="w-full h-full object-contain" />
+          </div>
           {!collapsed && (
             <div>
-              <div className="text-white font-bold text-sm">
-                UNACH
-              </div>
-              <div className="text-blue-300 text-xs">
-                Prácticas Profesionales
-              </div>
+              <div className="text-white font-bold text-sm">UNACH</div>
+              <div className="text-blue-300 text-xs">Practicas Profesionales</div>
             </div>
           )}
         </div>
 
         {!collapsed && (
-          <div className="px-4 py-3 border-b border-white/10">
-            <div className="bg-white/10 rounded-xl px-3 py-2">
-              <div className="text-white font-semibold text-xs">
-                {name}
-              </div>
-              <div className="text-blue-300 text-xs mt-0.5">
-                {label}
-              </div>
+          <div className="px-2.5 py-1.5 border-b border-white/10">
+            <div className="bg-white/10 rounded-xl px-2.5 py-1.5">
+              <div className="text-white font-semibold text-xs">{displayName}</div>
+              <div className="text-blue-300 text-xs mt-0.5">{label}</div>
             </div>
           </div>
         )}
 
-        <nav className="flex-1 py-4 overflow-y-auto">
+        <nav className="flex-1 py-2 overflow-y-auto">
           {navItems.map((item) => {
             const active = location.pathname === item.path;
             return (
@@ -418,19 +241,13 @@ export function MainLayout() {
                   setMobileOpen(false);
                 }}
                 title={collapsed ? item.label : undefined}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors group relative ${active ? "bg-white/20 text-white" : "text-blue-200 hover:bg-white/10 hover:text-white"} ${collapsed ? "justify-center" : ""}`}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors group relative ${active ? "bg-white/20 text-white" : "text-blue-200 hover:bg-white/10 hover:text-white"} ${collapsed ? "justify-center" : ""}`}
               >
-                {active && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-white rounded-r-full" />
-                )}
-                <item.icon
-                  className={`w-5 h-5 flex-shrink-0 ${active ? "text-white" : "text-blue-300 group-hover:text-white"}`}
-                />
+                {active && <div className="absolute left-0 top-0 bottom-0 w-1 bg-white rounded-r-full" />}
+                <item.icon className={`w-4 h-4 flex-shrink-0 ${active ? "text-white" : "text-blue-300 group-hover:text-white"}`} />
                 {!collapsed && (
                   <>
-                    <span className="text-sm font-medium">
-                      {item.label}
-                    </span>
+                    <span className="text-xs font-medium">{item.label}</span>
                     {item.badge && (
                       <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
                         {item.badge}
@@ -449,82 +266,69 @@ export function MainLayout() {
         <div className="border-t border-white/10 p-3 space-y-1">
           <button
             onClick={() => navigate("/")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+            className={`w-full flex items-center gap-3 px-2.5 py-2 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
             <Home className="w-4 h-4 flex-shrink-0" />
-            {!collapsed && (
-              <span className="text-sm">Inicio</span>
-            )}
+            {!collapsed && <span className="text-xs">Inicio</span>}
           </button>
           <button
-            onClick={() => navigate("/login")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+            onClick={() => {
+              localStorage.removeItem("token");
+              localStorage.removeItem("usuario");
+              navigate("/login");
+            }}
+            className={`w-full flex items-center gap-3 px-2.5 py-2 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
             <LogOut className="w-4 h-4 flex-shrink-0" />
-            {!collapsed && (
-              <span className="text-sm">Cerrar Sesión</span>
-            )}
+            {!collapsed && <span className="text-xs">Cerrar Sesion</span>}
           </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className={`hidden lg:flex w-full items-center gap-3 px-3 py-2.5 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
+            className={`hidden lg:flex w-full items-center gap-3 px-2.5 py-2 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
             {collapsed ? (
               <ChevronRight className="w-4 h-4" />
             ) : (
               <>
                 <ChevronLeft className="w-4 h-4" />
-                <span className="text-sm">Colapsar</span>
+                <span className="text-xs">Colapsar</span>
               </>
             )}
           </button>
         </div>
       </aside>
 
-      <div
-        className={`flex-1 flex flex-col transition-all duration-300 ${collapsed ? "lg:ml-16" : "lg:ml-64"}`}
-      >
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-10 shadow-sm">
-          <button
-            className="lg:hidden text-gray-500"
-            onClick={() => setMobileOpen(true)}
-          >
-            <Menu className="w-6 h-6" />
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${collapsed ? "lg:ml-14" : "lg:ml-56"}`}>
+        <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center gap-4 sticky top-0 z-10 shadow-sm">
+          <button className="lg:hidden text-gray-500" onClick={() => setMobileOpen(true)}>
+            <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2 text-sm text-gray-500 flex-1">
-            <span className="text-[#1565c0] font-semibold">
-              {label}
-            </span>
+          <div className="flex items-center gap-2 text-xs text-gray-500 flex-1">
+            <span className="text-[#1565c0] font-semibold">{label}</span>
             <ChevronDown className="w-3 h-3 -rotate-90" />
-            <span className="text-gray-700 font-medium">
-              {breadcrumb}
-            </span>
+            <span className="text-gray-700 font-medium">{breadcrumb}</span>
           </div>
-          <div className="flex items-center gap-4">
-            <button className="relative p-2 text-gray-500 hover:text-[#1565c0] hover:bg-blue-50 rounded-xl transition-colors">
-              <Bell className="w-5 h-5" />
+          <div className="flex items-center gap-3">
+            <button className="relative p-1.5 text-gray-500 hover:text-[#1565c0] hover:bg-blue-50 rounded-xl transition-colors">
+              <Bell className="w-4 h-4" />
               {notifCount > 0 && (
                 <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">
                   {notifCount}
                 </span>
               )}
             </button>
-            <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
-              <div className="w-9 h-9 bg-[#0d2b5e] rounded-xl flex items-center justify-center">
-                <User className="w-5 h-5 text-white" />
+            <div className="flex items-center gap-2.5 pl-3 border-l border-gray-200">
+              <div className="w-8 h-8 bg-[#0d2b5e] rounded-xl flex items-center justify-center">
+                <User className="w-4 h-4 text-white" />
               </div>
               <div className="hidden md:block">
-                <div className="text-sm font-semibold text-gray-800">
-                  {name}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {subtitle}
-                </div>
+                <div className="text-xs font-semibold text-gray-800">{displayName}</div>
+                <div className="text-[11px] text-gray-400">{displaySubtitle}</div>
               </div>
             </div>
           </div>
         </header>
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="flex-1 p-5 overflow-auto">
           <Outlet />
         </main>
       </div>

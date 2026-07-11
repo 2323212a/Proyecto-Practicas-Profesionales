@@ -1,9 +1,9 @@
 export const ROLES = [
   "Alumno",
-  "Coordinador",
-  "Coordinador Unidades",
-  "Unidad Receptora",
-  "Asesor",
-  "Dirección",
   "Administrador",
+  "Coordinador de Practicas",
+  "Coordinador de Unidades Receptoras",
+  "Unidad Receptora",
+  "Asesor Interno",
+  "Direccion",
 ];

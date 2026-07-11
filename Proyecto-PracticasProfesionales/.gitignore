@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+node_modules/
+.npm-cache/
+backend/.venv/
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+backend/.env
+backend/uploads/
+*:Zone.Identifier

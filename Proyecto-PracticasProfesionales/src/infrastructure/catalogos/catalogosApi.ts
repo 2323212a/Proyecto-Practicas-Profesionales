@@ -119,6 +119,7 @@ export async function crearTipoDocumento(data: {
   descripcion?: string;
   etapa?: string;
   obligatorio: boolean;
+  requiere_formato: boolean;
 }) {
   const response = await apiClient.post("/tipos-documento/", data);
   return response.data;
@@ -131,6 +132,7 @@ export async function actualizarTipoDocumento(
     descripcion?: string;
     etapa?: string;
     obligatorio: boolean;
+    requiere_formato: boolean;
   }
 ) {
   const response = await apiClient.put(`/tipos-documento/${id}`, data);
