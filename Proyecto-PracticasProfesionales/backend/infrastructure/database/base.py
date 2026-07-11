@@ -1,1 +1,0 @@
-from infrastructure.database.connection import Base
