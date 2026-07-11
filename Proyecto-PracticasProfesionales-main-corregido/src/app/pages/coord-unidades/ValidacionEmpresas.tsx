@@ -14,6 +14,7 @@ import axios from "axios";
 import { gestionEmpresasRevisionUseCase } from "../../dependencies";
 import type { EmpresaRevision, SolicitudEmpresaDetalle } from "../../../domain/coord-unidades/EmpresaRevision";
 
+import type { ColoredStatCard } from "../../../shared/types/ui";
 const estadoColor: Record<string, string> = {
   Pendiente: "bg-orange-100 text-orange-700",
   Activa: "bg-green-100 text-green-700",
@@ -163,12 +164,12 @@ export function ValidacionEmpresas() {
       )}
 
       <div className="grid md:grid-cols-4 gap-4">
-        {[
+        {([
           ["Solicitudes", resumen.solicitudes, Clock, "bg-blue-600"],
           ["En proceso", resumen.pendientes, Clock, "bg-orange-500"],
           ["Suspendidas", resumen.suspendidas, AlertTriangle, "bg-red-500"],
           ["Rechazadas", resumen.declinadas, XCircle, "bg-gray-600"],
-        ].map(([titulo, valor, Icon, color]: any) => (
+        ] satisfies ColoredStatCard[]).map(([titulo, valor, Icon, color]) => (
           <div key={titulo} className={`${color} rounded-2xl p-5 text-white`}>
             <Icon className="w-7 h-7 mb-3 opacity-80" />
             <div className="text-2xl font-bold">{cargando ? "..." : valor}</div>
