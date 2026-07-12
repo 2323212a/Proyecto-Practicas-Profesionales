@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.services.convenio_empresa_service import activar_convenio_actual
 from app.services.notificacion_service import crear_notificacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
@@ -61,9 +62,27 @@ def obtener_convenio(id_convenio: int, db: Session = Depends(obtener_db)):
 @router.post("/", response_model=ConvenioResponse)
 def crear_convenio(convenio: ConvenioCreate, db: Session = Depends(obtener_db)):
     nuevo_convenio = ConvenioModel(**convenio.model_dump())
-    if nuevo_convenio.es_actual:
-        _marcar_otros_como_historicos(db, nuevo_convenio.id_empresa)
     db.add(nuevo_convenio)
+    db.flush()
+    if nuevo_convenio.es_actual:
+        empresa = db.query(EmpresaModel).filter(
+            EmpresaModel.id_empresa == nuevo_convenio.id_empresa
+        ).first()
+        if empresa is None:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        if nuevo_convenio.estado_convenio == "Vigente":
+            activar_convenio_actual(
+                db,
+                empresa,
+                nuevo_convenio,
+                fecha_inicio=nuevo_convenio.fecha_inicio,
+                fecha_fin=nuevo_convenio.fecha_fin,
+                documento_convenio=nuevo_convenio.documento_convenio,
+            )
+        else:
+            _marcar_otros_como_historicos(
+                db, nuevo_convenio.id_empresa, nuevo_convenio.id_convenio
+            )
     db.commit()
     db.refresh(nuevo_convenio)
     return nuevo_convenio
@@ -83,7 +102,22 @@ def actualizar_convenio(
         setattr(convenio, campo, valor)
 
     if convenio.es_actual:
-        _marcar_otros_como_historicos(db, convenio.id_empresa, convenio.id_convenio)
+        empresa = db.query(EmpresaModel).filter(
+            EmpresaModel.id_empresa == convenio.id_empresa
+        ).first()
+        if empresa is None:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        if convenio.estado_convenio == "Vigente":
+            activar_convenio_actual(
+                db,
+                empresa,
+                convenio,
+                fecha_inicio=convenio.fecha_inicio,
+                fecha_fin=convenio.fecha_fin,
+                documento_convenio=convenio.documento_convenio,
+            )
+        else:
+            _marcar_otros_como_historicos(db, convenio.id_empresa, convenio.id_convenio)
 
     db.commit()
     db.refresh(convenio)
@@ -132,7 +166,25 @@ def eliminar_convenio(id_convenio: int, db: Session = Depends(obtener_db)):
     if convenio is None:
         raise HTTPException(status_code=404, detail="Convenio no encontrado")
 
+    id_empresa = convenio.id_empresa
+    era_actual = bool(convenio.es_actual)
     db.delete(convenio)
+    db.flush()
+
+    if era_actual:
+        reemplazo = (
+            db.query(ConvenioModel)
+            .filter(ConvenioModel.id_empresa == id_empresa)
+            .order_by(
+                ConvenioModel.estado_convenio.asc(),
+                ConvenioModel.fecha_fin.desc(),
+                ConvenioModel.id_convenio.desc(),
+            )
+            .first()
+        )
+        if reemplazo is not None:
+            reemplazo.es_actual = True
+
     db.commit()
     return {"mensaje": "Convenio eliminado correctamente"}
 
@@ -150,7 +202,12 @@ def _marcar_otros_como_historicos(db: Session, id_empresa: int, excepto_id: int 
     query = db.query(ConvenioModel).filter(ConvenioModel.id_empresa == id_empresa)
     if excepto_id is not None:
         query = query.filter(ConvenioModel.id_convenio != excepto_id)
-    query.update({"es_actual": False, "renovacion_solicitada": False}, synchronize_session=False)
+    convenios = query.all()
+    for convenio in convenios:
+        convenio.es_actual = False
+        convenio.renovacion_solicitada = False
+        if convenio.estado_convenio == "Vigente":
+            convenio.estado_convenio = "Vencido"
 
 
 def _prioridad_convenio(convenio: ConvenioModel) -> tuple[int, int, date]:

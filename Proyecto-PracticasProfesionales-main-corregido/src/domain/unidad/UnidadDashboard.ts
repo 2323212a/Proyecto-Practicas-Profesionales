@@ -9,6 +9,8 @@ export interface EmpresaUnidadBasica {
   telefono: string | null;
   correo_contacto: string | null;
   estado_empresa: string;
+  tipo_tramite: string | null;
+  periodo_participacion: string | null;
 }
 
 export interface ResumenUnidadDashboard {
@@ -34,6 +36,8 @@ export interface ConvenioUnidadResumen {
   fecha_fin: string;
   estado_convenio: string;
   documento_convenio: string | null;
+  es_actual: boolean;
+  version: number;
 }
 
 export interface UnidadDashboardResponse {

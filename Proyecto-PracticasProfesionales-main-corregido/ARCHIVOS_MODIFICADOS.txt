@@ -1,0 +1,10 @@
+CORRECCION_CONVENIOS_Y_VACANTES.md
+src/domain/unidad/UnidadDashboard.ts
+src/domain/unidad/VacanteUnidad.ts
+src/app/pages/unidad/PerfilEmpresa.tsx
+backend/interfaces/api/routes/convenios.py
+backend/interfaces/api/routes/empresa_documentos.py
+backend/interfaces/api/routes/unidad.py
+backend/infrastructure/database/schema_updates.py
+backend/infrastructure/database/reparar_convenios_duplicados.sql
+backend/app/services/convenio_empresa_service.py

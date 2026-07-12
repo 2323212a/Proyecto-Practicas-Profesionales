@@ -8,6 +8,10 @@ from pydantic import BaseModel
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.convenio_empresa_service import (
+    obtener_convenio_actual,
+    obtener_convenio_vigente,
+)
 from app.services.notificacion_service import crear_notificacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, requerir_empresa_actual_o_roles
@@ -38,53 +42,12 @@ class CambiarEstadoHorasUnidadRequest(BaseModel):
 
 
 def _tiene_convenio_vigente(db: Session, id_empresa: int) -> bool:
-    actual = (
-        db.query(ConvenioModel)
-        .filter(
-            ConvenioModel.id_empresa == id_empresa,
-            ConvenioModel.es_actual.is_(True),
-        )
-        .order_by(ConvenioModel.fecha_fin.desc(), ConvenioModel.id_convenio.desc())
-        .first()
-    )
-    if actual is not None:
-        if (
-            actual.estado_convenio == "Vigente"
-            and actual.fecha_inicio <= date.today()
-            and actual.fecha_fin >= date.today()
-        ):
-            return True
-
-    vigente = (
-        db.query(ConvenioModel)
-        .filter(
-            ConvenioModel.id_empresa == id_empresa,
-            ConvenioModel.estado_convenio == "Vigente",
-            ConvenioModel.fecha_inicio <= date.today(),
-            ConvenioModel.fecha_fin >= date.today(),
-        )
-        .order_by(ConvenioModel.fecha_fin.desc(), ConvenioModel.id_convenio.desc())
-        .first()
-    )
-    return vigente is not None
+    return obtener_convenio_vigente(db, id_empresa) is not None
 
 
 def _estado_convenio_empresa(db: Session, id_empresa: int) -> str | None:
-    convenio = (
-        db.query(ConvenioModel)
-        .filter(ConvenioModel.id_empresa == id_empresa, ConvenioModel.es_actual.is_(True))
-        .order_by(ConvenioModel.fecha_fin.desc(), ConvenioModel.id_convenio.desc())
-        .first()
-    )
-    if convenio is None:
-        convenio = (
-            db.query(ConvenioModel)
-            .filter(ConvenioModel.id_empresa == id_empresa)
-            .order_by(ConvenioModel.fecha_fin.desc(), ConvenioModel.id_convenio.desc())
-            .first()
-        )
+    convenio = obtener_convenio_actual(db, id_empresa)
     return convenio.estado_convenio if convenio else None
-
 
 def _documentacion_legal_aprobada(db: Session, id_empresa: int) -> bool:
     tipos_obligatorios = (
@@ -116,18 +79,19 @@ def _estado_vacantes_empresa(db: Session, empresa: EmpresaModel) -> dict:
     documentacion_ok = _documentacion_legal_aprobada(db, empresa.id_empresa)
     convenio_vigente = _tiene_convenio_vigente(db, empresa.id_empresa)
     convenio_estado = _estado_convenio_empresa(db, empresa.id_empresa)
-    puede_capturar = (
-        empresa.tipo_tramite == "Convenio"
-        and documentacion_ok
-        and convenio_vigente
-    )
+    # Un convenio vigente aprobado tiene prioridad sobre un tipo_tramite
+    # heredado o capturado incorrectamente. La aprobacion del convenio tambien
+    # corrige empresa.tipo_tramite a "Convenio".
+    puede_capturar = documentacion_ok and convenio_vigente
 
     if puede_capturar:
         motivo = None
-    elif empresa.tipo_tramite != "Convenio":
-        motivo = "Solo las empresas con tramite de convenio pueden capturar vacantes."
+    elif not documentacion_ok:
+        motivo = "Necesitas aprobar toda la documentacion legal obligatoria antes de capturar vacantes."
+    elif not convenio_vigente and empresa.tipo_tramite != "Convenio":
+        motivo = "La empresa no tiene un tramite de convenio ni un convenio vigente aprobado."
     else:
-        motivo = "Necesitas documentacion legal aprobada y convenio vigente antes de capturar vacantes."
+        motivo = "Necesitas un convenio aprobado y vigente antes de capturar vacantes."
 
     return {
         "documentacion_legal_aprobada": documentacion_ok,
@@ -194,6 +158,8 @@ def _empresa_basica_response(empresa: EmpresaModel) -> dict:
         "telefono": empresa.telefono,
         "correo_contacto": empresa.correo_contacto,
         "estado_empresa": empresa.estado_empresa,
+        "tipo_tramite": empresa.tipo_tramite,
+        "periodo_participacion": empresa.periodo_participacion,
     }
 
 
@@ -283,7 +249,11 @@ def obtener_dashboard_mi_unidad(
     convenios = (
         db.query(ConvenioModel)
         .filter(ConvenioModel.id_empresa == id_empresa)
-        .order_by(ConvenioModel.fecha_fin.desc())
+        .order_by(
+            ConvenioModel.es_actual.desc(),
+            ConvenioModel.fecha_fin.desc(),
+            ConvenioModel.id_convenio.desc(),
+        )
         .all()
     )
     horas_aprobadas = (
@@ -310,7 +280,13 @@ def obtener_dashboard_mi_unidad(
         "resumen": {
             "alumnos_activos": len(alumnos),
             "planes_trabajo": db.query(VacanteModel).filter(VacanteModel.id_empresa == id_empresa).count(),
-            "convenios_vigentes": sum(1 for convenio in convenios if convenio.estado_convenio == "Vigente"),
+            "convenios_vigentes": sum(
+                1
+                for convenio in convenios
+                if convenio.es_actual
+                and convenio.estado_convenio == "Vigente"
+                and convenio.fecha_inicio <= date.today() <= convenio.fecha_fin
+            ),
             "horas_registradas": _decimal_to_float(horas_aprobadas),
             "evaluaciones_pendientes": len(evaluaciones_pendientes),
         },
@@ -333,6 +309,8 @@ def obtener_dashboard_mi_unidad(
                 "fecha_fin": convenio.fecha_fin.isoformat(),
                 "estado_convenio": convenio.estado_convenio,
                 "documento_convenio": convenio.documento_convenio,
+                "es_actual": convenio.es_actual,
+                "version": convenio.version,
             }
             for convenio in convenios
         ],
@@ -358,7 +336,11 @@ def obtener_perfil_mi_unidad(
     convenios = (
         db.query(ConvenioModel)
         .filter(ConvenioModel.id_empresa == id_empresa)
-        .order_by(ConvenioModel.fecha_fin.desc())
+        .order_by(
+            ConvenioModel.es_actual.desc(),
+            ConvenioModel.fecha_fin.desc(),
+            ConvenioModel.id_convenio.desc(),
+        )
         .all()
     )
     vacantes = db.query(VacanteModel).filter(VacanteModel.id_empresa == id_empresa).all()
@@ -367,7 +349,13 @@ def obtener_perfil_mi_unidad(
         "empresa": _empresa_basica_response(empresa),
         "resumen": {
             "alumnos_asignados": len(alumnos),
-            "convenios_vigentes": sum(1 for convenio in convenios if convenio.estado_convenio == "Vigente"),
+            "convenios_vigentes": sum(
+                1
+                for convenio in convenios
+                if convenio.es_actual
+                and convenio.estado_convenio == "Vigente"
+                and convenio.fecha_inicio <= date.today() <= convenio.fecha_fin
+            ),
             "planes_disponibles": sum(1 for vacante in vacantes if vacante.estado_vacante == "Activa"),
         },
         "responsables": [
@@ -399,6 +387,8 @@ def obtener_perfil_mi_unidad(
                 "fecha_fin": convenio.fecha_fin.isoformat(),
                 "estado_convenio": convenio.estado_convenio,
                 "documento_convenio": convenio.documento_convenio,
+                "es_actual": convenio.es_actual,
+                "version": convenio.version,
             }
             for convenio in convenios
         ],
@@ -673,11 +663,6 @@ def crear_vacante_unidad(
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
     if empresa is None:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
-    if empresa.tipo_tramite != "Convenio":
-        raise HTTPException(
-            status_code=400,
-            detail="Solo las empresas con tramite de convenio pueden registrar vacantes para alumnos",
-        )
     if empresa.estado_empresa not in {"Pendiente", "Activa"}:
         raise HTTPException(
             status_code=400,

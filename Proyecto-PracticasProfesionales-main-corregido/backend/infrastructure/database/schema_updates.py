@@ -290,6 +290,113 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 )
             )
 
+        # Legacy data and repeated reviews could leave more than one convenio
+        # marked as current. Keep the newest current row; if none was marked,
+        # use the newest convenio as the current record.
+        connection.execute(
+            text(
+                """
+                UPDATE convenio c
+                JOIN (
+                    SELECT
+                        id_empresa,
+                        COALESCE(
+                            MAX(CASE WHEN es_actual = 1 THEN id_convenio END),
+                            MAX(id_convenio)
+                        ) AS id_convenio_actual
+                    FROM convenio
+                    GROUP BY id_empresa
+                ) actual ON actual.id_empresa = c.id_empresa
+                SET c.es_actual = CASE
+                    WHEN c.id_convenio = actual.id_convenio_actual THEN 1
+                    ELSE 0
+                END
+                """
+            )
+        )
+
+        # A replaced convenio remains in the history, but it must not continue
+        # counting as active. The inherited ENUM uses Vencido for historical or
+        # superseded records.
+        connection.execute(
+            text(
+                """
+                UPDATE convenio
+                SET estado_convenio = 'Vencido', renovacion_solicitada = 0
+                WHERE es_actual = 0
+                  AND estado_convenio = 'Vigente'
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE convenio
+                SET estado_convenio = 'Vencido'
+                WHERE es_actual = 1
+                  AND estado_convenio = 'Vigente'
+                  AND fecha_fin < CURRENT_DATE()
+                """
+            )
+        )
+
+        # An approved current convenio is authoritative. Repair companies that
+        # were imported with tipo_tramite NULL/Vinculacion even though they have
+        # a valid convenio, which otherwise blocks vacancy creation.
+        connection.execute(
+            text(
+                """
+                UPDATE empresa e
+                JOIN convenio c ON c.id_empresa = e.id_empresa
+                SET e.tipo_tramite = 'Convenio'
+                WHERE c.es_actual = 1
+                  AND c.estado_convenio = 'Vigente'
+                  AND c.fecha_inicio <= CURRENT_DATE()
+                  AND c.fecha_fin >= CURRENT_DATE()
+                  AND (e.tipo_tramite IS NULL OR e.tipo_tramite <> 'Convenio')
+                """
+            )
+        )
+
+        # Complete legacy records that already satisfy the full workflow.
+        # This avoids leaving a company in Pendiente after all mandatory legal
+        # documents and its current convenio were approved.
+        connection.execute(
+            text(
+                """
+                UPDATE empresa e
+                JOIN convenio c ON c.id_empresa = e.id_empresa
+                SET e.estado_empresa = 'Activa'
+                WHERE e.estado_empresa = 'Pendiente'
+                  AND c.es_actual = 1
+                  AND c.estado_convenio = 'Vigente'
+                  AND c.fecha_inicio <= CURRENT_DATE()
+                  AND c.fecha_fin >= CURRENT_DATE()
+                  AND EXISTS (
+                      SELECT 1
+                      FROM tipo_documento_empresa t
+                      WHERE t.activo = 1
+                        AND t.obligatorio = 1
+                        AND t.etapa = 'Documentacion'
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM tipo_documento_empresa t
+                      LEFT JOIN documento_empresa d
+                        ON d.id_empresa = e.id_empresa
+                       AND d.id_tipo_documento_empresa = t.id_tipo_documento_empresa
+                      WHERE t.activo = 1
+                        AND t.obligatorio = 1
+                        AND t.etapa = 'Documentacion'
+                        AND (
+                            d.id_documento_empresa IS NULL
+                            OR d.estado_documento <> 'Aprobado'
+                        )
+                  )
+                """
+            )
+        )
+
         # Expanding an ENUM is safe to repeat and keeps manually created databases aligned.
         connection.execute(
             text(

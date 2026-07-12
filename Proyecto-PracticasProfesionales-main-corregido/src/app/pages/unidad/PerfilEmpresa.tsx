@@ -19,6 +19,19 @@ function empresaHabilitada(estado?: string | null) {
   return ["Activa", "Aprobada"].includes(estado ?? "");
 }
 
+function estadoVisualConvenio(convenio: PerfilUnidadResponse["convenios"][number]) {
+  if (!convenio.es_actual) {
+    return { etiqueta: "Historico", clase: "bg-gray-100 text-gray-600" };
+  }
+  if (convenio.estado_convenio === "Vigente") {
+    return { etiqueta: "Vigente actual", clase: "bg-green-100 text-green-700" };
+  }
+  if (convenio.estado_convenio === "Pendiente") {
+    return { etiqueta: "Pendiente", clase: "bg-yellow-100 text-yellow-700" };
+  }
+  return { etiqueta: convenio.estado_convenio, clase: "bg-red-100 text-red-700" };
+}
+
 export function PerfilEmpresa() {
   const [datos, setDatos] = useState<PerfilUnidadResponse | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -141,6 +154,11 @@ export function PerfilEmpresa() {
             </div>
 
             <div>
+              <div className="text-xs text-gray-400 mb-1">Tipo de tramite</div>
+              <div className="text-sm font-semibold text-gray-700">{empresa?.tipo_tramite ?? "Sin definir"}</div>
+            </div>
+
+            <div>
               <div className="text-xs text-gray-400 mb-1">Convenios registrados</div>
               <div className="text-sm font-semibold text-gray-700">{datos?.convenios.length ?? 0}</div>
             </div>
@@ -203,20 +221,25 @@ export function PerfilEmpresa() {
         </div>
 
         <div className="divide-y divide-gray-100">
-          {(datos?.convenios ?? []).map((c) => (
-            <div key={c.id_convenio} className="px-6 py-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50">
-              <div>
-                <div className="font-semibold text-sm text-gray-800">Convenio #{c.id_convenio}</div>
-                <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                  <CalendarDays className="w-3.5 h-3.5" />
-                  {c.fecha_inicio} - {c.fecha_fin}
+          {(datos?.convenios ?? []).map((c) => {
+            const estado = estadoVisualConvenio(c);
+            return (
+              <div key={c.id_convenio} className="px-6 py-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50">
+                <div>
+                  <div className="font-semibold text-sm text-gray-800">
+                    Convenio #{c.id_convenio} · Version {c.version}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    {c.fecha_inicio} - {c.fecha_fin}
+                  </div>
                 </div>
+                <span className={`w-fit text-xs px-3 py-1 rounded-full font-semibold ${estado.clase}`}>
+                  {estado.etiqueta}
+                </span>
               </div>
-              <span className="w-fit text-xs px-3 py-1 rounded-full font-semibold bg-green-100 text-green-700">
-                {c.estado_convenio}
-              </span>
-            </div>
-          ))}
+            );
+          })}
           {!cargando && (datos?.convenios ?? []).length === 0 && (
             <div className="px-6 py-8 text-sm text-gray-500">No hay convenios registrados.</div>
           )}

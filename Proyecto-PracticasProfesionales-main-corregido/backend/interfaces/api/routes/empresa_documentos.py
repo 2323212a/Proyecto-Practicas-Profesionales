@@ -11,6 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.convenio_empresa_service import (
+    activar_convenio_actual,
+    obtener_convenio_actual,
+)
 from app.services.notificacion_service import crear_notificacion, notificar_roles
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, requerir_empresa_actual_o_roles, requerir_roles
@@ -214,21 +218,6 @@ def _url_documento_empresa(documento: DocumentoEmpresaModel) -> str:
     return f"/uploads/documentos_empresa/{Path(documento.ruta_archivo).name}"
 
 
-def _tiene_convenio_vigente(db: Session, id_empresa: int) -> bool:
-    return (
-        db.query(ConvenioModel)
-        .filter(
-            ConvenioModel.id_empresa == id_empresa,
-            ConvenioModel.es_actual.is_(True),
-            ConvenioModel.estado_convenio == "Vigente",
-            ConvenioModel.fecha_inicio <= date.today(),
-            ConvenioModel.fecha_fin >= date.today(),
-        )
-        .first()
-        is not None
-    )
-
-
 def _documentacion_legal_aprobada(db: Session, id_empresa: int) -> bool:
     tipos_obligatorios = (
         db.query(TipoDocumentoEmpresaModel)
@@ -267,13 +256,7 @@ def _sincronizar_convenio_desde_documento(
     if empresa is None or not _es_documento_convenio(tipo_documento):
         return
 
-    convenio_actual = (
-        db.query(ConvenioModel)
-        .filter(ConvenioModel.id_empresa == empresa.id_empresa)
-        .filter(ConvenioModel.es_actual.is_(True))
-        .order_by(ConvenioModel.fecha_fin.desc(), ConvenioModel.id_convenio.desc())
-        .first()
-    )
+    convenio_actual = obtener_convenio_actual(db, empresa.id_empresa)
 
     if documento.estado_documento == "Aprobado":
         inicio = fecha_inicio or date.today()
@@ -284,7 +267,10 @@ def _sincronizar_convenio_desde_documento(
                 detail="La fecha fin del convenio no puede ser menor a la fecha inicio",
             )
 
-        pendiente = (
+        # Primero reutiliza una renovacion pendiente. Si el mismo documento ya
+        # estaba aprobado y se vuelve a revisar, actualiza el convenio ligado
+        # en lugar de crear un duplicado.
+        convenio_objetivo = (
             db.query(ConvenioModel)
             .filter(
                 ConvenioModel.id_empresa == empresa.id_empresa,
@@ -294,39 +280,49 @@ def _sincronizar_convenio_desde_documento(
             .order_by(ConvenioModel.id_convenio.desc())
             .first()
         )
-        db.query(ConvenioModel).filter(
-            ConvenioModel.id_empresa == empresa.id_empresa
-        ).update(
-            {"es_actual": False, "renovacion_solicitada": False},
-            synchronize_session=False,
-        )
-        if pendiente is not None:
-            pendiente.fecha_inicio = inicio
-            pendiente.fecha_fin = fin
-            pendiente.documento_convenio = _url_documento_empresa(documento)
-            pendiente.es_actual = True
-            pendiente.renovacion_solicitada = False
-            pendiente.estado_convenio = "Vigente"
-        else:
+        if convenio_objetivo is None:
+            convenio_objetivo = (
+                db.query(ConvenioModel)
+                .filter(
+                    ConvenioModel.id_empresa == empresa.id_empresa,
+                    ConvenioModel.id_documento_empresa == documento.id_documento_empresa,
+                )
+                .order_by(
+                    ConvenioModel.es_actual.desc(),
+                    ConvenioModel.id_convenio.desc(),
+                )
+                .first()
+            )
+
+        if convenio_objetivo is None:
             version = (
                 db.query(ConvenioModel)
                 .filter(ConvenioModel.id_empresa == empresa.id_empresa)
                 .count()
                 + 1
             )
-            db.add(
-                ConvenioModel(
-                    id_empresa=empresa.id_empresa,
-                    fecha_inicio=inicio,
-                    fecha_fin=fin,
-                    documento_convenio=_url_documento_empresa(documento),
-                    id_documento_empresa=documento.id_documento_empresa,
-                    version=version,
-                    es_actual=True,
-                    renovacion_solicitada=False,
-                    estado_convenio="Vigente",
-                )
+            convenio_objetivo = ConvenioModel(
+                id_empresa=empresa.id_empresa,
+                fecha_inicio=inicio,
+                fecha_fin=fin,
+                documento_convenio=_url_documento_empresa(documento),
+                id_documento_empresa=documento.id_documento_empresa,
+                version=version,
+                es_actual=False,
+                renovacion_solicitada=False,
+                estado_convenio="Pendiente",
             )
+            db.add(convenio_objetivo)
+            db.flush()
+
+        activar_convenio_actual(
+            db,
+            empresa,
+            convenio_objetivo,
+            fecha_inicio=inicio,
+            fecha_fin=fin,
+            documento_convenio=_url_documento_empresa(documento),
+        )
         return
 
     if documento.estado_documento == "Pendiente":
@@ -337,15 +333,16 @@ def _sincronizar_convenio_desde_documento(
                 ConvenioModel.id_documento_empresa == documento.id_documento_empresa,
                 ConvenioModel.estado_convenio == "Pendiente",
             )
+            .order_by(ConvenioModel.id_convenio.desc())
             .first()
         )
-        version = (
-            db.query(ConvenioModel)
-            .filter(ConvenioModel.id_empresa == empresa.id_empresa)
-            .count()
-            + 1
-        )
         if pendiente is None:
+            version = (
+                db.query(ConvenioModel)
+                .filter(ConvenioModel.id_empresa == empresa.id_empresa)
+                .count()
+                + 1
+            )
             db.add(
                 ConvenioModel(
                     id_empresa=empresa.id_empresa,
@@ -367,7 +364,6 @@ def _sincronizar_convenio_desde_documento(
 
     if convenio_actual is not None and documento.estado_documento == "Rechazado":
         convenio_actual.renovacion_solicitada = True
-
 
 def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
     tipos_obligatorios = (
@@ -407,7 +403,16 @@ def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
         por_tipo[tipo.id_tipo_documento_empresa].estado_documento == "Aprobado"
         for tipo in tipos_obligatorios
     ):
-        empresa.estado_empresa = "Pendiente"
+        convenio_actual = obtener_convenio_actual(db, empresa.id_empresa)
+        hoy = date.today()
+        if (
+            convenio_actual is not None
+            and convenio_actual.estado_convenio == "Vigente"
+            and convenio_actual.fecha_inicio <= hoy <= convenio_actual.fecha_fin
+        ):
+            empresa.estado_empresa = "Activa"
+        else:
+            empresa.estado_empresa = "Pendiente"
         return
 
     empresa.estado_empresa = "Pendiente"
@@ -462,15 +467,7 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
         "rechazados": sum(1 for item in items if item["documento"] and item["documento"]["estado_documento"] == "Rechazado"),
         "faltantes": sum(1 for item in items if item["documento"] is None and item["obligatorio"]),
     }
-    convenio_actual = (
-        db.query(ConvenioModel)
-        .filter(
-            ConvenioModel.id_empresa == empresa.id_empresa,
-            ConvenioModel.es_actual.is_(True),
-        )
-        .order_by(ConvenioModel.fecha_fin.desc(), ConvenioModel.id_convenio.desc())
-        .first()
-    )
+    convenio_actual = obtener_convenio_actual(db, empresa.id_empresa)
 
     return {
         "empresa": {
@@ -598,8 +595,12 @@ def subir_documento_empresa(
         documento.observaciones = None
         documento.fecha_revision = None
 
-    empresa.estado_empresa = "Pendiente"
+    # El id del documento es necesario para enlazar de forma idempotente la
+    # version pendiente del convenio. Sin este flush, un documento nuevo queda
+    # con id_documento_empresa NULL y la aprobacion puede crear duplicados.
+    db.flush()
     _sincronizar_convenio_desde_documento(db, documento, empresa, tipo)
+    _recalcular_estado_empresa(db, empresa)
     notificar_roles(
         db,
         ["Coordinador de Unidades Receptoras", "Administrador"],

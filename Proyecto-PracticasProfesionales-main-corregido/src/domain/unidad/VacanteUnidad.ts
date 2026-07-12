@@ -2,6 +2,7 @@ export interface EmpresaVacantesUnidad {
   id_empresa: number;
   nombre_empresa: string;
   estado_empresa: string;
+  tipo_tramite?: string | null;
   puede_publicar: boolean;
   documentacion_legal_aprobada?: boolean;
   convenio_vigente?: boolean;
