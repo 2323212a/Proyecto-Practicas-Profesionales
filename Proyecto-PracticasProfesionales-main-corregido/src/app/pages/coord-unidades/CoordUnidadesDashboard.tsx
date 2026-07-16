@@ -39,6 +39,16 @@ interface AccesoRapido {
   iconContainerClass: string;
 }
 
+function formatearFechaActividad(valor: string | null) {
+  if (!valor) return "Sin fecha";
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(fecha);
+}
+
 export function CoordUnidadesDashboard() {
   const navigate = useNavigate();
 
@@ -258,6 +268,29 @@ export function CoordUnidadesDashboard() {
           ))}
         </section>
 
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-[#0d2b5e]">Control operativo</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Indicadores adicionales para priorizar acciones del ciclo actual.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Convenios por vencer", resumen?.convenios_por_vencer ?? 0],
+              ["Vacantes publicables", resumen?.vacantes_publicables ?? 0],
+              ["Cupos ocupados", resumen?.cupos_ocupados ?? 0],
+              ["Empresas publicadas", resumen?.empresas_publicadas ?? 0],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-[#0d2b5e]">{cargando ? "..." : value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.75fr)]">
           {/* Flujo */}
           <article className="rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -381,6 +414,10 @@ export function CoordUnidadesDashboard() {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold leading-5 text-slate-700">
                             {item.texto}
+                          </p>
+
+                          <p className="mt-1 text-xs text-slate-400">
+                            {formatearFechaActividad(item.fecha)}
                           </p>
 
                           {item.detalle && (

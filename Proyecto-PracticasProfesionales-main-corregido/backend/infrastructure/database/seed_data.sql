@@ -19,9 +19,11 @@ ON DUPLICATE KEY UPDATE
     descripcion = VALUES(descripcion);
 
 INSERT INTO carrera (id_carrera, clave, nombre) VALUES
-    (1, 'ISC', 'Ingenieria en Sistemas Computacionales'),
-    (2, 'IGE', 'Ingenieria en Gestion Empresarial'),
-    (3, 'II', 'Ingenieria Industrial')
+    (1, 'LISC', 'Licenciatura en Ingeniería en Sistemas Computacionales'),
+    (2, 'LIDTS', 'Licenciatura en Ingeniería en Desarrollo y Tecnologías de Software'),
+    (3, 'LIS', 'Licenciatura en Ingeniería en Semiconductores'),
+    (4, 'LIACD', 'Licenciatura en Inteligencia Artificial y Ciencia de Datos'),
+    (5, 'LAIG', 'Licenciatura en Arquitectura de Sistemas basados en IA Generativa')
 ON DUPLICATE KEY UPDATE
     clave = VALUES(clave),
     nombre = VALUES(nombre);

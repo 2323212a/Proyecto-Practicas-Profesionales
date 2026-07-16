@@ -29,6 +29,16 @@ const padronColor: Record<string, string> = {
   "No publicado": "bg-gray-100 text-gray-600",
 };
 
+function formatearFecha(valor: string | null) {
+  if (!valor) return "Sin registro";
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return "Sin registro";
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(fecha);
+}
+
 export function ValidacionEmpresas() {
   const navigate = useNavigate();
   const [empresas, setEmpresas] = useState<EmpresaRevision[]>([]);
@@ -107,9 +117,14 @@ export function ValidacionEmpresas() {
     if (!motivo?.trim()) {
       return;
     }
+    const observaciones = window.prompt("Observaciones adicionales (opcional)", "");
     try {
       setProcesando(empresa.id_empresa);
-      await gestionEmpresasRevisionUseCase.rechazarSolicitud(empresa.id_empresa, motivo.trim());
+      await gestionEmpresasRevisionUseCase.rechazarSolicitud(
+        empresa.id_empresa,
+        motivo.trim(),
+        observaciones?.trim() || undefined,
+      );
       await cargarEmpresas();
     } catch (err) {
       console.error(err);
@@ -370,6 +385,8 @@ export function ValidacionEmpresas() {
               <p><b>Periodo:</b> {solicitudDetalle.solicitud.periodo_participacion ?? "Sin periodo"}</p>
               <p><b>Estado solicitud:</b> {solicitudDetalle.solicitud.estado_solicitud ?? "Sin solicitud"}</p>
               <p><b>Cuenta creada:</b> {solicitudDetalle.cuenta_creada ? solicitudDetalle.correo_usuario : "No"}</p>
+              <p><b>Fecha solicitud:</b> {formatearFecha(solicitudDetalle.solicitud.fecha_solicitud)}</p>
+              <p><b>Ultima revision:</b> {formatearFecha(solicitudDetalle.solicitud.fecha_revision)}</p>
             </div>
             <p className="text-sm"><b>Domicilio:</b> {solicitudDetalle.empresa.domicilio ?? "Sin domicilio"}</p>
             {solicitudDetalle.solicitud.observaciones && <p className="text-sm"><b>Observaciones:</b> {solicitudDetalle.solicitud.observaciones}</p>}

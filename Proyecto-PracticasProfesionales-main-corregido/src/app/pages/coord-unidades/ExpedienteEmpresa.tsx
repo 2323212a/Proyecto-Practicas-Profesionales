@@ -74,6 +74,16 @@ function textoFormatoPorEtapa(etapa: string) {
   return "Este formato sera descargado por la Unidad Receptora para completar este requisito.";
 }
 
+function formatearFecha(valor: string | null) {
+  if (!valor) return "Sin registro";
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return "Sin registro";
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(fecha);
+}
+
 export function ExpedienteEmpresa() {
   const { idEmpresa } = useParams();
   const [empresas, setEmpresas] = useState<DocumentacionEmpresaResponse[]>([]);
@@ -245,6 +255,15 @@ export function ExpedienteEmpresa() {
   }
 
   async function guardarConfiguracion() {
+    if (!configurando && configForm.obligatorio) {
+      const confirmacion = window.confirm(
+        "Advertencia de impacto operativo: al crear un requisito obligatorio, las empresas actualmente en estado Activa volveran temporalmente a estado Pendiente hasta que cumplan y aprueben la documentacion requerida, incluyendo convenio cuando aplique.\n\nDeseas continuar?",
+      );
+      if (!confirmacion) {
+        return;
+      }
+    }
+
     try {
       setProcesando(configurando?.id_tipo_documento_empresa ?? -1);
       setError("");
@@ -397,6 +416,11 @@ export function ExpedienteEmpresa() {
               {documento?.observaciones && (
                 <p className="text-xs text-red-700 mt-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                   Observaciones: {documento.observaciones}
+                </p>
+              )}
+              {documento && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Cargado: {formatearFecha(documento.fecha_carga)} · Ultima revision: {formatearFecha(documento.fecha_revision)}
                 </p>
               )}
               {modo === "configuracion" && requisito.requiere_formato && (
@@ -704,6 +728,21 @@ export function ExpedienteEmpresa() {
                     </div>
                   ))}
                 </div>
+
+                {empresaActual.convenio_actual && (
+                  <div className="mt-4 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm">
+                    <p className="font-semibold text-blue-100">Convenio actual</p>
+                    <p className="mt-1 text-blue-100">
+                      Version {empresaActual.convenio_actual.version} · {empresaActual.convenio_actual.estado_convenio}
+                    </p>
+                    <p className="text-blue-200 text-xs mt-1">
+                      Vigencia: {formatearFecha(empresaActual.convenio_actual.fecha_inicio)} - {formatearFecha(empresaActual.convenio_actual.fecha_fin)}
+                    </p>
+                    {empresaActual.convenio_actual.renovacion_solicitada && (
+                      <p className="text-yellow-200 text-xs mt-1">Renovacion solicitada por coordinacion.</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {vista === "revision" && (

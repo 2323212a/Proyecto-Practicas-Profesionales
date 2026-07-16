@@ -113,6 +113,17 @@ class CrearVacanteUnidadRequest(BaseModel):
     id_tipo_practica: int
 
 
+class ActualizarVacanteUnidadRequest(BaseModel):
+    id_carrera: int
+    titulo: str
+    descripcion: str | None = None
+    modalidad: str
+    horario: str | None = None
+    cupo_total: int
+    periodo: str
+    id_tipo_practica: int
+
+
 def _nombre_usuario(usuario) -> str:
     return " ".join(
         parte
@@ -635,6 +646,7 @@ def listar_vacantes_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
                 "periodo": vacante.periodo,
                 "id_tipo_practica": vacante.id_tipo_practica,
                 "tipo_practica": tipos_practica.get(vacante.id_tipo_practica),
+                "observaciones": vacante.observaciones,
                 "visible_padron": (
                     puede_capturar
                     and vacante.estado_vacante == "Activa"
@@ -672,6 +684,16 @@ def crear_vacante_unidad(
         raise HTTPException(
             status_code=400,
             detail="Necesitas documentacion legal aprobada y convenio vigente antes de capturar vacantes.",
+        )
+    vacante_existente = (
+        db.query(VacanteModel)
+        .filter(VacanteModel.id_empresa == id_empresa)
+        .first()
+    )
+    if vacante_existente is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="La empresa solo puede registrar una vacante. Puedes editar la existente antes de que sea aprobada por Coordinacion.",
         )
     if datos.cupo_total <= 0:
         raise HTTPException(status_code=400, detail="El cupo total debe ser mayor a cero")
@@ -734,3 +756,101 @@ def crear_mi_vacante_unidad(
     db: Session = Depends(obtener_db),
 ):
     return crear_vacante_unidad(id_empresa, datos, db)
+
+
+@router.put("/{id_empresa:int}/vacantes/{id_vacante:int}")
+def actualizar_vacante_unidad(
+    id_empresa: int,
+    id_vacante: int,
+    datos: ActualizarVacanteUnidadRequest,
+    db: Session = Depends(obtener_db),
+):
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    vacante = (
+        db.query(VacanteModel)
+        .filter(
+            VacanteModel.id_vacante == id_vacante,
+            VacanteModel.id_empresa == id_empresa,
+        )
+        .first()
+    )
+    if vacante is None:
+        raise HTTPException(status_code=404, detail="Vacante no encontrada")
+
+    if vacante.estado_vacante not in {"Pendiente", "Con observaciones"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo puedes modificar la vacante antes de la aprobacion de Coordinacion.",
+        )
+
+    if datos.cupo_total <= 0:
+        raise HTTPException(status_code=400, detail="El cupo total debe ser mayor a cero")
+    if datos.modalidad not in {"Presencial", "Virtual", "Hibrida"}:
+        raise HTTPException(status_code=400, detail="Modalidad no valida")
+    carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == datos.id_carrera).first()
+    if carrera is None:
+        raise HTTPException(status_code=404, detail="Carrera no encontrada")
+    if datos.periodo not in {"Semestral", "Cuatrimestral"}:
+        raise HTTPException(status_code=400, detail="Periodo no valido")
+    tipo_practica = db.execute(
+        text(
+            """
+            SELECT id_tipo_practica
+            FROM tipo_practica
+            WHERE id_tipo_practica = :id_tipo_practica AND activo = 1
+            """
+        ),
+        {"id_tipo_practica": datos.id_tipo_practica},
+    ).first()
+    if tipo_practica is None:
+        raise HTTPException(status_code=400, detail="Tipo de practica no valido o inactivo")
+
+    vacante.id_carrera = datos.id_carrera
+    vacante.titulo = datos.titulo.strip()
+    vacante.descripcion = datos.descripcion
+    vacante.modalidad = datos.modalidad
+    vacante.horario = datos.horario
+    # Si ya hay asignaciones activas, evita reducir el cupo total por debajo de ocupados.
+    ocupados = vacante.cupo_total - vacante.cupo_disponible
+    if datos.cupo_total < ocupados:
+        raise HTTPException(
+            status_code=400,
+            detail="El cupo total no puede ser menor al numero de lugares ocupados.",
+        )
+    vacante.cupo_total = datos.cupo_total
+    vacante.cupo_disponible = datos.cupo_total - ocupados
+    vacante.periodo = datos.periodo
+    vacante.id_tipo_practica = datos.id_tipo_practica
+    # Cualquier ajuste previo a aprobacion vuelve a pendiente de revision.
+    vacante.estado_vacante = "Pendiente"
+    vacante.observaciones = None
+
+    db.commit()
+    db.refresh(vacante)
+    return {
+        "id_vacante": vacante.id_vacante,
+        "id_empresa": vacante.id_empresa,
+        "id_carrera": vacante.id_carrera,
+        "titulo": vacante.titulo,
+        "descripcion": vacante.descripcion,
+        "modalidad": vacante.modalidad,
+        "horario": vacante.horario,
+        "cupo_total": vacante.cupo_total,
+        "cupo_disponible": vacante.cupo_disponible,
+        "estado_vacante": vacante.estado_vacante,
+        "periodo": vacante.periodo,
+        "id_tipo_practica": vacante.id_tipo_practica,
+    }
+
+
+@router.put("/me/vacantes/{id_vacante:int}")
+def actualizar_mi_vacante_unidad(
+    id_vacante: int,
+    datos: ActualizarVacanteUnidadRequest,
+    id_empresa: int = Depends(obtener_id_empresa_actual),
+    db: Session = Depends(obtener_db),
+):
+    return actualizar_vacante_unidad(id_empresa, id_vacante, datos, db)

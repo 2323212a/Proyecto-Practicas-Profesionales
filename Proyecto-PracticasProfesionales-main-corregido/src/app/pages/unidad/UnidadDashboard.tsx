@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
+  AlertTriangle,
   Briefcase,
   CalendarDays,
   CheckCircle,
@@ -11,14 +12,41 @@ import {
   Users,
 } from "lucide-react";
 
+import { gestionDocumentacionEmpresaUseCase } from "../../dependencies";
+import type { RequisitoEmpresa } from "../../../domain/empresa/DocumentacionEmpresa";
 import type { UnidadDashboardResponse } from "../../../domain/unidad/UnidadDashboard";
 import { obtenerDashboardUnidad } from "../../../infrastructure/unidad/unidadDashboardApi";
+
+type UsuarioSesion = {
+  perfil?: {
+    id_empresa?: number;
+  };
+};
+
+function obtenerIdEmpresa() {
+  const raw = localStorage.getItem("usuario");
+  if (!raw) return null;
+
+  try {
+    const usuario = JSON.parse(raw) as UsuarioSesion;
+    return usuario.perfil?.id_empresa ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function esFaltanteSubida(requisito: RequisitoEmpresa) {
+  return !requisito.documento?.nombre_archivo;
+}
 
 export function UnidadDashboard() {
   const navigate = useNavigate();
   const [datos, setDatos] = useState<UnidadDashboardResponse | null>(null);
+  const [progresoCarga, setProgresoCarga] = useState<{ cargados: number; total: number; faltantes: string[] } | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+
+  const idEmpresa = obtenerIdEmpresa();
 
   useEffect(() => {
     void cargar();
@@ -28,7 +56,24 @@ export function UnidadDashboard() {
     try {
       setCargando(true);
       setError("");
-      setDatos(await obtenerDashboardUnidad());
+      const dashboard = await obtenerDashboardUnidad();
+      setDatos(dashboard);
+
+      if (idEmpresa) {
+        const documentacion = await gestionDocumentacionEmpresaUseCase.listarEmpresa(idEmpresa);
+        const requisitosActivos = documentacion.documentos.filter(
+          (requisito) => requisito.activo !== false,
+        );
+        const faltantes = requisitosActivos.filter(esFaltanteSubida);
+
+        setProgresoCarga({
+          cargados: requisitosActivos.length - faltantes.length,
+          total: requisitosActivos.length,
+          faltantes: faltantes.map((item) => item.nombre),
+        });
+      } else {
+        setProgresoCarga(null);
+      }
     } catch (err) {
       console.error(err);
       setError("No se pudo cargar el dashboard de la unidad receptora.");
@@ -73,6 +118,39 @@ export function UnidadDashboard() {
           <div className="text-white font-bold text-sm">{empresa?.estado_empresa ?? "SIN ESTADO"}</div>
         </div>
       </div>
+
+      {progresoCarga && progresoCarga.total > 0 && progresoCarga.cargados < progresoCarga.total && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-700 mt-0.5" />
+            <div className="min-w-0">
+              <div className="font-semibold text-amber-800 text-sm">
+                Periodo de carga documental activo ({progresoCarga.cargados}/{progresoCarga.total})
+              </div>
+              <div className="text-amber-700 text-sm mt-1">
+                Aun faltan documentos por subir para completar tu expediente de empresa.
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate("/unidad/convenios")}
+                className="mt-3 inline-flex items-center rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                Ir
+              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {progresoCarga.faltantes.map((nombre) => (
+                  <span
+                    key={nombre}
+                    className="inline-flex items-center rounded-full bg-white border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800"
+                  >
+                    {nombre}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
         {[

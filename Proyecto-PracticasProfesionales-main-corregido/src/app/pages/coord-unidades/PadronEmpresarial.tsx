@@ -56,6 +56,9 @@ export function PadronEmpresarial() {
   const [empresas, setEmpresas] = useState<EmpresaRevision[]>([]);
   const [vacantes, setVacantes] = useState<VacanteRevision[]>([]);
   const [tab, setTab] = useState<"PrePadron" | "Activa">("PrePadron");
+  const [filtroConvocatoria, setFiltroConvocatoria] = useState<string>("todas");
+  const [filtroPeriodo, setFiltroPeriodo] = useState<string>("todos");
+  const [filtroTipoPractica, setFiltroTipoPractica] = useState<string>("todos");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
@@ -99,14 +102,68 @@ export function PadronEmpresarial() {
     [tab, vacantes],
   );
 
+  const opcionesConvocatoria = useMemo(() => {
+    const ids = new Set<number>();
+    vacantes
+      .filter((vacante) => vacante.estado_vacante === "PrePadron")
+      .forEach((vacante) => {
+        if (vacante.id_convocatoria != null) ids.add(vacante.id_convocatoria);
+      });
+    return [...ids].sort((a, b) => a - b);
+  }, [vacantes]);
+
+  const opcionesPeriodo = useMemo(() => {
+    const periodos = new Set<string>();
+    vacantes
+      .filter((vacante) => vacante.estado_vacante === "PrePadron")
+      .forEach((vacante) => {
+        if (vacante.periodo) periodos.add(vacante.periodo);
+      });
+    return [...periodos].sort((a, b) => a.localeCompare(b));
+  }, [vacantes]);
+
+  const opcionesTipoPractica = useMemo(() => {
+    const tipos = new Map<number, string>();
+    vacantes
+      .filter((vacante) => vacante.estado_vacante === "PrePadron")
+      .forEach((vacante) => {
+        if (vacante.id_tipo_practica != null) {
+          tipos.set(vacante.id_tipo_practica, vacante.tipo_practica ?? `Tipo #${vacante.id_tipo_practica}`);
+        }
+      });
+    return [...tipos.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [vacantes]);
+
+  const vacantesPrepadronFiltradas = useMemo(
+    () =>
+      vacantes.filter((vacante) => {
+        if (vacante.estado_vacante !== "PrePadron") return false;
+        if (filtroConvocatoria !== "todas" && String(vacante.id_convocatoria ?? "") !== filtroConvocatoria) {
+          return false;
+        }
+        if (filtroPeriodo !== "todos" && (vacante.periodo ?? "") !== filtroPeriodo) {
+          return false;
+        }
+        if (filtroTipoPractica !== "todos" && String(vacante.id_tipo_practica ?? "") !== filtroTipoPractica) {
+          return false;
+        }
+        return true;
+      }),
+    [filtroConvocatoria, filtroPeriodo, filtroTipoPractica, vacantes],
+  );
+
   async function liberarPrepadron() {
-    if (resumen.prepadron === 0) return;
+    if (resumen.prepadron === 0 || vacantesPrepadronFiltradas.length === 0) return;
     if (!window.confirm("Las vacantes en pre-padron pasaran a publicadas y seran visibles para alumnos si cumplen las reglas de publicacion.")) {
       return;
     }
     try {
       setError("");
-      await gestionVacantesRevisionUseCase.liberarPrepadron();
+      await gestionVacantesRevisionUseCase.liberarPrepadron({
+        id_convocatoria: filtroConvocatoria === "todas" ? undefined : Number(filtroConvocatoria),
+        periodo: filtroPeriodo === "todos" ? undefined : filtroPeriodo,
+        id_tipo_practica: filtroTipoPractica === "todos" ? undefined : Number(filtroTipoPractica),
+      });
       await cargar();
     } catch (err) {
       console.error(err);
@@ -126,7 +183,7 @@ export function PadronEmpresarial() {
 
         <button
           onClick={liberarPrepadron}
-          disabled={resumen.prepadron === 0}
+          disabled={resumen.prepadron === 0 || vacantesPrepadronFiltradas.length === 0}
           className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-50"
         >
           <Send className="w-4 h-4" />
@@ -156,6 +213,61 @@ export function PadronEmpresarial() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+        <div className="grid md:grid-cols-3 gap-3">
+          <label className="text-xs text-gray-500">
+            Convocatoria
+            <select
+              value={filtroConvocatoria}
+              onChange={(event) => setFiltroConvocatoria(event.target.value)}
+              className="mt-1 w-full border rounded-xl px-3 py-2 text-sm bg-white"
+            >
+              <option value="todas">Todas</option>
+              {opcionesConvocatoria.map((id) => (
+                <option key={id} value={String(id)}>
+                  {`Convocatoria #${id}`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-xs text-gray-500">
+            Periodo
+            <select
+              value={filtroPeriodo}
+              onChange={(event) => setFiltroPeriodo(event.target.value)}
+              className="mt-1 w-full border rounded-xl px-3 py-2 text-sm bg-white"
+            >
+              <option value="todos">Todos</option>
+              {opcionesPeriodo.map((periodo) => (
+                <option key={periodo} value={periodo}>
+                  {periodo}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-xs text-gray-500">
+            Tipo de practica
+            <select
+              value={filtroTipoPractica}
+              onChange={(event) => setFiltroTipoPractica(event.target.value)}
+              className="mt-1 w-full border rounded-xl px-3 py-2 text-sm bg-white"
+            >
+              <option value="todos">Todos</option>
+              {opcionesTipoPractica.map(([id, nombre]) => (
+                <option key={id} value={String(id)}>
+                  {nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          Vacantes en pre-padron que cumplen los filtros: {vacantesPrepadronFiltradas.length}
+        </p>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-3 flex flex-wrap gap-2">

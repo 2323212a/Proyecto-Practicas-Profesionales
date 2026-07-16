@@ -418,6 +418,17 @@ def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
     empresa.estado_empresa = "Pendiente"
 
 
+def _marcar_empresas_activas_como_pendientes_por_requisito_obligatorio(db: Session) -> int:
+    empresas_activas = (
+        db.query(EmpresaModel)
+        .filter(EmpresaModel.estado_empresa == "Activa")
+        .all()
+    )
+    for empresa in empresas_activas:
+        empresa.estado_empresa = "Pendiente"
+    return len(empresas_activas)
+
+
 def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
     _asegurar_tipos_base(db)
     tipos = (
@@ -528,6 +539,13 @@ def listar_documentos_empresa(id_empresa: int, db: Session = Depends(obtener_db)
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
     if empresa is None:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    estado_anterior = empresa.estado_empresa
+    _recalcular_estado_empresa(db, empresa)
+    if empresa.estado_empresa != estado_anterior:
+        db.commit()
+        db.refresh(empresa)
+
     return _empresa_documentacion_response(db, empresa)
 
 
@@ -618,6 +636,18 @@ def subir_documento_empresa(
 )
 def listar_documentacion_empresas(db: Session = Depends(obtener_db)):
     empresas = db.query(EmpresaModel).order_by(EmpresaModel.id_empresa.desc()).all()
+    hubo_cambios_estado = False
+    for empresa in empresas:
+        estado_anterior = empresa.estado_empresa
+        _recalcular_estado_empresa(db, empresa)
+        if empresa.estado_empresa != estado_anterior:
+            hubo_cambios_estado = True
+
+    if hubo_cambios_estado:
+        db.commit()
+        for empresa in empresas:
+            db.refresh(empresa)
+
     return [_empresa_documentacion_response(db, empresa) for empresa in empresas]
 
 
@@ -755,6 +785,10 @@ def crear_requisito_empresa(
         etapa=etapa,
     )
     db.add(tipo)
+
+    if datos.obligatorio:
+        _marcar_empresas_activas_como_pendientes_por_requisito_obligatorio(db)
+
     db.commit()
     db.refresh(tipo)
     return _requisito_response(tipo, db)

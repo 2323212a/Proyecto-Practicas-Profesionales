@@ -1,4 +1,5 @@
 import type {
+  ActualizarVacanteUnidadInput,
   CarreraBasica,
   CrearVacanteUnidadInput,
   VacanteUnidad,
@@ -19,6 +20,10 @@ export class GestionVacantesUnidadUseCase {
 
   crear(idEmpresa: number, datos: CrearVacanteUnidadInput): Promise<VacanteUnidad> {
     return this.repository.crear(idEmpresa, datos);
+  }
+
+  actualizar(idEmpresa: number, idVacante: number, datos: ActualizarVacanteUnidadInput): Promise<VacanteUnidad> {
+    return this.repository.actualizar(idEmpresa, idVacante, datos);
   }
 
   listarCarreras(): Promise<CarreraBasica[]> {

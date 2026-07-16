@@ -128,7 +128,13 @@ export function ConveniosUnidad() {
     );
   }
 
-  const resumen = datos?.resumen;
+  const documentosActivos = (datos?.documentos ?? []).filter((requisito) => requisito.activo !== false);
+  const resumenVista = {
+    aprobados: documentosActivos.filter((requisito) => requisito.documento?.estado_documento === "Aprobado").length,
+    pendientes: documentosActivos.filter((requisito) => requisito.documento?.estado_documento === "Pendiente").length,
+    rechazados: documentosActivos.filter((requisito) => requisito.documento?.estado_documento === "Rechazado").length,
+    faltantes: documentosActivos.filter((requisito) => !requisito.documento?.nombre_archivo).length,
+  };
   const documentacionLegal = datos?.documentos.filter(esDocumentacionLegal) ?? [];
   const requisitosConvenio = datos?.documentos.filter(esRequisitoConvenio) ?? [];
   const legalesObligatorios = documentacionLegal.filter(
@@ -246,10 +252,10 @@ export function ConveniosUnidad() {
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
         {([
-          ["Aprobados", resumen?.aprobados ?? 0, CheckCircle, "bg-green-50 text-green-600"],
-          ["Pendientes", resumen?.pendientes ?? 0, AlertCircle, "bg-yellow-50 text-yellow-600"],
-          ["Rechazados", resumen?.rechazados ?? 0, XCircle, "bg-red-50 text-red-600"],
-          ["Faltantes", resumen?.faltantes ?? 0, FileText, "bg-gray-50 text-gray-600"],
+          ["Aprobados", resumenVista.aprobados, CheckCircle, "bg-green-50 text-green-600"],
+          ["Pendientes", resumenVista.pendientes, AlertCircle, "bg-yellow-50 text-yellow-600"],
+          ["Rechazados", resumenVista.rechazados, XCircle, "bg-red-50 text-red-600"],
+          ["Faltantes", resumenVista.faltantes, FileText, "bg-gray-50 text-gray-600"],
         ] satisfies ColoredStatCard[]).map(([label, value, Icon, color]) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
             <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center mb-3`}>

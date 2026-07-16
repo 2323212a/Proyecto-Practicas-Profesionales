@@ -21,6 +21,7 @@ export interface EmpresaRevision {
 export interface SolicitudEmpresaDetalle {
   empresa: EmpresaRevision;
   solicitud: {
+    id_solicitud_empresa?: number | null;
     tipo_tramite: string | null;
     periodo_participacion: string | null;
     estado_solicitud: string | null;

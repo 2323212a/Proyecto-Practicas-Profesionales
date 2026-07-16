@@ -1,7 +1,7 @@
 export const CARRERAS = [
-  "Ingeniería en Sistemas",
-  "Ingeniería en Semiconductores",
-  "IA y Ciencia de Datos",
-  "Arquitectura Artificial Generativa",
-  "Ingeniería en Software"
+  "Licenciatura en Ingeniería en Sistemas Computacionales",
+  "Licenciatura en Ingeniería en Desarrollo y Tecnologías de Software",
+  "Licenciatura en Ingeniería en Semiconductores",
+  "Licenciatura en Inteligencia Artificial y Ciencia de Datos",
+  "Licenciatura en Arquitectura de Sistemas basados en IA Generativa"
 ];

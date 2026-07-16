@@ -37,7 +37,7 @@ La versión de este repositorio toma como base la **main de Oscar** e integra de
 2. Edita `.env` con la conexión real a MySQL y una clave JWT segura:
 
    ```env
-   VITE_API_URL=http://127.0.0.1:8000
+  VITE_API_URL=http://127.0.0.1:8001
    DATABASE_URL=mysql+pymysql://usuario:contrasena@127.0.0.1:3306/practicas_profesionales
    JWT_SECRET_KEY=una-clave-aleatoria-larga-y-segura
    CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
@@ -86,7 +86,7 @@ python -m venv backend/.venv
 source backend/.venv/bin/activate
 pip install --upgrade pip
 pip install -r backend/requirements.txt
-python -m uvicorn main:app --reload --app-dir backend
+python -m uvicorn main:app --reload --app-dir backend --port 8001
 ```
 
 En Windows PowerShell, activa el entorno con:
@@ -95,7 +95,7 @@ En Windows PowerShell, activa el entorno con:
 backend\.venv\Scripts\Activate.ps1
 ```
 
-La API quedará disponible en `http://127.0.0.1:8000` y la documentación interactiva en `/docs`.
+La API quedará disponible en `http://127.0.0.1:8001` y la documentación interactiva en `/docs`.
 
 ## Frontend
 

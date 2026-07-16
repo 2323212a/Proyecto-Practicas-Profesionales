@@ -86,6 +86,20 @@ export function GestionVacantes() {
   }
 
   async function cambiarEstado(vacante: VacanteRevision, nuevoEstado: string) {
+    if (nuevoEstado === "Activa" && vacante.cupo_disponible <= 0) {
+      alert("No puedes activar esta vacante porque no tiene cupo disponible.");
+      return;
+    }
+    if (nuevoEstado === "Activa" && vacante.estado_empresa !== "Activa") {
+      alert("No puedes activar esta vacante porque la empresa no esta Activa.");
+      return;
+    }
+    if (nuevoEstado === "Activa" && !vacante.publicable) {
+      alert(
+        "La vacante aun no es publicable. Revisa convenio vigente, estado de empresa y cupo antes de activarla.",
+      );
+      return;
+    }
     const requiereObservacion = ["Con observaciones", "Rechazada"].includes(nuevoEstado);
     const observaciones = requiereObservacion ? window.prompt("Observaciones") : undefined;
     if (requiereObservacion && !observaciones?.trim()) {

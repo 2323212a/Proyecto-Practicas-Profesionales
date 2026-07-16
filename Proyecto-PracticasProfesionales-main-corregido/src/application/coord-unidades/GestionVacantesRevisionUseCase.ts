@@ -1,5 +1,8 @@
 import type { VacanteRevision } from "../../domain/coord-unidades/VacanteRevision";
-import type { VacanteRevisionRepository } from "../../domain/coord-unidades/VacanteRevisionRepository";
+import type {
+  LiberarPrepadronFiltros,
+  VacanteRevisionRepository,
+} from "../../domain/coord-unidades/VacanteRevisionRepository";
 
 export class GestionVacantesRevisionUseCase {
   private readonly repository: VacanteRevisionRepository;
@@ -16,7 +19,7 @@ export class GestionVacantesRevisionUseCase {
     return this.repository.cambiarEstado(idVacante, estado, observaciones);
   }
 
-  liberarPrepadron(): Promise<void> {
-    return this.repository.liberarPrepadron();
+  liberarPrepadron(filtros?: LiberarPrepadronFiltros): Promise<void> {
+    return this.repository.liberarPrepadron(filtros);
   }
 }

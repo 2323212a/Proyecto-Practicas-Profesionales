@@ -46,6 +46,8 @@ export interface CrearVacanteUnidadInput {
   id_tipo_practica: number;
 }
 
+export type ActualizarVacanteUnidadInput = CrearVacanteUnidadInput;
+
 export interface CarreraBasica {
   id_carrera: number;
   clave: string;
