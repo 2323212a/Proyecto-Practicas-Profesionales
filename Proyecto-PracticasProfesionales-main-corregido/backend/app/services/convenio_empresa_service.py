@@ -92,4 +92,5 @@ def activar_convenio_actual(
     # Un convenio aprobado es la fuente de verdad del tipo de tramite. Esto
     # repara registros heredados que quedaron en NULL o Vinculacion.
     empresa.tipo_tramite = "Convenio"
+    empresa.estado_empresa = "Activa"
     return convenio
