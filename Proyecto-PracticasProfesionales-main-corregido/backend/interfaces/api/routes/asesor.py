@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -33,6 +33,7 @@ REPORTES_META = 2
 class CambiarEstadoReporteAsesorRequest(BaseModel):
     estado: str
     observacion: str | None = None
+    calificacion: Decimal | None = None
 
 
 class GuardarEvaluacionDocenteRequest(BaseModel):
@@ -168,6 +169,9 @@ def serializar_reporte(reporte: ReporteModel) -> dict:
         "url": f"/uploads/reportes/{Path(reporte.archivo).name}",
         "fecha_entrega": reporte.fecha_entrega.isoformat(),
         "estado": reporte.estado_reporte,
+        "calificacion": float(reporte.calificacion) if reporte.calificacion is not None else None,
+        "observacion_asesor": reporte.observacion_asesor,
+        "fecha_revision": reporte.fecha_revision.isoformat() if reporte.fecha_revision else None,
     }
 
 
@@ -196,6 +200,14 @@ def serializar_evaluacion_docente(db: Session, asignacion: AsignacionModel) -> d
         )
         .count()
     )
+    reportes_aprobados = (
+        db.query(ReporteModel)
+        .filter(
+            ReporteModel.id_asignacion == asignacion.id_asignacion,
+            ReporteModel.estado_reporte == "Aprobado",
+        )
+        .count()
+    )
     horas_aprobadas = (
         db.query(func.coalesce(func.sum(HorasModel.horas_realizadas), 0))
         .filter(
@@ -209,8 +221,20 @@ def serializar_evaluacion_docente(db: Session, asignacion: AsignacionModel) -> d
     usuario = alumno.usuario if alumno is not None else None
     carrera = alumno.carrera if alumno is not None else None
 
-    puede_evaluar = reportes_pendientes == 0 and reportes_rechazados == 0
-    motivo_bloqueo = None if puede_evaluar else "El alumno tiene reportes pendientes o rechazados."
+    puede_evaluar = (
+        reportes_pendientes == 0
+        and reportes_rechazados == 0
+        and reportes_aprobados >= REPORTES_META
+        and horas_aprobadas >= HORAS_META
+    )
+    if reportes_pendientes or reportes_rechazados:
+        motivo_bloqueo = "El alumno tiene reportes pendientes o con correcciones solicitadas."
+    elif reportes_aprobados < REPORTES_META:
+        motivo_bloqueo = f"El alumno debe tener {REPORTES_META} reportes aprobados."
+    elif horas_aprobadas < HORAS_META:
+        motivo_bloqueo = f"El alumno debe completar {HORAS_META} horas aprobadas."
+    else:
+        motivo_bloqueo = None
 
     return {
         "id_asignacion": asignacion.id_asignacion,
@@ -222,6 +246,7 @@ def serializar_evaluacion_docente(db: Session, asignacion: AsignacionModel) -> d
         "horas_aprobadas": float(horas_aprobadas),
         "reportes_pendientes": reportes_pendientes,
         "reportes_rechazados": reportes_rechazados,
+        "reportes_aprobados": reportes_aprobados,
         "puede_evaluar": puede_evaluar,
         "motivo_bloqueo": motivo_bloqueo,
         "evaluacion": (
@@ -341,6 +366,13 @@ def cambiar_estado_reporte_asesor(
     estado = payload.estado.strip()
     if estado not in {"Aprobado", "Rechazado"}:
         raise HTTPException(status_code=400, detail="El estado debe ser Aprobado o Rechazado")
+    observacion = (payload.observacion or "").strip()
+    if estado == "Rechazado" and not observacion:
+        raise HTTPException(status_code=400, detail="Debes indicar las correcciones solicitadas")
+    if estado == "Aprobado" and payload.calificacion is None:
+        raise HTTPException(status_code=400, detail="Debes capturar la calificacion del reporte")
+    if payload.calificacion is not None and not 0 <= payload.calificacion <= 100:
+        raise HTTPException(status_code=400, detail="La calificacion debe estar entre 0 y 100")
 
     reporte = (
         db.query(ReporteModel)
@@ -364,9 +396,9 @@ def cambiar_estado_reporte_asesor(
         raise HTTPException(status_code=404, detail="Reporte no encontrado para este asesor")
 
     reporte.estado_reporte = estado
-    if payload.observacion and payload.observacion.strip():
-        nota = f"Observacion del asesor: {payload.observacion.strip()}"
-        reporte.descripcion = f"{reporte.descripcion or ''}\n\n{nota}".strip()
+    reporte.observacion_asesor = observacion or None
+    reporte.calificacion = payload.calificacion if estado == "Aprobado" else None
+    reporte.fecha_revision = datetime.now()
 
     alumno = reporte.asignacion.alumno if reporte.asignacion else None
     crear_notificacion(
@@ -374,7 +406,8 @@ def cambiar_estado_reporte_asesor(
         alumno.id_usuario if alumno else None,
         f"Reporte {estado.lower()}",
         f"Tu reporte '{reporte.titulo}' fue marcado como {estado} por tu asesor."
-        + (f" Observacion: {payload.observacion.strip()}" if payload.observacion and payload.observacion.strip() else ""),
+        + (f" Calificacion: {payload.calificacion}/100." if estado == "Aprobado" else "")
+        + (f" Correcciones solicitadas: {observacion}" if observacion else ""),
     )
     db.commit()
     db.refresh(reporte)

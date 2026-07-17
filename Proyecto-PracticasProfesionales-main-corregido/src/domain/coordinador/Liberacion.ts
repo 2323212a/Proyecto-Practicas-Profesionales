@@ -19,7 +19,7 @@ export interface LiberacionEmitida {
 }
 
 export interface AlumnoLiberacion {
-  id_asignacion: number;
+  id_asignacion: number | null;
   id_alumno: number;
   alumno: string;
   matricula: string | null;
@@ -28,10 +28,12 @@ export interface AlumnoLiberacion {
   vacante: string;
   estado_alumno: string | null;
   estado_asignacion: string;
+  estado_seguimiento: "Listo" | "Bloqueado" | "Liberado";
   horas_aprobadas: number;
   horas_meta: number;
   reportes_pendientes: number;
   reportes_rechazados: number;
+  reportes_aprobados: number;
   incidencias_abiertas: number;
   requisitos: RequisitosLiberacion;
   faltantes: string[];

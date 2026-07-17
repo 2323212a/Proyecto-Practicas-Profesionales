@@ -35,7 +35,12 @@ export interface AlumnoConfirmacion {
 export interface ConfirmacionAsignacionesResponse {
   convocatoria_id: number | null;
   convocatoria: string | null;
+  secretaria_academica: string;
   alumnos: AlumnoConfirmacion[];
+}
+
+export interface SecretariaAcademicaResponse {
+  secretaria_academica: string;
 }
 
 export interface ConfirmarAsignacionRequest {

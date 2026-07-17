@@ -75,6 +75,8 @@ export function AsesorReportes() {
   const [estado, setEstado] = useState<EstadoReporteAsesor | "Todos">("Todos");
   const [empresa, setEmpresa] = useState("Todas");
   const [rechazando, setRechazando] = useState<ReporteAsesor | null>(null);
+  const [aprobando, setAprobando] = useState<ReporteAsesor | null>(null);
+  const [calificacion, setCalificacion] = useState(90);
   const [observacion, setObservacion] = useState("");
   const [procesando, setProcesando] = useState<number | null>(null);
 
@@ -141,6 +143,7 @@ export function AsesorReportes() {
     reporte: ReporteAsesor,
     nuevoEstado: Exclude<EstadoReporteAsesor, "Pendiente">,
     nota?: string,
+    notaCalificacion?: number,
   ) => {
     if (!idDocente) return;
 
@@ -152,9 +155,11 @@ export function AsesorReportes() {
         reporte.id_reporte,
         nuevoEstado,
         nota,
+        notaCalificacion,
       );
       await cargarReportes();
       setRechazando(null);
+      setAprobando(null);
       setObservacion("");
     } catch (err) {
       console.error(err);
@@ -309,6 +314,19 @@ export function AsesorReportes() {
                   </span>
                 </div>
 
+                {reporte.calificacion !== null && (
+                  <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800">
+                    <strong>Calificacion: {reporte.calificacion}/100</strong>
+                    {reporte.observacion_asesor && <p className="mt-1 whitespace-pre-line">{reporte.observacion_asesor}</p>}
+                  </div>
+                )}
+                {reporte.estado === "Rechazado" && reporte.observacion_asesor && (
+                  <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm text-orange-800">
+                    <strong>Correcciones solicitadas</strong>
+                    <p className="mt-1 whitespace-pre-line">{reporte.observacion_asesor}</p>
+                  </div>
+                )}
+
                 <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4">
                   <div className="flex items-start gap-3">
                     <MessageSquare className="w-5 h-5 text-[#1565c0] mt-0.5" />
@@ -330,7 +348,7 @@ export function AsesorReportes() {
 
                   {reporte.estado !== "Aprobado" && (
                     <button
-                      onClick={() => cambiarEstado(reporte, "Aprobado")}
+                      onClick={() => { setAprobando(reporte); setCalificacion(reporte.calificacion ?? 90); setObservacion(reporte.observacion_asesor ?? ""); }}
                       disabled={procesando === reporte.id_reporte}
                       className="bg-green-600 text-white rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
                     >
@@ -363,6 +381,23 @@ export function AsesorReportes() {
           </div>
         )}
       </div>
+
+      {aprobando && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl p-6 w-full max-w-md">
+            <h3 className="font-bold text-[#0d2b5e]">Calificar y aprobar reporte</h3>
+            <p className="text-sm text-gray-500 mt-1">{aprobando.titulo} - {aprobando.alumno}</p>
+            <label className="block mt-5 text-sm font-semibold text-gray-600">Calificacion (0 a 100)</label>
+            <input type="number" min={0} max={100} value={calificacion} onChange={(e) => setCalificacion(Number(e.target.value))} className="mt-2 w-full border border-gray-300 rounded-xl px-3 py-2" />
+            <label className="block mt-4 text-sm font-semibold text-gray-600">Retroalimentacion opcional</label>
+            <textarea value={observacion} onChange={(e) => setObservacion(e.target.value)} rows={3} className="mt-2 w-full border border-gray-300 rounded-xl px-3 py-2 resize-none" />
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setAprobando(null)} className="border rounded-xl px-4 py-2 text-sm">Cancelar</button>
+              <button onClick={() => cambiarEstado(aprobando, "Aprobado", observacion, calificacion)} disabled={calificacion < 0 || calificacion > 100 || procesando === aprobando.id_reporte} className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm disabled:opacity-50">Guardar calificacion</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {rechazando && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">

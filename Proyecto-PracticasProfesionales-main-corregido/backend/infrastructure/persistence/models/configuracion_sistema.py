@@ -11,6 +11,12 @@ class ConfiguracionSistemaModel(Base):
     nombre_sistema = Column(String(150), nullable=False)
     escuela_facultad = Column(String(150), nullable=False)
     correo_institucional = Column(String(100), nullable=False)
+    secretaria_academica = Column(
+        String(150),
+        nullable=False,
+        default="Paola Lopez",
+        server_default="Paola Lopez",
+    )
     estado_sistema = Column(String(30), nullable=False, default="Activo", server_default="Activo")
     ciclo_escolar = Column(String(50), nullable=False)
     hero_titulo = Column(String(150), nullable=False)

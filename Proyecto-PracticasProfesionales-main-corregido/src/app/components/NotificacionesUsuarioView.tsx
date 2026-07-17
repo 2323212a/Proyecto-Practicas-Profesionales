@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, Check, CheckCircle, Clock, Eye, Info, MessageSquare, X, XCircle } from "lucide-react";
+import { AlertTriangle, Bell, Check, CheckCircle, Clock, Eye, Info, MessageSquare, Trash2, X, XCircle } from "lucide-react";
 import { gestionNotificacionesUseCase } from "../dependencies";
 import type { Notificacion } from "../../domain/notificaciones/Notificacion";
 
@@ -39,15 +39,15 @@ function fechaCorta(fecha: string) {
 function tipoVisual(notificacion: Notificacion) {
   const texto = `${notificacion.titulo} ${notificacion.mensaje}`.toLowerCase();
   if (texto.includes("rechaz") || texto.includes("incidencia")) {
-    return { icon: XCircle, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" };
+    return { icon: XCircle };
   }
   if (texto.includes("aprob") || texto.includes("liberacion") || texto.includes("emitida")) {
-    return { icon: CheckCircle, color: "text-green-600", bg: "bg-green-50", border: "border-green-100" };
+    return { icon: CheckCircle };
   }
   if (texto.includes("observ") || texto.includes("pendiente") || texto.includes("revision")) {
-    return { icon: AlertTriangle, color: "text-yellow-600", bg: "bg-yellow-50", border: "border-yellow-100" };
+    return { icon: AlertTriangle };
   }
-  return { icon: Info, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" };
+  return { icon: Info };
 }
 
 export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo = "Avisos y actividades recientes del sistema." }: Props) {
@@ -109,6 +109,21 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
     }
   }
 
+  async function limpiarBandeja() {
+    if (!idUsuario || notificaciones.length === 0) return;
+    if (!window.confirm("¿Deseas eliminar todas las notificaciones de tu bandeja?")) return;
+
+    try {
+      await gestionNotificacionesUseCase.limpiarBandeja(idUsuario);
+      setNotificaciones([]);
+      setSeleccionada(null);
+      window.dispatchEvent(new CustomEvent("notificaciones-actualizadas"));
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo limpiar la bandeja de notificaciones.");
+    }
+  }
+
   function abrirDetalle(notificacion: Notificacion) {
     setSeleccionada(notificacion);
     void marcarLeida(notificacion);
@@ -122,31 +137,39 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
           <p className="text-gray-500 text-sm mt-1">{subtitulo}</p>
         </div>
 
-        {noLeidas > 0 && (
-          <button onClick={marcarTodas} className="flex items-center gap-2 text-sm text-[#1565c0] hover:underline w-fit">
-            <Check className="w-4 h-4" />
-            Marcar todas como leidas
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {noLeidas > 0 && (
+            <button onClick={marcarTodas} className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:border-gray-400">
+              <Check className="w-4 h-4" />
+              Marcar todas como leidas
+            </button>
+          )}
+          {notificaciones.length > 0 && (
+            <button onClick={limpiarBandeja} className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:border-red-300 hover:text-red-600">
+              <Trash2 className="w-4 h-4" />
+              Limpiar bandeja
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
 
       <div className="grid md:grid-cols-3 gap-4">
-        <div className="bg-blue-600 rounded-2xl p-5 text-white">
-          <Bell className="w-6 h-6 mb-3 opacity-80" />
-          <div className="text-2xl font-bold">{notificaciones.length}</div>
-          <div className="text-white/80 text-sm">Total</div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <Bell className="w-6 h-6 mb-3 text-gray-500" />
+          <div className="text-2xl font-bold text-[#0d2b5e]">{notificaciones.length}</div>
+          <div className="text-gray-500 text-sm">Total</div>
         </div>
-        <div className="bg-yellow-500 rounded-2xl p-5 text-white">
-          <AlertTriangle className="w-6 h-6 mb-3 opacity-80" />
-          <div className="text-2xl font-bold">{noLeidas}</div>
-          <div className="text-white/80 text-sm">Sin leer</div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <AlertTriangle className="w-6 h-6 mb-3 text-gray-500" />
+          <div className="text-2xl font-bold text-[#0d2b5e]">{noLeidas}</div>
+          <div className="text-gray-500 text-sm">Sin leer</div>
         </div>
-        <div className="bg-green-600 rounded-2xl p-5 text-white">
-          <CheckCircle className="w-6 h-6 mb-3 opacity-80" />
-          <div className="text-2xl font-bold">{notificaciones.length - noLeidas}</div>
-          <div className="text-white/80 text-sm">Leidas</div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <CheckCircle className="w-6 h-6 mb-3 text-gray-500" />
+          <div className="text-2xl font-bold text-[#0d2b5e]">{notificaciones.length - noLeidas}</div>
+          <div className="text-gray-500 text-sm">Leidas</div>
         </div>
       </div>
 
@@ -180,8 +203,8 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
             return (
               <div key={notificacion.id_notificacion} className={`p-5 hover:bg-gray-50 transition-colors ${!notificacion.leida ? "border-l-4 border-l-[#1565c0]" : ""}`}>
                 <div className="flex gap-4">
-                  <div className={`w-12 h-12 rounded-xl border flex items-center justify-center ${visual.bg} ${visual.border}`}>
-                    <Icon className={`w-5 h-5 ${visual.color}`} />
+                  <div className="w-12 h-12 rounded-xl border border-gray-200 bg-white flex items-center justify-center">
+                    <Icon className="w-5 h-5 text-gray-600" />
                   </div>
 
                   <div className="flex-1 min-w-0">
@@ -240,8 +263,8 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
             </div>
 
             <div className="mt-5 space-y-5">
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
-                <div className="text-xs text-blue-500 font-semibold mb-2">Asunto</div>
+              <div className="bg-white border border-gray-200 rounded-2xl p-5">
+                <div className="text-xs text-gray-500 font-semibold mb-2">Asunto</div>
                 <div className="text-lg font-bold text-[#0d2b5e]">{seleccionada.titulo}</div>
               </div>
 

@@ -47,6 +47,9 @@ export interface ReporteAsesor {
   url: string | null;
   fecha_entrega: string;
   estado: EstadoReporteAsesor;
+  calificacion: number | null;
+  observacion_asesor: string | null;
+  fecha_revision: string | null;
 }
 
 export interface ResumenReportesAsesor {
@@ -78,6 +81,7 @@ export interface AlumnoEvaluacionDocente {
   horas_aprobadas: number;
   reportes_pendientes: number;
   reportes_rechazados: number;
+  reportes_aprobados: number;
   puede_evaluar: boolean;
   motivo_bloqueo: string | null;
   evaluacion: EvaluacionDocente | null;

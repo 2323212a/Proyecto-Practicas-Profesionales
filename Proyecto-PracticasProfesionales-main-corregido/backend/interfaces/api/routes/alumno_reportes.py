@@ -151,6 +151,9 @@ def _reporte_response(reporte: ReporteModel):
         "url": f"/uploads/reportes/{Path(reporte.archivo).name}",
         "fecha_entrega": reporte.fecha_entrega.isoformat(),
         "estado": reporte.estado_reporte,
+        "calificacion": float(reporte.calificacion) if reporte.calificacion is not None else None,
+        "observacion_asesor": reporte.observacion_asesor,
+        "fecha_revision": reporte.fecha_revision.isoformat() if reporte.fecha_revision else None,
     }
 
 
@@ -318,12 +321,20 @@ def subir_reporte_alumno(
         reporte.archivo = str(ruta)
         reporte.fecha_entrega = date.today()
         reporte.estado_reporte = "Pendiente"
+        reporte.calificacion = None
+        reporte.observacion_asesor = None
+        reporte.fecha_revision = None
 
     crear_notificacion(
         db,
         asignacion.docente.id_usuario if asignacion.docente else None,
         "Reporte nuevo para revision",
-        f"{alumno.matricula} subio el {REPORTES_CONFIG[tipo]['titulo'].lower()}.",
+        (
+            f"Alumno: {' '.join(parte for parte in [alumno.usuario.nombre, alumno.usuario.apellido_paterno, alumno.usuario.apellido_materno] if parte)} "
+            f"({alumno.matricula}). Empresa: "
+            f"{asignacion.empresa.nombre_empresa if asignacion.empresa else 'Sin empresa asignada'}. "
+            f"Entrega: {REPORTES_CONFIG[tipo]['titulo']}."
+        ),
     )
     db.commit()
     db.refresh(reporte)

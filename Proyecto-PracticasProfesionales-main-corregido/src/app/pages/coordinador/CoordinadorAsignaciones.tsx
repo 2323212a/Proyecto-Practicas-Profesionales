@@ -24,6 +24,9 @@ export function CoordinadorAsignaciones() {
   const [busqueda, setBusqueda] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltro>("pendientes");
   const [selecciones, setSelecciones] = useState<Record<number, string>>({});
+  const [secretariaAcademica, setSecretariaAcademica] = useState("");
+  const [guardandoSecretaria, setGuardandoSecretaria] = useState(false);
+  const [mensajeSecretaria, setMensajeSecretaria] = useState("");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState<number | null>(null);
   const [rechazando, setRechazando] = useState<number | null>(null);
@@ -40,6 +43,7 @@ export function CoordinadorAsignaciones() {
       const data = await gestionConfirmacionAsignacionesUseCase.listar();
       setAlumnos(data.alumnos);
       setConvocatoria(data.convocatoria);
+      setSecretariaAcademica(data.secretaria_academica);
       setSelecciones(crearSeleccionesIniciales(data.alumnos));
     } catch (err) {
       console.error(err);
@@ -117,6 +121,32 @@ export function CoordinadorAsignaciones() {
   function limpiarFiltros() {
     setBusqueda("");
     setEstadoFiltro("pendientes");
+  }
+
+  async function guardarSecretariaAcademica() {
+    const nombre = secretariaAcademica.trim().replace(/\s+/g, " ");
+    if (nombre.length < 3) {
+      setMensajeSecretaria("Ingresa el nombre completo de la persona encargada.");
+      return;
+    }
+
+    try {
+      setGuardandoSecretaria(true);
+      setMensajeSecretaria("");
+      const respuesta =
+        await gestionConfirmacionAsignacionesUseCase.actualizarSecretariaAcademica(nombre);
+      setSecretariaAcademica(respuesta.secretaria_academica);
+      setMensajeSecretaria(
+        "Nombre actualizado. Las cartas compromiso se generaran con este dato."
+      );
+    } catch (err: unknown) {
+      console.error(err);
+      setMensajeSecretaria(
+        getApiErrorMessage(err, "No se pudo actualizar el nombre de Secretaria Academica.")
+      );
+    } finally {
+      setGuardandoSecretaria(false);
+    }
   }
 
   async function confirmar(alumno: AlumnoConfirmacion) {
@@ -213,6 +243,53 @@ export function CoordinadorAsignaciones() {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-blue-200 shadow-sm p-5">
+        <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="w-5 h-5 text-[#1565c0]" />
+              <h3 className="font-bold text-[#0d2b5e]">
+                Encargado de Secretaria Academica
+              </h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              Este nombre aparecera como responsable de Secretaria Academica en
+              todas las cartas compromiso que genere el sistema.
+            </p>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Nombre completo
+            </label>
+            <input
+              value={secretariaAcademica}
+              onChange={(event) => {
+                setSecretariaAcademica(event.target.value);
+                setMensajeSecretaria("");
+              }}
+              maxLength={150}
+              placeholder="Ej. Paola Lopez Hernandez"
+              className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-[#1565c0] focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={guardarSecretariaAcademica}
+            disabled={guardandoSecretaria || secretariaAcademica.trim().length < 3}
+            className="bg-[#1565c0] text-white rounded-xl px-5 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:bg-gray-300 lg:min-w-48"
+          >
+            <Save className="w-4 h-4" />
+            {guardandoSecretaria ? "Guardando..." : "Guardar responsable"}
+          </button>
+        </div>
+
+        {mensajeSecretaria && (
+          <div className="mt-3 flex items-center gap-2 text-sm text-[#0d2b5e] bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            {mensajeSecretaria}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">

@@ -59,12 +59,16 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
     empresas = (
         db.query(EmpresaModel)
         .join(ConvenioModel, ConvenioModel.id_empresa == EmpresaModel.id_empresa)
+        .join(VacanteModel, VacanteModel.id_empresa == EmpresaModel.id_empresa)
         .filter(
             EmpresaModel.estado_empresa == "Activa",
             ConvenioModel.es_actual.is_(True),
             ConvenioModel.estado_convenio == "Vigente",
             ConvenioModel.fecha_inicio <= date.today(),
             ConvenioModel.fecha_fin >= date.today(),
+            VacanteModel.id_carrera == alumno.id_carrera,
+            VacanteModel.estado_vacante == "Activa",
+            VacanteModel.cupo_disponible > 0,
         )
         .distinct()
         .order_by(EmpresaModel.nombre_empresa.asc())
@@ -87,6 +91,7 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
             ConvenioModel.fecha_fin >= date.today(),
             VacanteModel.estado_vacante == "Activa",
             VacanteModel.cupo_disponible > 0,
+            VacanteModel.id_carrera == alumno.id_carrera,
         )
         .order_by(EmpresaModel.nombre_empresa.asc(), VacanteModel.titulo.asc())
         .all()
@@ -249,6 +254,7 @@ def guardar_preferencias_alumno(
         for (id_empresa,) in db.query(VacanteModel.id_empresa)
         .filter(
             VacanteModel.id_empresa.in_(ids_empresas),
+            VacanteModel.id_carrera == alumno.id_carrera,
             VacanteModel.estado_vacante == "Activa",
             VacanteModel.cupo_disponible > 0,
         )
@@ -258,7 +264,7 @@ def guardar_preferencias_alumno(
     if set(ids_empresas) != vacantes_disponibles:
         raise HTTPException(
             status_code=400,
-            detail="Todas las empresas seleccionadas deben tener vacantes disponibles",
+            detail="Todas las empresas seleccionadas deben tener vacantes disponibles para tu carrera",
         )
 
     db.query(SeleccionEmpresaModel).filter(

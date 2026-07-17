@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -18,5 +18,9 @@ class ReporteModel(Base):
         default="Pendiente",
         server_default="Pendiente"
     )
+
+    calificacion = Column(Numeric(5, 2), nullable=True)
+    observacion_asesor = Column(Text, nullable=True)
+    fecha_revision = Column(DateTime, nullable=True)
 
     asignacion = relationship("AsignacionModel", back_populates="reportes")

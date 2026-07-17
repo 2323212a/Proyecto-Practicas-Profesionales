@@ -65,3 +65,17 @@ Desktop.ini
 *.bak
 *.swp
 ~$*
+# =========================
+# Credenciales y respaldos privados
+# =========================
+*.pem
+*.key
+credentials*.json
+secrets*.json
+*.sqlite
+*.sqlite3
+*.db
+*.sql
+*.zip
+*.rar
+*.7z

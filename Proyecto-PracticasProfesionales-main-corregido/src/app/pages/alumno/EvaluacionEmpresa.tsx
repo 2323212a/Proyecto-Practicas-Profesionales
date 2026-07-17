@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { AlertTriangle, Building2, CheckCircle2, MessageSquare, Send, Star } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, Lock, MessageSquare, Send, Star } from "lucide-react";
 import { gestionSeguimientoPracticasUseCase } from "../../dependencies";
 import type {
   PlantillaEvaluacionAlumnoEmpresa,
@@ -92,7 +92,7 @@ export function EvaluacionEmpresa() {
       await gestionSeguimientoPracticasUseCase.guardarEvaluacionAlumnoEmpresa(idAlumno, {
         calificacion,
         respuestas,
-        incidencias_detectadas: incidencias,
+        incidencias_detectadas: incidencias.length > 0 ? incidencias : undefined,
         comentarios: comentarios || undefined,
       });
       await cargar();
@@ -178,21 +178,28 @@ export function EvaluacionEmpresa() {
         </div>
       )}
 
-      <form onSubmit={enviarEvaluacion} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-5">
+      <form onSubmit={enviarEvaluacion} className={`rounded-2xl border shadow-sm p-6 space-y-5 ${datos?.cierre?.puede_evaluar ? "bg-white border-gray-200" : "bg-amber-50/70 border-amber-300 border-l-4"}`}>
         <div className="flex items-center gap-2">
           <Star className="w-5 h-5 text-[#1565c0]" />
           <h3 className="font-bold text-[#0d2b5e]">Evaluacion final alumno a empresa</h3>
         </div>
 
+        {!datos?.cierre?.puede_evaluar && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-100 p-3 text-sm font-semibold text-amber-800">
+            <Lock className="h-4 w-4" /> Formulario inhabilitado hasta completar los requisitos indicados arriba.
+          </div>
+        )}
+
+        <fieldset disabled={!datos?.cierre?.puede_evaluar} className="space-y-5 disabled:cursor-not-allowed">
         <label className="block">
           <span className="text-sm font-semibold text-gray-600">Calificacion general</span>
-          <input type="number" min={0} max={100} value={calificacion} onChange={(e) => setCalificacion(Number(e.target.value))} className="mt-2 w-full border rounded-xl px-3 py-2 text-sm" />
+          <input type="number" min={0} max={100} value={calificacion} onChange={(e) => setCalificacion(Number(e.target.value))} className="mt-2 w-full border rounded-xl px-3 py-2 text-sm disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70" />
         </label>
 
         {plantilla.preguntas.map((pregunta) => (
           <label key={pregunta.id} className="block">
             <span className="text-sm font-semibold text-gray-600">{pregunta.texto}</span>
-            <select value={respuestas[pregunta.texto] ?? ""} onChange={(e) => setRespuestas({ ...respuestas, [pregunta.texto]: e.target.value })} className="mt-2 w-full border rounded-xl px-3 py-2 text-sm bg-white">
+            <select value={respuestas[pregunta.texto] ?? ""} onChange={(e) => setRespuestas({ ...respuestas, [pregunta.texto]: e.target.value })} className="mt-2 w-full border rounded-xl px-3 py-2 text-sm bg-white disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70">
               <option value="">Selecciona una respuesta</option>
               {plantilla.respuestas.map((respuesta) => (
                 <option key={respuesta}>{respuesta}</option>
@@ -202,10 +209,13 @@ export function EvaluacionEmpresa() {
         ))}
 
         <div>
-          <span className="text-sm font-semibold text-gray-600">Incidencias detectadas</span>
+          <span className="text-sm font-semibold text-gray-600">
+            Incidencias detectadas <span className="font-normal text-gray-400">(opcional)</span>
+          </span>
+          <p className="mt-1 text-xs text-gray-400">Si no detectaste ninguna incidencia, deja todas las opciones sin seleccionar.</p>
           <div className="grid md:grid-cols-2 gap-3 mt-2">
             {plantilla.incidencias_sugeridas.map((item) => (
-              <label key={item} className="flex items-center gap-3 border rounded-xl p-3 text-sm">
+              <label key={item} className="flex items-center gap-3 border rounded-xl p-3 text-sm has-[:disabled]:border-amber-200 has-[:disabled]:bg-amber-100/70 has-[:disabled]:text-amber-800">
                 <input type="checkbox" checked={incidencias.includes(item)} onChange={() => setIncidencias(incidencias.includes(item) ? incidencias.filter((x) => x !== item) : [...incidencias, item])} />
                 {item}
               </label>
@@ -213,12 +223,13 @@ export function EvaluacionEmpresa() {
           </div>
         </div>
 
-        <textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} rows={4} placeholder="Comentarios finales sobre la empresa..." className="w-full border rounded-xl p-3 text-sm" />
+        <textarea value={comentarios} onChange={(e) => setComentarios(e.target.value)} rows={4} placeholder="Comentarios finales sobre la empresa..." className="w-full border rounded-xl p-3 text-sm disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70" />
 
         <button disabled={!datos?.cierre?.puede_evaluar || guardando} className="bg-[#1565c0] text-white rounded-xl px-5 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-50">
           <Send className="w-4 h-4" />
           {guardando ? "Guardando..." : "Enviar evaluacion"}
         </button>
+        </fieldset>
       </form>
 
       <form onSubmit={enviarIncidencia} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">

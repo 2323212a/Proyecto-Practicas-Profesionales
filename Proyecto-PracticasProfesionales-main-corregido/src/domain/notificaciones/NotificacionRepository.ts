@@ -5,4 +5,5 @@ export interface NotificacionRepository {
   resumenPorUsuario(idUsuario: number): Promise<ResumenNotificaciones>;
   marcarLeida(idNotificacion: number, leida?: boolean): Promise<Notificacion>;
   marcarTodas(idUsuario: number): Promise<ResumenNotificaciones>;
+  limpiarBandeja(idUsuario: number): Promise<void>;
 }

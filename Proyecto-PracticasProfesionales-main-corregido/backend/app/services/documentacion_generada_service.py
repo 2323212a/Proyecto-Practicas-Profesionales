@@ -9,18 +9,21 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from xml.sax.saxutils import escape
 
 from fastapi import HTTPException
+from sqlalchemy.orm import object_session
 
 from infrastructure.database.connection import SessionLocal
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel  # noqa: F401
 from infrastructure.persistence.models.carrera import CarreraModel  # noqa: F401
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel  # noqa: F401
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
 from infrastructure.persistence.models.documento import DocumentoModel  # noqa: F401
 from infrastructure.persistence.models.empresa import EmpresaModel  # noqa: F401
 from infrastructure.persistence.models.expediente import ExpedienteModel  # noqa: F401
 from infrastructure.persistence.models.horas import HorasModel  # noqa: F401
 from infrastructure.persistence.models.rol import RolModel  # noqa: F401
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel  # noqa: F401
+from infrastructure.persistence.models.tipo_practica import TipoPracticaModel  # noqa: F401
 from infrastructure.persistence.models.usuario import UsuarioModel  # noqa: F401
 from infrastructure.persistence.models.vacante import VacanteModel  # noqa: F401
 
@@ -28,7 +31,7 @@ from infrastructure.persistence.models.vacante import VacanteModel  # noqa: F401
 BASE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = BASE_DIR / "templates" / "documentos"
 GENERATED_DIR = BASE_DIR / "uploads" / "documentos_generados"
-CACHE_VERSION = "relleno-v1"
+CACHE_VERSION = "relleno-v3"
 
 DOCUMENTOS_GENERADOS = {
     "carta_compromiso": {
@@ -105,10 +108,55 @@ def _fecha_corta(hoy: date) -> str:
     return f"{hoy.day:02d}/{hoy.month:02d}/{hoy.year}"
 
 
+def _tipo_practica_alumno(alumno: AlumnoModel) -> str:
+    asignaciones = sorted(
+        alumno.asignaciones or [],
+        key=lambda asignacion: (
+            asignacion.estado_asignacion == "Activa",
+            asignacion.fecha_asignacion or date.min,
+        ),
+        reverse=True,
+    )
+    for asignacion in asignaciones:
+        tipo = asignacion.vacante.tipo_practica if asignacion.vacante else None
+        if tipo and tipo.nombre:
+            return tipo.nombre
+
+    selecciones = sorted(
+        alumno.selecciones_empresa or [],
+        key=lambda seleccion: (
+            seleccion.estado_seleccion == "Aprobada",
+            seleccion.fecha_seleccion,
+        ),
+        reverse=True,
+    )
+    for seleccion in selecciones:
+        tipo = seleccion.vacante.tipo_practica if seleccion.vacante else None
+        if tipo and tipo.nombre:
+            return tipo.nombre
+
+    return "Practicas Profesionales"
+
+
+def _secretaria_academica(alumno: AlumnoModel) -> str:
+    db = object_session(alumno)
+    if db is None:
+        return "Paola Lopez"
+    configuracion = (
+        db.query(ConfiguracionSistemaModel)
+        .order_by(ConfiguracionSistemaModel.id_configuracion.asc())
+        .first()
+    )
+    if configuracion and configuracion.secretaria_academica.strip():
+        return configuracion.secretaria_academica.strip()
+    return "Paola Lopez"
+
+
 def _contexto(alumno: AlumnoModel) -> dict[str, str]:
     hoy = date.today()
     usuario = alumno.usuario
     carrera = alumno.carrera.nombre if alumno.carrera else ""
+    tipo_practica = _tipo_practica_alumno(alumno)
     convocatoria = None
     if alumno.expedientes:
         convocatoria = sorted(
@@ -122,10 +170,10 @@ def _contexto(alumno: AlumnoModel) -> dict[str, str]:
         "fecha_dia": f"{hoy.day:02d}",
         "fecha_mes": f"{hoy.month:02d}",
         "fecha_anio": str(hoy.year),
-        "secretaria_academica": "Paola Lopez",
+        "secretaria_academica": _secretaria_academica(alumno),
         "coordinadora_academica": "Guadalupe Velazquez",
-        "nombre_practica": "Practicas Profesionales",
-        "tipo_practica": "Practicas Profesionales",
+        "nombre_practica": tipo_practica,
+        "tipo_practica": tipo_practica,
         "nombre_alumno": _nombre_completo(alumno),
         "nombre": usuario.nombre if usuario else "",
         "apellido_paterno": usuario.apellido_paterno if usuario and usuario.apellido_paterno else "",
@@ -171,18 +219,15 @@ def _rellenar_xml(codigo: str, xml: str, alumno: AlumnoModel) -> str:
         }
     elif codigo == "carta_exoneracion":
         reemplazos = {
-            "FECHA": c["fecha_larga"],
-            "Práctica Profesional:   .": f"Práctica Profesional: {c['tipo_practica']}.",
-            "del __ de ": f"del {c['periodo_inicio_dia']} de ",
-            "_____": c["periodo_inicio_mes"],
-            "00000000000000000": "_________________",
-            "Nombre y firma del alumno": c["nombre_alumno"],
+            "FECHA_DOCUMENTO": c["fecha_larga"],
+            "INICIO_DIA": c["periodo_inicio_dia"],
+            "INICIO_MES": c["periodo_inicio_mes"],
+            "INICIO_ANIO": c["periodo_inicio_anio"],
+            "FIN_DIA": c["periodo_fin_dia"],
+            "FIN_MES": c["periodo_fin_mes"],
+            "FIN_ANIO": c["periodo_fin_anio"],
+            "NOMBRE_ALUMNO": c["nombre_alumno"],
         }
-        xml = xml.replace(
-            f"<w:t xml:space=\"preserve\">{escape(c['periodo_inicio_mes'])}</w:t><w:r",
-            f"<w:t xml:space=\"preserve\">{escape(c['periodo_inicio_mes'])}</w:t><w:r",
-            1,
-        )
     elif codigo == "solicitud_fo_136":
         reemplazos = {
             "Fecha.": f"Fecha. {c['fecha_corta']}",

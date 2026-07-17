@@ -38,10 +38,11 @@ export class AsesorHttpRepository implements AsesorRepository {
     idReporte: number,
     estado: Exclude<EstadoReporteAsesor, "Pendiente">,
     observacion?: string,
+    calificacion?: number,
   ): Promise<ReporteAsesor> {
     const response = await apiClient.patch<ReporteAsesor>(
       `/asesor/me/reportes/${idReporte}/estado`,
-      { estado, observacion },
+      { estado, observacion, calificacion },
     );
     return response.data;
   }

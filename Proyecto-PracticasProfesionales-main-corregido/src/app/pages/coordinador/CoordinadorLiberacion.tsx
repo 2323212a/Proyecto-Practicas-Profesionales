@@ -15,6 +15,14 @@ const requisitoLabel: Record<string, string> = {
   incidencias_cerradas: "Incidencias cerradas",
 };
 
+function normalizarTexto(valor: string) {
+  return valor
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function archivoABase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -51,16 +59,29 @@ export function CoordinadorLiberacion() {
   }, []);
 
   const alumnos = useMemo(() => {
-    const q = busqueda.toLowerCase();
+    const q = normalizarTexto(busqueda);
     return (datos?.alumnos ?? []).filter((alumno) => {
-      const texto = [alumno.alumno, alumno.matricula ?? "", alumno.carrera, alumno.empresa, alumno.vacante].join(" ").toLowerCase();
-      const estadoAlumno = alumno.liberacion ? "Liberado" : alumno.listo_liberacion ? "Listo" : "Bloqueado";
-      return texto.includes(q) && (estado === "Todos" || estado === estadoAlumno);
+      const texto = normalizarTexto(
+        [alumno.alumno, alumno.matricula ?? "", alumno.carrera, alumno.empresa, alumno.vacante].join(" "),
+      );
+      return texto.includes(q) && (estado === "Todos" || estado === alumno.estado_seguimiento);
     });
   }, [busqueda, datos, estado]);
 
+  const resumenVisible = useMemo(() => ({
+    total: alumnos.length,
+    listos: alumnos.filter((alumno) => alumno.estado_seguimiento === "Listo").length,
+    bloqueados: alumnos.filter((alumno) => alumno.estado_seguimiento === "Bloqueado").length,
+    liberados: alumnos.filter((alumno) => alumno.estado_seguimiento === "Liberado").length,
+  }), [alumnos]);
+
   async function anexarDocumento(alumno: AlumnoLiberacion) {
-    const archivo = archivos[alumno.id_asignacion];
+    if (alumno.id_asignacion === null) {
+      setError("El alumno necesita una asignacion antes de poder liberarse.");
+      return;
+    }
+    const idAsignacion = alumno.id_asignacion;
+    const archivo = archivos[idAsignacion];
     if (!archivo) {
       setError("Selecciona el documento de liberacion antes de continuar.");
       return;
@@ -77,15 +98,15 @@ export function CoordinadorLiberacion() {
     }
 
     try {
-      setAnexando(alumno.id_asignacion);
+      setAnexando(idAsignacion);
       setError("");
       const contenido = await archivoABase64(archivo);
-      await gestionLiberacionUseCase.anexarDocumento(alumno.id_asignacion, {
+      await gestionLiberacionUseCase.anexarDocumento(idAsignacion, {
         nombre_archivo: archivo.name,
         contenido_base64: contenido,
         mime_type: archivo.type,
       });
-      setArchivos((actuales) => ({ ...actuales, [alumno.id_asignacion]: null }));
+      setArchivos((actuales) => ({ ...actuales, [idAsignacion]: null }));
       await cargar();
     } catch (err) {
       console.error(err);
@@ -95,7 +116,7 @@ export function CoordinadorLiberacion() {
     }
   }
 
-  const resumen = datos?.resumen ?? { total: 0, listos: 0, bloqueados: 0, liberados: 0 };
+  const resumen = resumenVisible;
 
   return (
     <div className="space-y-6">
@@ -127,10 +148,10 @@ export function CoordinadorLiberacion() {
           ["Listos", resumen.listos, "bg-green-50 border-green-200 text-green-700"],
           ["Bloqueados", resumen.bloqueados, "bg-orange-50 border-orange-200 text-orange-700"],
           ["Liberados", resumen.liberados, "bg-purple-50 border-purple-200 text-purple-700"],
-        ].map(([label, value, color]) => (
-          <div key={label} className={`${color} border rounded-2xl p-5`}>
+        ].map(([label, value]) => (
+          <div key={label} className="border border-gray-200 bg-white rounded-2xl p-5">
             <p className="text-sm text-gray-600">{label}</p>
-            <p className="text-3xl font-bold mt-2">{value}</p>
+            <p className="text-3xl font-bold mt-2 text-[#0d2b5e]">{value}</p>
           </div>
         ))}
       </div>
@@ -138,16 +159,17 @@ export function CoordinadorLiberacion() {
       <div className="space-y-4">
         {cargando && <div className="bg-white rounded-2xl border p-10 text-center text-gray-400">Cargando liberaciones...</div>}
         {!cargando && alumnos.map((alumno) => {
-          const estadoTexto = alumno.liberacion ? "Liberado" : alumno.listo_liberacion ? "Listo para liberar" : "Bloqueado";
+          const idAsignacion = alumno.id_asignacion;
+          const estadoTexto = alumno.estado_seguimiento === "Listo" ? "Listo para liberar" : alumno.estado_seguimiento;
           return (
-            <div key={alumno.id_asignacion} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div key={alumno.id_alumno} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
               <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
                 <div>
                   <h3 className="font-bold text-lg text-[#0d2b5e]">{alumno.alumno}</h3>
                   <p className="text-sm text-gray-500">{alumno.matricula ?? "Sin matricula"} - {alumno.carrera}</p>
                   <p className="text-sm text-gray-400">{alumno.empresa} - {alumno.vacante}</p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold w-fit ${alumno.liberacion ? "bg-purple-100 text-purple-700" : alumno.listo_liberacion ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>{estadoTexto}</span>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold w-fit ${alumno.estado_seguimiento === "Liberado" ? "bg-purple-100 text-purple-700" : alumno.estado_seguimiento === "Listo" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>{estadoTexto}</span>
               </div>
 
               <div className="grid md:grid-cols-4 gap-4 mt-5">
@@ -183,21 +205,21 @@ export function CoordinadorLiberacion() {
                   <FileText className="w-4 h-4" />
                   Ver requisitos
                 </button>
-                {!alumno.liberacion && alumno.listo_liberacion && (
+                {!alumno.liberacion && alumno.listo_liberacion && idAsignacion !== null && (
                   <div className="flex flex-col sm:flex-row gap-2">
                     <label className="border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-600 flex items-center gap-2 cursor-pointer">
                       <Upload className="w-4 h-4 text-[#1565c0]" />
-                      <span>{archivos[alumno.id_asignacion]?.name ?? "Seleccionar constancia"}</span>
+                      <span>{archivos[idAsignacion]?.name ?? "Seleccionar constancia"}</span>
                       <input
                         type="file"
                         accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         className="hidden"
-                        onChange={(event) => setArchivos((actuales) => ({ ...actuales, [alumno.id_asignacion]: event.target.files?.[0] ?? null }))}
+                        onChange={(event) => setArchivos((actuales) => ({ ...actuales, [idAsignacion]: event.target.files?.[0] ?? null }))}
                       />
                     </label>
-                    <button onClick={() => anexarDocumento(alumno)} disabled={anexando === alumno.id_asignacion || !archivos[alumno.id_asignacion]} className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-50">
+                    <button onClick={() => anexarDocumento(alumno)} disabled={anexando === idAsignacion || !archivos[idAsignacion]} className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-50">
                       <CheckCircle className="w-4 h-4" />
-                      {anexando === alumno.id_asignacion ? "Anexando..." : "Anexar y liberar"}
+                      {anexando === idAsignacion ? "Anexando..." : "Anexar y liberar"}
                     </button>
                   </div>
                 )}

@@ -90,8 +90,8 @@ export function CoordinadorDashboard() {
           },
         ].map((w) => (
           <div key={w.l} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <div className={`w-10 h-10 ${w.c} rounded-xl flex items-center justify-center mb-3`}>
-              <w.I className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl border border-gray-200 bg-white flex items-center justify-center mb-3">
+              <w.I className="w-5 h-5 text-gray-600" />
             </div>
             <div className="text-2xl font-bold text-[#0d2b5e]">
               {cargando ? "..." : w.v}

@@ -17,6 +17,7 @@ from app.services.documentacion_generada_service import generar_documento_oficia
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
+from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento import DocumentoModel
 from infrastructure.persistence.models.expediente import ExpedienteModel
@@ -261,11 +262,33 @@ def subir_documento_alumno(
         documento.validacion_automatica_estado = estado_auto
 
     expediente.estado_expediente = "En Revision"
+    asignacion = (
+        db.query(AsignacionModel)
+        .filter(
+            AsignacionModel.id_alumno == alumno.id_alumno,
+            AsignacionModel.estado_asignacion == "Activa",
+        )
+        .order_by(AsignacionModel.fecha_asignacion.desc())
+        .first()
+    )
+    nombre_alumno = " ".join(
+        parte
+        for parte in [
+            alumno.usuario.nombre,
+            alumno.usuario.apellido_paterno,
+            alumno.usuario.apellido_materno,
+        ]
+        if parte
+    )
+    empresa = asignacion.empresa.nombre_empresa if asignacion and asignacion.empresa else "Sin empresa asignada"
     notificar_roles(
         db,
         ["Coordinador de Practicas", "Administrador"],
         "Documento de alumno recibido",
-        f"{alumno.matricula} subio {tipo.nombre_documento} para revision.",
+        (
+            f"Alumno: {nombre_alumno} ({alumno.matricula}). "
+            f"Empresa: {empresa}. Documento: {tipo.nombre_documento}."
+        ),
     )
     db.commit()
     db.refresh(documento)

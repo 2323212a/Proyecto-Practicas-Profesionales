@@ -18,6 +18,7 @@ export interface AsesorRepository {
     idReporte: number,
     estado: Exclude<EstadoReporteAsesor, "Pendiente">,
     observacion?: string,
+    calificacion?: number,
   ): Promise<ReporteAsesor>;
   listarEvaluaciones(idDocente: number): Promise<EvaluacionesDocenteResponse>;
   guardarEvaluacion(

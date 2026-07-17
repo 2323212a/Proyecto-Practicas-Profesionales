@@ -2,6 +2,7 @@ import type {
   ConfirmacionAsignacionesResponse,
   ConfirmarAsignacionRequest,
   RechazarSeleccionRequest,
+  SecretariaAcademicaResponse,
 } from "../../domain/coordinador/ConfirmacionAsignacion";
 import type { ConfirmacionAsignacionRepository } from "../../domain/coordinador/ConfirmacionAsignacionRepository";
 
@@ -14,6 +15,10 @@ export class GestionConfirmacionAsignacionesUseCase {
 
   listar(): Promise<ConfirmacionAsignacionesResponse> {
     return this.repository.listar();
+  }
+
+  actualizarSecretariaAcademica(nombre: string): Promise<SecretariaAcademicaResponse> {
+    return this.repository.actualizarSecretariaAcademica(nombre);
   }
 
   confirmar(datos: ConfirmarAsignacionRequest): Promise<void> {

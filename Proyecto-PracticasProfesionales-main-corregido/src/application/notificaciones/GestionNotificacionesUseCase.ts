@@ -22,4 +22,8 @@ export class GestionNotificacionesUseCase {
   marcarTodas(idUsuario: number) {
     return this.repository.marcarTodas(idUsuario);
   }
+
+  limpiarBandeja(idUsuario: number) {
+    return this.repository.limpiarBandeja(idUsuario);
+  }
 }

@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Eye,
+  Lock,
   Mail,
   MapPin,
   Phone,
@@ -416,9 +417,17 @@ export function PadronEmpresarial() {
                   className={`rounded-2xl border shadow-sm p-6 relative ${
                     priorizada
                       ? "bg-yellow-50 border-yellow-300"
-                      : "bg-white border-gray-200"
+                      : disabled
+                        ? "bg-amber-50/70 border-amber-300 border-l-4"
+                        : "bg-white border-gray-200"
                   }`}
                 >
+                  {disabled && !priorizada && (
+                    <div className="absolute top-4 right-4 flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                      <Lock className="h-3 w-3" />
+                      {!puedeSeleccionar ? "Seleccion bloqueada" : sinCupo ? "Sin cupo" : "Limite alcanzado"}
+                    </div>
+                  )}
                   {priorizada && (
                     <div className="absolute top-4 right-4 bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
                       <Star className="w-3 h-3" />
@@ -631,7 +640,7 @@ export function PadronEmpresarial() {
             <button
               onClick={guardarPreferencias}
               disabled={guardando || seleccionadas.length === 0 || !puedeSeleccionar}
-              className="mt-5 w-full bg-[#1565c0] text-white rounded-xl py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-5 w-full bg-[#1565c0] text-white rounded-xl py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:bg-amber-200 disabled:text-amber-800"
             >
               <Save className="w-4 h-4" />
               {guardando ? "Guardando..." : "Guardar preferencias"}

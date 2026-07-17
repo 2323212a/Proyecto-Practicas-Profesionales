@@ -19,6 +19,9 @@ export interface ReporteAlumno {
   url: string;
   fecha_entrega: string;
   estado: EstadoReporteAlumno;
+  calificacion: number | null;
+  observacion_asesor: string | null;
+  fecha_revision: string | null;
 }
 
 export interface ResumenReportesAlumno {

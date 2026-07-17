@@ -34,8 +34,9 @@ export class GestionAsesorUseCase {
     idReporte: number,
     estado: Exclude<EstadoReporteAsesor, "Pendiente">,
     observacion?: string,
+    calificacion?: number,
   ): Promise<ReporteAsesor> {
-    return this.repository.cambiarEstadoReporte(idDocente, idReporte, estado, observacion);
+    return this.repository.cambiarEstadoReporte(idDocente, idReporte, estado, observacion, calificacion);
   }
 
   listarEvaluaciones(idDocente: number): Promise<EvaluacionesDocenteResponse> {

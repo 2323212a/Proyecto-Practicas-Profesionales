@@ -146,6 +146,11 @@ def ensure_runtime_schema(engine: Engine) -> None:
 
     base_updates: list[ColumnUpdate] = [
         (
+            "configuracion_sistema",
+            "secretaria_academica",
+            "ALTER TABLE configuracion_sistema ADD COLUMN secretaria_academica VARCHAR(150) NOT NULL DEFAULT 'Paola Lopez'",
+        ),
+        (
             "tipo_documento",
             "requiere_formato",
             "ALTER TABLE tipo_documento ADD COLUMN requiere_formato TINYINT(1) NOT NULL DEFAULT 0",
@@ -234,6 +239,21 @@ def ensure_runtime_schema(engine: Engine) -> None:
             "convenio",
             "renovacion_solicitada",
             "ALTER TABLE convenio ADD COLUMN renovacion_solicitada TINYINT(1) NOT NULL DEFAULT 0",
+        ),
+        (
+            "reporte",
+            "calificacion",
+            "ALTER TABLE reporte ADD COLUMN calificacion DECIMAL(5,2) NULL",
+        ),
+        (
+            "reporte",
+            "observacion_asesor",
+            "ALTER TABLE reporte ADD COLUMN observacion_asesor TEXT NULL",
+        ),
+        (
+            "reporte",
+            "fecha_revision",
+            "ALTER TABLE reporte ADD COLUMN fecha_revision DATETIME NULL",
         ),
     ]
 

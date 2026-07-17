@@ -102,7 +102,7 @@ export interface CrearIncidenciaInput {
 export interface EvaluacionAlumnoEmpresaInput {
   calificacion: number;
   respuestas: Record<string, string>;
-  incidencias_detectadas: string[];
+  incidencias_detectadas?: string[];
   comentarios?: string;
 }
 

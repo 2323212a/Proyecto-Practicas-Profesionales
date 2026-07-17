@@ -32,6 +32,7 @@ router = APIRouter(
     tags=["Coordinador - Liberacion"],
 )
 HORAS_META = 480
+REPORTES_META = 2
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "liberaciones"
 MIMES_PERMITIDOS = {
     "application/pdf": ".pdf",
@@ -125,6 +126,14 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
         )
         .count()
     )
+    reportes_aprobados = (
+        db.query(ReporteModel)
+        .filter(
+            ReporteModel.id_asignacion == asignacion.id_asignacion,
+            ReporteModel.estado_reporte == "Aprobado",
+        )
+        .count()
+    )
     evaluacion_docente = (
         db.query(EvaluacionModel)
         .filter(
@@ -159,7 +168,11 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
     requisitos = {
         "expediente_aprobado": _expediente_aprobado(db, asignacion.id_alumno),
         "horas_completas": _float(horas_aprobadas) >= HORAS_META,
-        "reportes_aprobados": reportes_pendientes == 0 and reportes_rechazados == 0,
+        "reportes_aprobados": (
+            reportes_aprobados >= REPORTES_META
+            and reportes_pendientes == 0
+            and reportes_rechazados == 0
+        ),
         "evaluacion_docente": evaluacion_docente is not None,
         "evaluacion_empresa": evaluacion_empresa is not None,
         "evaluacion_alumno_empresa": evaluacion_alumno_empresa is not None,
@@ -171,6 +184,11 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
         if not completo
     ]
     listo = len(faltantes) == 0
+    liberado = bool(
+        (liberacion and liberacion.estado_liberacion == "Emitida")
+        or (alumno and alumno.estado_alumno == "Liberado")
+    )
+    estado_seguimiento = "Liberado" if liberado else "Listo" if listo else "Bloqueado"
 
     return {
         "id_asignacion": asignacion.id_asignacion,
@@ -182,10 +200,12 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
         "vacante": asignacion.vacante.titulo if asignacion.vacante else "Sin vacante",
         "estado_alumno": alumno.estado_alumno if alumno else None,
         "estado_asignacion": asignacion.estado_asignacion,
+        "estado_seguimiento": estado_seguimiento,
         "horas_aprobadas": _float(horas_aprobadas),
         "horas_meta": HORAS_META,
         "reportes_pendientes": reportes_pendientes,
         "reportes_rechazados": reportes_rechazados,
+        "reportes_aprobados": reportes_aprobados,
         "incidencias_abiertas": incidencias_abiertas,
         "requisitos": requisitos,
         "faltantes": faltantes,
@@ -204,28 +224,84 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
     }
 
 
+def _estado_liberacion_sin_asignacion(db: Session, alumno: AlumnoModel) -> dict:
+    expediente_aprobado = _expediente_aprobado(db, alumno.id_alumno)
+    requisitos = {
+        "expediente_aprobado": expediente_aprobado,
+        "horas_completas": False,
+        "reportes_aprobados": False,
+        "evaluacion_docente": False,
+        "evaluacion_empresa": False,
+        "evaluacion_alumno_empresa": False,
+        "incidencias_cerradas": True,
+    }
+    faltantes = [nombre for nombre, completo in requisitos.items() if not completo]
+    liberado = alumno.estado_alumno == "Liberado"
+    return {
+        "id_asignacion": None,
+        "id_alumno": alumno.id_alumno,
+        "alumno": _nombre_usuario(alumno.usuario),
+        "matricula": alumno.matricula,
+        "carrera": alumno.carrera.nombre if alumno.carrera else "Sin carrera",
+        "empresa": "Sin empresa asignada",
+        "vacante": "Sin vacante",
+        "estado_alumno": alumno.estado_alumno,
+        "estado_asignacion": "Sin asignacion",
+        "estado_seguimiento": "Liberado" if liberado else "Bloqueado",
+        "horas_aprobadas": 0.0,
+        "horas_meta": HORAS_META,
+        "reportes_pendientes": 0,
+        "reportes_rechazados": 0,
+        "reportes_aprobados": 0,
+        "incidencias_abiertas": 0,
+        "requisitos": requisitos,
+        "faltantes": faltantes,
+        "listo_liberacion": False,
+        "liberacion": None,
+    }
+
+
 @router.get("/", dependencies=[Depends(requerir_roles(["Coordinador de Practicas", "Administrador"]))])
 def listar_candidatos_liberacion(db: Session = Depends(obtener_db)):
-    asignaciones = (
-        db.query(AsignacionModel)
+    estudiantes = (
+        db.query(AlumnoModel)
         .options(
-            joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.usuario),
-            joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.carrera),
-            joinedload(AsignacionModel.empresa),
-            joinedload(AsignacionModel.vacante),
-            joinedload(AsignacionModel.liberacion),
+            joinedload(AlumnoModel.usuario),
+            joinedload(AlumnoModel.carrera),
         )
-        .filter(AsignacionModel.estado_asignacion.in_(["Activa", "Finalizada"]))
-        .order_by(AsignacionModel.fecha_asignacion.desc())
         .all()
     )
-    alumnos = [_estado_liberacion(db, asignacion) for asignacion in asignaciones]
+    alumnos = []
+    for estudiante in estudiantes:
+        asignacion = (
+            db.query(AsignacionModel)
+            .options(
+                joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.usuario),
+                joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.carrera),
+                joinedload(AsignacionModel.empresa),
+                joinedload(AsignacionModel.vacante),
+                joinedload(AsignacionModel.liberacion),
+            )
+            .filter(
+                AsignacionModel.id_alumno == estudiante.id_alumno,
+                AsignacionModel.estado_asignacion.in_(["Activa", "Finalizada"]),
+            )
+            .order_by(AsignacionModel.fecha_asignacion.desc(), AsignacionModel.id_asignacion.desc())
+            .first()
+        )
+        alumnos.append(
+            _estado_liberacion(db, asignacion)
+            if asignacion
+            else _estado_liberacion_sin_asignacion(db, estudiante)
+        )
+
+    alumnos.sort(key=lambda alumno: (alumno["alumno"].lower(), alumno["id_alumno"]))
     return {
         "resumen": {
             "total": len(alumnos),
-            "listos": sum(1 for alumno in alumnos if alumno["listo_liberacion"] and not alumno["liberacion"]),
-            "bloqueados": sum(1 for alumno in alumnos if not alumno["listo_liberacion"]),
-            "liberados": sum(1 for alumno in alumnos if alumno["liberacion"] and alumno["liberacion"]["estado_liberacion"] == "Emitida"),
+            "listos": sum(1 for alumno in alumnos if alumno["estado_seguimiento"] == "Listo"),
+            "bloqueados": sum(1 for alumno in alumnos if alumno["estado_seguimiento"] == "Bloqueado"),
+            "liberados": sum(1 for alumno in alumnos if alumno["estado_seguimiento"] == "Liberado"),
         },
         "alumnos": alumnos,
     }

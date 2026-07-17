@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
@@ -12,11 +12,13 @@ from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.convenio import ConvenioModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 from infrastructure.persistence.models.vacante import VacanteModel
 from interfaces.api.schemas.asignacion import AsignacionCreate, AsignacionResponse
 from interfaces.api.service_factory import AsignacionService
+from interfaces.api.routes.configuracion_sistema import obtener_o_crear_configuracion
 
 
 router = APIRouter(
@@ -65,6 +67,7 @@ class AlumnoConfirmacionResponse(BaseModel):
 class ConfirmacionAsignacionesResponse(BaseModel):
     convocatoria_id: int | None
     convocatoria: str | None
+    secretaria_academica: str
     alumnos: list[AlumnoConfirmacionResponse]
 
 
@@ -78,6 +81,14 @@ class ConfirmarAsignacionRequest(BaseModel):
 
 class RechazarSeleccionRequest(BaseModel):
     observaciones: str | None = None
+
+
+class SecretariaAcademicaRequest(BaseModel):
+    nombre: str = Field(min_length=3, max_length=150)
+
+
+class SecretariaAcademicaResponse(BaseModel):
+    secretaria_academica: str
 
 
 def _convocatoria_vigente(db: Session):
@@ -124,6 +135,7 @@ def _tiene_convenio_vigente(db: Session, id_empresa: int) -> bool:
 @router.get("/", response_model=ConfirmacionAsignacionesResponse)
 def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
     convocatoria = _convocatoria_vigente(db)
+    configuracion = obtener_o_crear_configuracion(db)
 
     alumnos = (
         db.query(AlumnoModel)
@@ -207,8 +219,25 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
     return ConfirmacionAsignacionesResponse(
         convocatoria_id=convocatoria.id_convocatoria if convocatoria else None,
         convocatoria=convocatoria.nombre if convocatoria else None,
+        secretaria_academica=configuracion.secretaria_academica,
         alumnos=respuesta,
     )
+
+
+@router.put("/secretaria-academica", response_model=SecretariaAcademicaResponse)
+def actualizar_secretaria_academica(
+    datos: SecretariaAcademicaRequest,
+    db: Session = Depends(obtener_db),
+):
+    nombre = " ".join(datos.nombre.split())
+    if len(nombre) < 3:
+        raise HTTPException(status_code=422, detail="Ingresa un nombre valido")
+
+    configuracion: ConfiguracionSistemaModel = obtener_o_crear_configuracion(db)
+    configuracion.secretaria_academica = nombre
+    db.commit()
+    db.refresh(configuracion)
+    return SecretariaAcademicaResponse(secretaria_academica=nombre)
 
 
 @router.post("/", response_model=AsignacionResponse)

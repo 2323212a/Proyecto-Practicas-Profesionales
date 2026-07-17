@@ -154,11 +154,11 @@ export function AsesorDashboard() {
         ].map((item) => (
           <div
             key={item.label}
-            className={`${item.color} rounded-2xl p-5 text-white`}
+            className="rounded-2xl border border-gray-200 bg-white p-5"
           >
-            <item.icon className="w-7 h-7 mb-3 opacity-80" />
-            <div className="text-2xl font-bold">{cargando ? "..." : item.value}</div>
-            <div className="text-white/80 text-sm">{item.label}</div>
+            <item.icon className="w-7 h-7 mb-3 text-gray-600" />
+            <div className="text-2xl font-bold text-[#0d2b5e]">{cargando ? "..." : item.value}</div>
+            <div className="text-gray-500 text-sm">{item.label}</div>
           </div>
         ))}
       </div>

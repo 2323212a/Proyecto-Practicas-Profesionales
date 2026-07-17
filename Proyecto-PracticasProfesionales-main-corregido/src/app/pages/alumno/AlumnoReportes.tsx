@@ -221,11 +221,11 @@ export function AlumnoReportes() {
               ["Aprobados", resumen.aprobados, CheckCircle2, "bg-green-600"],
               ["En revision", resumen.pendientes, Clock, "bg-yellow-500"],
               ["Rechazados", resumen.rechazados, XCircle, "bg-red-500"],
-            ] satisfies ColoredStatCard[]).map(([tituloCard, valor, Icon, color]) => (
-              <div key={tituloCard} className={`${color} rounded-xl p-4 text-white`}>
-                <Icon className="w-6 h-6 mb-2 opacity-80" />
-                <div className="text-xl font-bold">{valor}</div>
-                <div className="text-white/80 text-xs">{tituloCard}</div>
+            ] satisfies ColoredStatCard[]).map(([tituloCard, valor, Icon]) => (
+              <div key={tituloCard} className="rounded-xl border border-gray-200 bg-white p-4">
+                <Icon className="w-6 h-6 mb-2 text-gray-600" />
+                <div className="text-xl font-bold text-[#0d2b5e]">{valor}</div>
+                <div className="text-gray-500 text-xs">{tituloCard}</div>
               </div>
             ))}
           </div>
@@ -240,12 +240,14 @@ export function AlumnoReportes() {
               return (
                 <div
                   key={espacio.tipo_reporte}
-                  className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"
+                  className={`rounded-xl border shadow-sm overflow-hidden transition-colors ${
+                    espacio.desbloqueado ? "bg-white border-gray-200" : "bg-amber-50/70 border-amber-300 border-l-4"
+                  }`}
                 >
                   <div className="p-5 border-b border-gray-100 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                     <div className="flex gap-3">
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                        espacio.desbloqueado ? "bg-blue-50 text-[#1565c0]" : "bg-gray-100 text-gray-400"
+                        espacio.desbloqueado ? "bg-blue-50 text-[#1565c0]" : "bg-amber-100 text-amber-700"
                       }`}>
                         {espacio.desbloqueado ? <FileText className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                       </div>
@@ -260,7 +262,7 @@ export function AlumnoReportes() {
 
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold w-fit ${
-                        reporte ? estadoColor[reporte.estado] : espacio.desbloqueado ? "bg-blue-100 text-[#1565c0]" : "bg-gray-100 text-gray-500"
+                        reporte ? estadoColor[reporte.estado] : espacio.desbloqueado ? "bg-blue-100 text-[#1565c0]" : "bg-amber-100 text-amber-800 ring-1 ring-amber-300"
                       }`}
                     >
                       {reporte?.estado ?? (espacio.desbloqueado ? "Disponible" : "Bloqueado")}
@@ -288,10 +290,15 @@ export function AlumnoReportes() {
 
                           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex gap-3">
                             <MessageSquare className="w-5 h-5 text-[#1565c0] mt-0.5" />
-                            <p className="text-sm text-gray-600 whitespace-pre-line">
-                              {reporte.descripcion || "Sin observaciones registradas."}
-                            </p>
+                            <p className="text-sm text-gray-600 whitespace-pre-line">{reporte.descripcion || "Sin descripcion registrada."}</p>
                           </div>
+                          {reporte.calificacion !== null && <p className="text-sm font-bold text-green-700">Calificacion del asesor: {reporte.calificacion}/100</p>}
+                          {reporte.observacion_asesor && (
+                            <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+                              <strong>{reporte.estado === "Rechazado" ? "Correcciones solicitadas" : "Retroalimentacion del asesor"}</strong>
+                              <p className="mt-1 whitespace-pre-line">{reporte.observacion_asesor}</p>
+                            </div>
+                          )}
                         </>
                       ) : (
                         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-500">
@@ -331,7 +338,7 @@ export function AlumnoReportes() {
                             disabled={bloqueado}
                             rows={3}
                             placeholder="Comentario opcional para tu asesor"
-                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-[#1565c0] disabled:bg-gray-100"
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-[#1565c0] disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70 disabled:text-amber-800"
                           />
 
                           <label className="block">
@@ -341,7 +348,7 @@ export function AlumnoReportes() {
                               accept="application/pdf"
                               onChange={seleccionarArchivo(espacio.tipo_reporte)}
                               disabled={bloqueado}
-                              className="w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1565c0] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white disabled:opacity-60"
+                              className="w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1565c0] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:rounded-lg disabled:bg-amber-100/70 disabled:p-2 disabled:text-amber-800 disabled:file:bg-amber-200 disabled:file:text-amber-700"
                             />
                           </label>
 
@@ -354,7 +361,7 @@ export function AlumnoReportes() {
                           <button
                             onClick={() => subirReporte(espacio)}
                             disabled={bloqueado || !archivo || subiendo === espacio.tipo_reporte}
-                            className="w-full bg-[#0d2b5e] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full bg-[#0d2b5e] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:bg-amber-200 disabled:text-amber-800"
                           >
                             <Upload className="w-4 h-4" />
                             {subiendo === espacio.tipo_reporte

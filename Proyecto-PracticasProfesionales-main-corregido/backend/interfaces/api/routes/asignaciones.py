@@ -67,12 +67,26 @@ def asignar_docente(
         DocenteAsesorModel.id_docente == datos.id_docente
     ).first()
     if docente is not None:
+        nombre_alumno = (
+            " ".join(
+                parte
+                for parte in [
+                    asignacion.alumno.usuario.nombre,
+                    asignacion.alumno.usuario.apellido_paterno,
+                    asignacion.alumno.usuario.apellido_materno,
+                ]
+                if parte
+            )
+            if asignacion.alumno and asignacion.alumno.usuario
+            else "Sin alumno"
+        )
         db.add(NotificacionModel(
             id_usuario=docente.id_usuario,
             titulo="Nuevo alumno asignado",
             mensaje=(
-                "Se te asignó un nuevo alumno para seguimiento académico. "
-                "Puedes revisarlo en el módulo de Alumnos Asignados."
+                f"Alumno: {nombre_alumno}. Empresa: "
+                f"{asignacion.empresa.nombre_empresa if asignacion.empresa else 'Sin empresa asignada'}. "
+                "Puedes revisar su expediente en Alumnos Asignados."
             ),
         ))
         db.commit()

@@ -22,4 +22,8 @@ export class NotificacionHttpRepository implements NotificacionRepository {
     const { data } = await apiClient.patch<ResumenNotificaciones>("/notificaciones/me/marcar-todas");
     return data;
   }
+
+  async limpiarBandeja(_idUsuario: number): Promise<void> {
+    await apiClient.delete("/notificaciones/me/limpiar");
+  }
 }

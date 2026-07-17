@@ -120,8 +120,8 @@ export function AlumnoDashboard() {
           },
         ].map((w) => (
           <div key={w.l} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <div className={`w-10 h-10 ${w.bg} rounded-xl flex items-center justify-center mb-3`}>
-              <div className={`w-4 h-4 rounded-full ${w.tc.replace("text-", "bg-")}`} />
+            <div className="w-10 h-10 rounded-xl border border-gray-200 bg-white flex items-center justify-center mb-3">
+              <div className="w-4 h-4 rounded-full border-2 border-gray-500" />
             </div>
             <div className="text-2xl font-bold text-[#0d2b5e]">{w.v}</div>
             <div className="text-gray-500 text-sm mt-0.5">{w.l}</div>

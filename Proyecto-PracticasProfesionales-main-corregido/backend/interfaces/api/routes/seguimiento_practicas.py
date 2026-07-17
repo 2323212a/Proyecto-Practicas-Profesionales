@@ -390,7 +390,11 @@ def crear_incidencia_alumno(
         db,
         ["Coordinador de Practicas", "Administrador"],
         "Incidencia reportada por alumno",
-        f"Se registro una incidencia {datos.prioridad.lower()} del alumno en {asignacion.empresa.nombre_empresa if asignacion.empresa else 'la empresa'}.",
+        (
+            f"Alumno: {_nombre_usuario(asignacion.alumno.usuario)}. Empresa: "
+            f"{asignacion.empresa.nombre_empresa if asignacion.empresa else 'Sin empresa asignada'}. "
+            f"Prioridad: {datos.prioridad}. Tipo: {datos.tipo_incidencia}."
+        ),
     )
     db.commit()
     db.refresh(incidencia)
@@ -579,7 +583,11 @@ def crear_incidencia_empresa(
         db,
         ["Coordinador de Practicas", "Administrador"],
         "Incidencia reportada por empresa",
-        f"Una empresa registro una incidencia {datos.prioridad.lower()} sobre un alumno.",
+        (
+            f"Alumno: {_nombre_usuario(asignacion.alumno.usuario) if asignacion.alumno else 'Sin alumno'}. "
+            f"Empresa: {asignacion.empresa.nombre_empresa if asignacion.empresa else 'Sin empresa asignada'}. "
+            f"Prioridad: {datos.prioridad}. Tipo: {datos.tipo_incidencia}."
+        ),
     )
     db.commit()
     db.refresh(incidencia)

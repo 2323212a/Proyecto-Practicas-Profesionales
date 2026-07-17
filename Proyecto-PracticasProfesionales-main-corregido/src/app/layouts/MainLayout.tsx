@@ -29,12 +29,15 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import logoInstitucional from "../../assets/Ocelote1.png";
+import { NotificationAlerts } from "../components/NotificationAlerts";
+import { HeaderNotifications } from "../components/HeaderNotifications";
 
 type UsuarioSesion = {
   nombre?: string;
   nombre_completo?: string;
   rol?: string | null;
   correo?: string;
+  id_usuario?: number;
 };
 
 type NavItem = {
@@ -124,6 +127,7 @@ function getNav(role: string): NavItem[] {
       { label: "Alumnos Asignados", icon: Users, path: "/asesor/alumnos" },
       { label: "Reportes", icon: BarChart3, path: "/asesor/reportes" },
       { label: "Evaluaciones", icon: Star, path: "/asesor/observaciones" },
+      { label: "Notificaciones", icon: Bell, path: "/asesor/notificaciones" },
     ];
   }
 
@@ -136,6 +140,17 @@ function getNav(role: string): NavItem[] {
   }
 
   return [];
+}
+
+
+function getNotificationPath(role: string) {
+  const rutas: Record<string, string> = {
+    alumno: "/alumno/notificaciones",
+    coordinador: "/coordinador/notificaciones",
+    "coord-unidades": "/coord-unidades/notificaciones",
+    asesor: "/asesor/notificaciones",
+  };
+  return rutas[role] ?? null;
 }
 
 function normalizarRol(raw?: string | null) {
@@ -197,10 +212,14 @@ export function MainLayout() {
   const displaySubtitle = usuarioSesion?.rol || subtitle;
   const navItems = getNav(role);
   const breadcrumb = navItems.find((n) => n.path === location.pathname)?.label || "Inicio";
-  const notifCount = navItems.reduce((a, n) => a + (n.badge || 0), 0);
+  const notificationPath = getNotificationPath(role);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
+      {notificationPath && usuarioSesion?.id_usuario && (
+        <NotificationAlerts idUsuario={usuarioSesion.id_usuario} />
+      )}
+
       {mobileOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden"
@@ -311,14 +330,9 @@ export function MainLayout() {
             <span className="text-gray-700 font-medium">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative p-1.5 text-gray-500 hover:text-[#1565c0] hover:bg-blue-50 rounded-xl transition-colors">
-              <Bell className="w-4 h-4" />
-              {notifCount > 0 && (
-                <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">
-                  {notifCount}
-                </span>
-              )}
-            </button>
+            {notificationPath && usuarioSesion?.id_usuario && (
+              <HeaderNotifications idUsuario={usuarioSesion.id_usuario} rutaBandeja={notificationPath} />
+            )}
             <div className="flex items-center gap-2.5 pl-3 border-l border-gray-200">
               <div className="w-8 h-8 bg-[#0d2b5e] rounded-xl flex items-center justify-center">
                 <User className="w-4 h-4 text-white" />
