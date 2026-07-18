@@ -29,11 +29,9 @@ class UsuarioService:
 
         nuevo_usuario = self.repository.nuevo({
             "id_rol": usuario.id_rol,
-            "nombre": usuario.nombre,
-            "apellido_paterno": usuario.apellido_paterno,
-            "apellido_materno": usuario.apellido_materno,
             "correo": usuario.correo,
             "password_hash": self.password_hasher.hash(usuario.password),
+            "debe_cambiar_password": usuario.id_rol == 1,
             "estado": "Activo"
         })
 
@@ -59,19 +57,18 @@ class UsuarioService:
         if usuario is None:
             return None
 
-        self._validar_rol(datos.id_rol)
+        if datos.id_rol is not None:
+            self._validar_rol(datos.id_rol)
         self._validar_correo_disponible(datos.correo, id_usuario)
 
-        if usuario.id_rol != datos.id_rol and self.perfil_service.usuario_tiene_perfil(id_usuario):
+        if datos.id_rol is not None and usuario.id_rol != datos.id_rol and self.perfil_service.usuario_tiene_perfil(id_usuario):
             raise HTTPException(
                 status_code=400,
                 detail="No se puede cambiar el rol de un usuario que ya tiene perfil"
             )
 
-        usuario.id_rol = datos.id_rol
-        usuario.nombre = datos.nombre
-        usuario.apellido_paterno = datos.apellido_paterno
-        usuario.apellido_materno = datos.apellido_materno
+        if datos.id_rol is not None:
+            usuario.id_rol = datos.id_rol
         usuario.correo = datos.correo
         usuario.estado = datos.estado
 

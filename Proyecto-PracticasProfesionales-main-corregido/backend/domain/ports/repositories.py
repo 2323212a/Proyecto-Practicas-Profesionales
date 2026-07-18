@@ -104,7 +104,7 @@ class AsignacionRepositoryPort(Protocol):
     def obtener_convocatoria(self, id_convocatoria: int):
         ...
 
-    def obtener_docente(self, id_docente: int):
+    def obtener_asesor(self, id_asesor: int):
         ...
 
     def obtener_empresa(self, id_empresa: int):
@@ -117,6 +117,9 @@ class AsignacionRepositoryPort(Protocol):
         ...
 
     def obtener_por_alumno_convocatoria(self, id_alumno: int, id_convocatoria: int):
+        ...
+
+    def contar_asignaciones_activas_vacante(self, id_vacante: int) -> int:
         ...
 
     def nuevo(self, datos: dict):

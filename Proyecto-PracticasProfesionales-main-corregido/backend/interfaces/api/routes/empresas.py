@@ -12,6 +12,7 @@ from infrastructure.security.auth_dependencies import (
     requerir_empresa_actual_o_roles,
     requerir_roles,
 )
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
@@ -26,7 +27,6 @@ router = APIRouter(prefix="/empresas", tags=["Empresas"])
 RFC_PATTERN = re.compile(r"^[A-Z\u00d1&]{3,4}\d{6}[A-Z0-9]{3}$")
 TELEFONO_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
 TIPOS_TRAMITE = {"Convenio", "Vinculacion"}
-PERIODOS_PARTICIPACION = {"Semestral", "Cuatrimestral", "Ambos"}
 ESTADOS_SOLICITUD_ACTIVA = {"Solicitante", "Pendiente"}
 ESTADOS_EMPRESA = {"Solicitante", "Pendiente", "Rechazada", "Activa", "Suspendida", "Inactiva"}
 
@@ -67,6 +67,30 @@ def normalizar_opcion(valor: Optional[str], opciones: set[str], campo: str) -> s
     return texto
 
 
+def validar_registro_publico_habilitado(db: Session):
+    configuracion = (
+        db.query(ConfiguracionSistemaModel)
+        .order_by(ConfiguracionSistemaModel.id_configuracion.asc())
+        .first()
+    )
+    estado = configuracion.estado_sistema if configuracion is not None else "Activo"
+    if estado != "Activo":
+        raise HTTPException(
+            status_code=403,
+            detail="El registro de solicitudes esta temporalmente deshabilitado.",
+        )
+    inscripcion_estado = (
+        configuracion.inscripcion_empresas_estado
+        if configuracion is not None
+        else "Abierta"
+    )
+    if inscripcion_estado == "Cerrada":
+        raise HTTPException(
+            status_code=403,
+            detail="El registro de nuevas empresas esta cerrado temporalmente.",
+        )
+
+
 class SolicitudEmpresaCreate(BaseModel):
     nombre_empresa: str = Field(min_length=2, max_length=150)
     rfc: Optional[str] = Field(default=None, max_length=20)
@@ -76,9 +100,12 @@ class SolicitudEmpresaCreate(BaseModel):
     correo_contacto: EmailStr
     nombre_contacto: Optional[str] = Field(default=None, max_length=150)
     cargo_contacto: Optional[str] = Field(default=None, max_length=100)
+    nombre_responsable: Optional[str] = Field(default=None, max_length=100)
+    apellido_paterno_responsable: Optional[str] = Field(default=None, max_length=100)
+    apellido_materno_responsable: Optional[str] = Field(default=None, max_length=100)
+    cargo_responsable: Optional[str] = Field(default=None, max_length=100)
     descripcion: Optional[str] = None
     tipo_tramite: str
-    periodo_participacion: str
 
 
 @router.get(
@@ -103,6 +130,8 @@ def listar_empresas(db: Session = Depends(obtener_db)):
 
 @router.post("/solicitudes", response_model=EmpresaResponse)
 def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Depends(obtener_db)):
+    validar_registro_publico_habilitado(db)
+
     nombre_empresa = limpiar_texto(solicitud.nombre_empresa)
     if not nombre_empresa:
         raise HTTPException(status_code=400, detail="Nombre de empresa es obligatorio")
@@ -112,15 +141,45 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
     domicilio = limpiar_texto(solicitud.domicilio)
     telefono = normalizar_telefono(solicitud.telefono)
     correo_contacto = str(solicitud.correo_contacto).strip().lower()
-    nombre_contacto = limpiar_texto(solicitud.nombre_contacto)
-    cargo_contacto = limpiar_texto(solicitud.cargo_contacto)
+    nombre_responsable = limpiar_texto(solicitud.nombre_responsable)
+    apellido_paterno_responsable = limpiar_texto(solicitud.apellido_paterno_responsable)
+    apellido_materno_responsable = limpiar_texto(solicitud.apellido_materno_responsable)
+    cargo_responsable = limpiar_texto(solicitud.cargo_responsable)
+    nombre_contacto_legacy = limpiar_texto(solicitud.nombre_contacto)
+    cargo_contacto_legacy = limpiar_texto(solicitud.cargo_contacto)
+    usa_responsable_separado = any(
+        [
+            nombre_responsable,
+            apellido_paterno_responsable,
+            apellido_materno_responsable,
+            cargo_responsable,
+        ]
+    )
+    if usa_responsable_separado:
+        if not nombre_responsable:
+            raise HTTPException(status_code=400, detail="El nombre del responsable es obligatorio.")
+        if not apellido_paterno_responsable:
+            raise HTTPException(
+                status_code=400,
+                detail="El apellido paterno del responsable es obligatorio.",
+            )
+        if not cargo_responsable:
+            raise HTTPException(status_code=400, detail="El cargo del responsable es obligatorio.")
+        nombre_contacto = " ".join(
+            parte
+            for parte in [
+                nombre_responsable,
+                apellido_paterno_responsable,
+                apellido_materno_responsable,
+            ]
+            if parte
+        )
+        cargo_contacto = cargo_responsable
+    else:
+        nombre_contacto = nombre_contacto_legacy
+        cargo_contacto = cargo_contacto_legacy
     descripcion = limpiar_texto(solicitud.descripcion)
     tipo_tramite = normalizar_opcion(solicitud.tipo_tramite, TIPOS_TRAMITE, "Tipo de tramite")
-    periodo_participacion = normalizar_opcion(
-        solicitud.periodo_participacion,
-        PERIODOS_PARTICIPACION,
-        "Periodo de participacion",
-    )
 
     existente_rfc = (
         db.query(EmpresaModel).filter(EmpresaModel.rfc == rfc).first() if rfc else None
@@ -169,10 +228,21 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
             correo_contacto=correo_contacto,
             estado_empresa="Solicitante",
             tipo_tramite=tipo_tramite,
-            periodo_participacion=periodo_participacion,
         )
         db.add(empresa)
         db.flush()
+        db.add(
+            ResponsableEmpresaModel(
+                id_empresa=empresa.id_empresa,
+                id_usuario=None,
+                nombre=nombre_responsable or nombre_contacto or "Responsable",
+                apellido_paterno=apellido_paterno_responsable or "Empresa",
+                apellido_materno=apellido_materno_responsable,
+                cargo=cargo_responsable or cargo_contacto,
+                telefono=telefono,
+                correo=correo_contacto,
+            )
+        )
     else:
         empresa = existente
         empresa.nombre_empresa = nombre_empresa
@@ -183,13 +253,37 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
         empresa.correo_contacto = correo_contacto
         empresa.estado_empresa = "Solicitante"
         empresa.tipo_tramite = tipo_tramite
-        empresa.periodo_participacion = periodo_participacion
+        responsable = (
+            db.query(ResponsableEmpresaModel)
+            .filter(ResponsableEmpresaModel.id_empresa == empresa.id_empresa)
+            .order_by(ResponsableEmpresaModel.id_responsable.desc())
+            .first()
+        )
+        if responsable is None:
+            db.add(
+                ResponsableEmpresaModel(
+                    id_empresa=empresa.id_empresa,
+                    id_usuario=None,
+                    nombre=nombre_responsable or nombre_contacto or "Responsable",
+                    apellido_paterno=apellido_paterno_responsable or "Empresa",
+                    apellido_materno=apellido_materno_responsable,
+                    cargo=cargo_responsable or cargo_contacto,
+                    telefono=telefono,
+                    correo=correo_contacto,
+                )
+            )
+        else:
+            responsable.nombre = nombre_responsable or nombre_contacto or responsable.nombre
+            responsable.apellido_paterno = apellido_paterno_responsable or responsable.apellido_paterno
+            responsable.apellido_materno = apellido_materno_responsable
+            responsable.cargo = cargo_responsable or cargo_contacto
+            responsable.telefono = telefono
+            responsable.correo = correo_contacto
 
     db.add(
         SolicitudEmpresaModel(
             id_empresa=empresa.id_empresa,
-            tipo_tramite=tipo_tramite,
-            periodo_participacion=periodo_participacion,
+            tipo_tramite_solicitado=tipo_tramite,
             estado_solicitud="Recibida",
             observaciones=descripcion,
         )
@@ -251,12 +345,6 @@ def crear_empresa(empresa: EmpresaCreate, db: Session = Depends(obtener_db)):
         raise HTTPException(status_code=400, detail="Estado de empresa no valido")
     if datos.get("tipo_tramite") is not None:
         datos["tipo_tramite"] = normalizar_opcion(datos["tipo_tramite"], TIPOS_TRAMITE, "Tipo de tramite")
-    if datos.get("periodo_participacion") is not None:
-        datos["periodo_participacion"] = normalizar_opcion(
-            datos["periodo_participacion"],
-            PERIODOS_PARTICIPACION,
-            "Periodo de participacion",
-        )
 
     duplicada = None
     if datos["rfc"]:
@@ -315,12 +403,6 @@ def actualizar_empresa(
     if cambios.get("tipo_tramite") is not None:
         cambios["tipo_tramite"] = normalizar_opcion(
             cambios["tipo_tramite"], TIPOS_TRAMITE, "Tipo de tramite"
-        )
-    if cambios.get("periodo_participacion") is not None:
-        cambios["periodo_participacion"] = normalizar_opcion(
-            cambios["periodo_participacion"],
-            PERIODOS_PARTICIPACION,
-            "Periodo de participacion",
         )
 
     rfc = cambios.get("rfc")

@@ -11,19 +11,19 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.services.notificacion_service import crear_notificacion
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import obtener_id_docente_actual, requerir_docente_actual_o_roles
+from infrastructure.security.auth_dependencies import obtener_id_asesor_actual, requerir_asesor_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
-from infrastructure.persistence.models.docente_asesor import DocenteAsesorModel
 from infrastructure.persistence.models.evaluacion import EvaluacionModel
 from infrastructure.persistence.models.horas import HorasModel
+from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from infrastructure.persistence.models.reporte import ReporteModel
 
 
 router = APIRouter(
     prefix="/asesor",
     tags=["Asesor"],
-    dependencies=[Depends(requerir_docente_actual_o_roles(["Administrador"]))],
+    dependencies=[Depends(requerir_asesor_actual_o_roles(["Administrador"]))],
 )
 
 HORAS_META = 480
@@ -35,33 +35,35 @@ class CambiarEstadoReporteAsesorRequest(BaseModel):
     observacion: str | None = None
 
 
-class GuardarEvaluacionDocenteRequest(BaseModel):
+class GuardarEvaluacionAsesorRequest(BaseModel):
     id_asignacion: int
     calificacion: Decimal
     comentarios: str | None = None
 
 
-def validar_docente(db: Session, id_docente: int):
-    docente = (
-        db.query(DocenteAsesorModel)
-        .filter(DocenteAsesorModel.id_docente == id_docente)
+def validar_asesor(db: Session, id_asesor: int):
+    asesor = (
+        db.query(PersonalInternoModel)
+        .filter(PersonalInternoModel.id_personal == id_asesor)
         .first()
     )
-    if docente is None:
+    if asesor is None:
         raise HTTPException(status_code=404, detail="Asesor no encontrado")
-    return docente
+    if not asesor.usuario or asesor.usuario.id_rol != 6 or asesor.usuario.estado != "Activo":
+        raise HTTPException(status_code=400, detail="El asesor interno no esta activo")
+    return asesor
 
 
-def nombre_completo(usuario):
-    if usuario is None:
-        return "Alumno sin usuario"
+def nombre_completo(perfil, fallback: str = "Sin nombre"):
+    if perfil is None:
+        return fallback
 
     partes = [
-        usuario.nombre,
-        usuario.apellido_paterno,
-        usuario.apellido_materno,
+        getattr(perfil, "nombre", None),
+        getattr(perfil, "apellido_paterno", None),
+        getattr(perfil, "apellido_materno", None),
     ]
-    return " ".join(parte for parte in partes if parte) or usuario.correo
+    return " ".join(parte for parte in partes if parte) or fallback
 
 
 def calcular_estado(horas_aprobadas: Decimal, reportes_pendientes: int, reportes_rechazados: int):
@@ -129,7 +131,7 @@ def serializar_asignacion(db: Session, asignacion: AsignacionModel):
     return {
         "id_asignacion": asignacion.id_asignacion,
         "id_alumno": alumno.id_alumno if alumno is not None else None,
-        "nombre": nombre_completo(usuario),
+        "nombre": nombre_completo(alumno, "Alumno sin usuario"),
         "correo": usuario.correo if usuario is not None else None,
         "matricula": alumno.matricula if alumno is not None else None,
         "carrera": carrera.nombre if carrera is not None else "Sin carrera",
@@ -157,7 +159,7 @@ def serializar_reporte(reporte: ReporteModel) -> dict:
         "id_reporte": reporte.id_reporte,
         "id_asignacion": reporte.id_asignacion,
         "id_alumno": alumno.id_alumno if alumno is not None else None,
-        "alumno": nombre_completo(usuario),
+        "alumno": nombre_completo(alumno, "Alumno sin usuario"),
         "matricula": alumno.matricula if alumno is not None else None,
         "carrera": carrera.nombre if carrera is not None else "Sin carrera",
         "empresa": empresa.nombre_empresa if empresa is not None else "Sin empresa",
@@ -171,12 +173,12 @@ def serializar_reporte(reporte: ReporteModel) -> dict:
     }
 
 
-def serializar_evaluacion_docente(db: Session, asignacion: AsignacionModel) -> dict:
+def serializar_evaluacion_asesor(db: Session, asignacion: AsignacionModel) -> dict:
     evaluacion = (
         db.query(EvaluacionModel)
         .filter(
             EvaluacionModel.id_asignacion == asignacion.id_asignacion,
-            EvaluacionModel.tipo_evaluacion == "Docente",
+            EvaluacionModel.tipo_evaluacion == "Asesor",
         )
         .first()
     )
@@ -215,7 +217,7 @@ def serializar_evaluacion_docente(db: Session, asignacion: AsignacionModel) -> d
     return {
         "id_asignacion": asignacion.id_asignacion,
         "id_alumno": alumno.id_alumno if alumno is not None else None,
-        "alumno": nombre_completo(usuario),
+        "alumno": nombre_completo(alumno, "Alumno sin usuario"),
         "matricula": alumno.matricula if alumno is not None else None,
         "carrera": carrera.nombre if carrera is not None else "Sin carrera",
         "empresa": asignacion.empresa.nombre_empresa if asignacion.empresa else "Sin empresa",
@@ -237,9 +239,9 @@ def serializar_evaluacion_docente(db: Session, asignacion: AsignacionModel) -> d
     }
 
 
-@router.get("/{id_docente:int}/alumnos")
-def listar_alumnos_asignados(id_docente: int, db: Session = Depends(obtener_db)):
-    validar_docente(db, id_docente)
+@router.get("/{id_asesor:int}/alumnos")
+def listar_alumnos_asignados(id_asesor: int, db: Session = Depends(obtener_db)):
+    validar_asesor(db, id_asesor)
 
     asignaciones = (
         db.query(AsignacionModel)
@@ -248,7 +250,7 @@ def listar_alumnos_asignados(id_docente: int, db: Session = Depends(obtener_db))
             joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.carrera),
             joinedload(AsignacionModel.empresa),
         )
-        .filter(AsignacionModel.id_docente == id_docente)
+        .filter(AsignacionModel.id_asesor == id_asesor)
         .order_by(AsignacionModel.fecha_asignacion.desc())
         .all()
     )
@@ -269,29 +271,29 @@ def listar_alumnos_asignados(id_docente: int, db: Session = Depends(obtener_db))
 
 @router.get("/me/alumnos")
 def listar_mis_alumnos_asignados(
-    id_docente: int = Depends(obtener_id_docente_actual),
+    id_asesor: int = Depends(obtener_id_asesor_actual),
     db: Session = Depends(obtener_db),
 ):
-    return listar_alumnos_asignados(id_docente, db)
+    return listar_alumnos_asignados(id_asesor, db)
 
 
-@router.get("/{id_docente:int}/dashboard")
-def obtener_dashboard_asesor(id_docente: int, db: Session = Depends(obtener_db)):
-    datos = listar_alumnos_asignados(id_docente, db)
+@router.get("/{id_asesor:int}/dashboard")
+def obtener_dashboard_asesor(id_asesor: int, db: Session = Depends(obtener_db)):
+    datos = listar_alumnos_asignados(id_asesor, db)
     return datos["resumen"]
 
 
 @router.get("/me/dashboard")
 def obtener_mi_dashboard_asesor(
-    id_docente: int = Depends(obtener_id_docente_actual),
+    id_asesor: int = Depends(obtener_id_asesor_actual),
     db: Session = Depends(obtener_db),
 ):
-    return obtener_dashboard_asesor(id_docente, db)
+    return obtener_dashboard_asesor(id_asesor, db)
 
 
-@router.get("/{id_docente:int}/reportes")
-def listar_reportes_asesor(id_docente: int, db: Session = Depends(obtener_db)):
-    validar_docente(db, id_docente)
+@router.get("/{id_asesor:int}/reportes")
+def listar_reportes_asesor(id_asesor: int, db: Session = Depends(obtener_db)):
+    validar_asesor(db, id_asesor)
 
     reportes = (
         db.query(ReporteModel)
@@ -305,7 +307,7 @@ def listar_reportes_asesor(id_docente: int, db: Session = Depends(obtener_db)):
             .joinedload(AlumnoModel.carrera),
             joinedload(ReporteModel.asignacion).joinedload(AsignacionModel.empresa),
         )
-        .filter(AsignacionModel.id_docente == id_docente)
+        .filter(AsignacionModel.id_asesor == id_asesor)
         .order_by(ReporteModel.fecha_entrega.desc(), ReporteModel.id_reporte.desc())
         .all()
     )
@@ -324,20 +326,20 @@ def listar_reportes_asesor(id_docente: int, db: Session = Depends(obtener_db)):
 
 @router.get("/me/reportes")
 def listar_mis_reportes_asesor(
-    id_docente: int = Depends(obtener_id_docente_actual),
+    id_asesor: int = Depends(obtener_id_asesor_actual),
     db: Session = Depends(obtener_db),
 ):
-    return listar_reportes_asesor(id_docente, db)
+    return listar_reportes_asesor(id_asesor, db)
 
 
-@router.patch("/{id_docente:int}/reportes/{id_reporte:int}/estado")
+@router.patch("/{id_asesor:int}/reportes/{id_reporte:int}/estado")
 def cambiar_estado_reporte_asesor(
-    id_docente: int,
+    id_asesor: int,
     id_reporte: int,
     payload: CambiarEstadoReporteAsesorRequest,
     db: Session = Depends(obtener_db),
 ):
-    validar_docente(db, id_docente)
+    validar_asesor(db, id_asesor)
     estado = payload.estado.strip()
     if estado not in {"Aprobado", "Rechazado"}:
         raise HTTPException(status_code=400, detail="El estado debe ser Aprobado o Rechazado")
@@ -356,7 +358,7 @@ def cambiar_estado_reporte_asesor(
         )
         .filter(
             ReporteModel.id_reporte == id_reporte,
-            AsignacionModel.id_docente == id_docente,
+            AsignacionModel.id_asesor == id_asesor,
         )
         .first()
     )
@@ -385,15 +387,15 @@ def cambiar_estado_reporte_asesor(
 def cambiar_estado_mi_reporte_asesor(
     id_reporte: int,
     payload: CambiarEstadoReporteAsesorRequest,
-    id_docente: int = Depends(obtener_id_docente_actual),
+    id_asesor: int = Depends(obtener_id_asesor_actual),
     db: Session = Depends(obtener_db),
 ):
-    return cambiar_estado_reporte_asesor(id_docente, id_reporte, payload, db)
+    return cambiar_estado_reporte_asesor(id_asesor, id_reporte, payload, db)
 
 
-@router.get("/{id_docente:int}/evaluaciones")
-def listar_evaluaciones_docente(id_docente: int, db: Session = Depends(obtener_db)):
-    validar_docente(db, id_docente)
+@router.get("/{id_asesor:int}/evaluaciones")
+def listar_evaluaciones_asesor(id_asesor: int, db: Session = Depends(obtener_db)):
+    validar_asesor(db, id_asesor)
     asignaciones = (
         db.query(AsignacionModel)
         .options(
@@ -401,11 +403,11 @@ def listar_evaluaciones_docente(id_docente: int, db: Session = Depends(obtener_d
             joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.carrera),
             joinedload(AsignacionModel.empresa),
         )
-        .filter(AsignacionModel.id_docente == id_docente)
+        .filter(AsignacionModel.id_asesor == id_asesor)
         .order_by(AsignacionModel.fecha_asignacion.desc())
         .all()
     )
-    registros = [serializar_evaluacion_docente(db, asignacion) for asignacion in asignaciones]
+    registros = [serializar_evaluacion_asesor(db, asignacion) for asignacion in asignaciones]
 
     return {
         "resumen": {
@@ -423,20 +425,20 @@ def listar_evaluaciones_docente(id_docente: int, db: Session = Depends(obtener_d
 
 
 @router.get("/me/evaluaciones")
-def listar_mis_evaluaciones_docente(
-    id_docente: int = Depends(obtener_id_docente_actual),
+def listar_mis_evaluaciones_asesor(
+    id_asesor: int = Depends(obtener_id_asesor_actual),
     db: Session = Depends(obtener_db),
 ):
-    return listar_evaluaciones_docente(id_docente, db)
+    return listar_evaluaciones_asesor(id_asesor, db)
 
 
-@router.post("/{id_docente:int}/evaluaciones")
-def guardar_evaluacion_docente(
-    id_docente: int,
-    datos: GuardarEvaluacionDocenteRequest,
+@router.post("/{id_asesor:int}/evaluaciones")
+def guardar_evaluacion_asesor(
+    id_asesor: int,
+    datos: GuardarEvaluacionAsesorRequest,
     db: Session = Depends(obtener_db),
 ):
-    docente = validar_docente(db, id_docente)
+    asesor = validar_asesor(db, id_asesor)
     if datos.calificacion < 0 or datos.calificacion > 100:
         raise HTTPException(status_code=400, detail="La calificacion debe estar entre 0 y 100")
 
@@ -449,14 +451,14 @@ def guardar_evaluacion_docente(
         )
         .filter(
             AsignacionModel.id_asignacion == datos.id_asignacion,
-            AsignacionModel.id_docente == id_docente,
+            AsignacionModel.id_asesor == id_asesor,
         )
         .first()
     )
     if asignacion is None:
         raise HTTPException(status_code=404, detail="Asignacion no encontrada para este asesor")
 
-    estado = serializar_evaluacion_docente(db, asignacion)
+    estado = serializar_evaluacion_asesor(db, asignacion)
     if not estado["puede_evaluar"]:
         raise HTTPException(status_code=400, detail=estado["motivo_bloqueo"])
 
@@ -464,15 +466,15 @@ def guardar_evaluacion_docente(
         db.query(EvaluacionModel)
         .filter(
             EvaluacionModel.id_asignacion == asignacion.id_asignacion,
-            EvaluacionModel.tipo_evaluacion == "Docente",
+            EvaluacionModel.tipo_evaluacion == "Asesor",
         )
         .first()
     )
     if evaluacion is None:
         evaluacion = EvaluacionModel(
             id_asignacion=asignacion.id_asignacion,
-            id_usuario_evaluador=docente.id_usuario,
-            tipo_evaluacion="Docente",
+            id_usuario_evaluador=asesor.id_usuario,
+            tipo_evaluacion="Asesor",
             calificacion=datos.calificacion,
             comentarios=datos.comentarios,
             fecha_evaluacion=date.today(),
@@ -482,24 +484,24 @@ def guardar_evaluacion_docente(
         evaluacion.calificacion = datos.calificacion
         evaluacion.comentarios = datos.comentarios
         evaluacion.fecha_evaluacion = date.today()
-        evaluacion.id_usuario_evaluador = docente.id_usuario
+        evaluacion.id_usuario_evaluador = asesor.id_usuario
 
     alumno = asignacion.alumno
     crear_notificacion(
         db,
         alumno.id_usuario if alumno else None,
-        "Evaluacion docente registrada",
+        "Evaluacion asesor registrada",
         "Tu asesor academico registro la evaluacion final de tus practicas.",
     )
     db.commit()
     db.refresh(evaluacion)
-    return serializar_evaluacion_docente(db, asignacion)
+    return serializar_evaluacion_asesor(db, asignacion)
 
 
 @router.post("/me/evaluaciones")
-def guardar_mi_evaluacion_docente(
-    datos: GuardarEvaluacionDocenteRequest,
-    id_docente: int = Depends(obtener_id_docente_actual),
+def guardar_mi_evaluacion_asesor(
+    datos: GuardarEvaluacionAsesorRequest,
+    id_asesor: int = Depends(obtener_id_asesor_actual),
     db: Session = Depends(obtener_db),
 ):
-    return guardar_evaluacion_docente(id_docente, datos, db)
+    return guardar_evaluacion_asesor(id_asesor, datos, db)

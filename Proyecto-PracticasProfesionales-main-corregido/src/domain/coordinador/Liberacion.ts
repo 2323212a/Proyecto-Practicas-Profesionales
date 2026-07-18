@@ -2,7 +2,7 @@ export interface RequisitosLiberacion {
   expediente_aprobado: boolean;
   horas_completas: boolean;
   reportes_aprobados: boolean;
-  evaluacion_docente: boolean;
+  evaluacion_asesor: boolean;
   evaluacion_empresa: boolean;
   evaluacion_alumno_empresa: boolean;
   incidencias_cerradas: boolean;

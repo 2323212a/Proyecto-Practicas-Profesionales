@@ -95,22 +95,23 @@ def requerir_alumno_actual_o_roles(roles_extra: list[str]):
     return dependency
 
 
-def requerir_docente_actual_o_roles(roles_extra: list[str]):
+def requerir_asesor_actual_o_roles(roles_extra: list[str]):
     roles_permitidos = set(roles_extra)
 
     def dependency(
-        id_docente: int = None,
+        id_asesor: int = None,
         usuario: UsuarioModel = Depends(obtener_usuario_actual),
     ) -> UsuarioModel:
         if usuario_tiene_rol(usuario, roles_permitidos):
             return usuario
-        if id_docente is None and usuario.docente:
+        es_asesor = usuario_tiene_rol(usuario, {"Asesor Interno"}) and usuario.personal_interno is not None
+        if id_asesor is None and es_asesor:
             return usuario
-        if usuario.docente and usuario.docente.id_docente == id_docente:
+        if es_asesor and usuario.personal_interno.id_personal == id_asesor:
             return usuario
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No puedes acceder a informacion de otro docente",
+            detail="No puedes acceder a informacion de otro asesor",
         )
 
     return dependency
@@ -146,13 +147,13 @@ def obtener_id_alumno_actual(usuario: UsuarioModel = Depends(obtener_usuario_act
     return usuario.alumno.id_alumno
 
 
-def obtener_id_docente_actual(usuario: UsuarioModel = Depends(obtener_usuario_actual)) -> int:
-    if usuario.docente is None:
+def obtener_id_asesor_actual(usuario: UsuarioModel = Depends(obtener_usuario_actual)) -> int:
+    if usuario.personal_interno is None or not usuario_tiene_rol(usuario, {"Asesor Interno"}):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="El usuario actual no tiene perfil de docente",
+            detail="El usuario actual no tiene perfil de asesor",
         )
-    return usuario.docente.id_docente
+    return usuario.personal_interno.id_personal
 
 
 def obtener_id_empresa_actual(usuario: UsuarioModel = Depends(obtener_usuario_actual)) -> int:

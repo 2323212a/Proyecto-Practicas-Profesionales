@@ -1,23 +1,23 @@
-import type { AdminReportesResponse } from "../../domain/admin/AdminReportes";
+import type { AdminReportesFiltros, AdminReportesResponse } from "../../domain/admin/AdminReportes";
 import { apiClient } from "../api/apiClient";
 
-export async function obtenerReportesAdmin(periodo = "todos", modulo = "todos") {
+export async function obtenerReportesAdmin(filtros: AdminReportesFiltros = {}) {
   const { data } = await apiClient.get<AdminReportesResponse>("/admin/reportes/", {
-    params: { periodo, modulo },
+    params: filtros,
   });
   return data;
 }
 
-export async function descargarReportesAdmin(periodo = "todos", modulo = "todos") {
+export async function descargarReporteAdminPdf(filtros: AdminReportesFiltros = {}) {
   const { data } = await apiClient.get<Blob>("/admin/reportes/exportar", {
-    params: { periodo, modulo },
+    params: { ...filtros, formato: "pdf" },
     responseType: "blob",
   });
 
   const url = window.URL.createObjectURL(data);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `reportes_admin_${periodo}_${modulo}.csv`;
+  link.download = "reporte_administrativo.pdf";
   link.click();
   window.URL.revokeObjectURL(url);
 }

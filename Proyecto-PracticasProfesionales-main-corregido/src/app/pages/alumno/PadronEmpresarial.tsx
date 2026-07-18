@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
   Briefcase,
@@ -18,12 +19,12 @@ import {
 import { gestionPadronUseCase } from "../../dependencies";
 import type {
   EmpresaAsignadaAlumno,
-  EmpresaPadronDisponible,
   SeleccionEmpresaAlumno,
   VacantePadron,
 } from "../../../domain/alumno/Padron";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
-type EmpresaPadron = {
+type EmpresaGrupo = {
   id_empresa: number;
   nombre: string;
   giro: string | null;
@@ -31,9 +32,20 @@ type EmpresaPadron = {
   correo_contacto: string | null;
   telefono: string | null;
   vacantes: VacantePadron[];
-  cupo_disponible: number;
-  modalidades: string[];
-  carreras: string[];
+};
+
+type ElegibilidadAcademica = {
+  alumno?: {
+    semestre: number | null;
+    creditos_aprobados: number;
+    periodo_practica?: string;
+  };
+  tipo_practica?: {
+    nombre: string;
+    semestre_requerido: number | null;
+    creditos_minimos: number | null;
+    orden: number | null;
+  } | null;
 };
 
 function obtenerIdAlumnoSesion() {
@@ -49,31 +61,34 @@ function obtenerIdAlumnoSesion() {
   }
 }
 
+function cuposDisponibles(vacante: VacantePadron) {
+  return Math.max(vacante.cupos - vacante.cupos_usados, 0);
+}
+
 export function PadronEmpresarial() {
-  const [empresasCatalogo, setEmpresasCatalogo] = useState<EmpresaPadronDisponible[]>([]);
   const [vacantes, setVacantes] = useState<VacantePadron[]>([]);
   const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
   const [solicitudes, setSolicitudes] = useState<SeleccionEmpresaAlumno[]>([]);
-  const [detalle, setDetalle] = useState<EmpresaPadron | null>(null);
-  const [empresaPriorizada, setEmpresaPriorizada] = useState<number | null>(null);
+  const [detalle, setDetalle] = useState<EmpresaGrupo | null>(null);
+  const [vacantePriorizada, setVacantePriorizada] = useState<number | null>(null);
   const [puedeSeleccionar, setPuedeSeleccionar] = useState(false);
   const [motivoBloqueo, setMotivoBloqueo] = useState<string | null>(null);
+  const [elegibilidad, setElegibilidad] = useState<ElegibilidadAcademica | null>(null);
   const [estadoAlumno, setEstadoAlumno] = useState("");
   const [empresaAsignada, setEmpresaAsignada] = useState<EmpresaAsignadaAlumno | null>(null);
   const [busqueda, setBusqueda] = useState("");
-  const [modalidad, setModalidad] = useState("todas");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    cargarPadron();
+    void cargarPadron();
   }, []);
 
   async function cargarPadron() {
     const idAlumno = obtenerIdAlumnoSesion();
     if (!idAlumno) {
-      setError("No se encontró el perfil de alumno en la sesión actual.");
+      setError("No se encontro el perfil de alumno en la sesion actual.");
       setCargando(false);
       return;
     }
@@ -84,42 +99,26 @@ export function PadronEmpresarial() {
       const data = await gestionPadronUseCase.obtener(idAlumno);
       setPuedeSeleccionar(data.puede_seleccionar);
       setMotivoBloqueo(data.motivo_bloqueo);
+      setElegibilidad({ alumno: data.alumno, tipo_practica: data.tipo_practica });
       setEstadoAlumno(data.estado_alumno);
       setEmpresaAsignada(data.empresa_asignada);
-      setEmpresasCatalogo(data.empresas ?? []);
       setVacantes(data.vacantes);
       setSolicitudes(data.selecciones);
       const ordenadas = [...data.selecciones]
-        .filter((seleccion) => seleccion.estado_seleccion !== "Rechazada")
+        .filter((seleccion) => seleccion.estado_seleccion !== "Rechazada" && seleccion.id_vacante)
         .sort((a, b) => a.prioridad - b.prioridad)
-        .map((seleccion) => seleccion.id_empresa);
+        .map((seleccion) => seleccion.id_vacante as number);
       setSeleccionadas(ordenadas);
     } catch (err) {
       console.error(err);
-      setError("No se pudo cargar el padrón empresarial.");
+      setError(getApiErrorMessage(err, "No se pudo cargar el padron empresarial."));
     } finally {
       setCargando(false);
     }
   }
 
-  const empresas = useMemo<EmpresaPadron[]>(() => {
-    const mapa = new Map<number, EmpresaPadron>();
-
-    for (const empresa of empresasCatalogo) {
-      mapa.set(empresa.id_empresa, {
-        id_empresa: empresa.id_empresa,
-        nombre: empresa.nombre,
-        giro: empresa.giro,
-        domicilio: empresa.domicilio,
-        correo_contacto: empresa.correo_contacto,
-        telefono: empresa.telefono,
-        vacantes: [],
-        cupo_disponible: 0,
-        modalidades: [],
-        carreras: [],
-      });
-    }
-
+  const empresas = useMemo<EmpresaGrupo[]>(() => {
+    const mapa = new Map<number, EmpresaGrupo>();
     for (const vacante of vacantes) {
       const empresa = mapa.get(vacante.id_empresa) ?? {
         id_empresa: vacante.id_empresa,
@@ -129,69 +128,64 @@ export function PadronEmpresarial() {
         correo_contacto: vacante.correo_contacto,
         telefono: vacante.telefono,
         vacantes: [],
-        cupo_disponible: 0,
-        modalidades: [],
-        carreras: [],
       };
-
       empresa.vacantes.push(vacante);
-      empresa.cupo_disponible += vacante.cupo_disponible;
-      empresa.modalidades = [...new Set([...empresa.modalidades, vacante.modalidad])];
-      empresa.carreras = [...new Set([...empresa.carreras, vacante.carrera])];
       mapa.set(vacante.id_empresa, empresa);
     }
-
     return [...mapa.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [empresasCatalogo, vacantes]);
+  }, [vacantes]);
 
-  const solicitudesPorEmpresa = useMemo(
+  const solicitudesPorVacante = useMemo(
     () =>
       solicitudes.reduce<Record<number, SeleccionEmpresaAlumno>>((acc, solicitud) => {
-        acc[solicitud.id_empresa] = solicitud;
+        if (solicitud.id_vacante) acc[solicitud.id_vacante] = solicitud;
         return acc;
       }, {}),
-    [solicitudes]
+    [solicitudes],
   );
 
   const filtradas = useMemo(() => {
-    const q = busqueda.toLowerCase();
-    return empresas.filter((empresa) => {
-      const coincideBusqueda =
-        empresa.nombre.toLowerCase().includes(q) ||
-        (empresa.giro ?? "").toLowerCase().includes(q) ||
-        empresa.carreras.some((carrera) => carrera.toLowerCase().includes(q));
-      const coincideModalidad =
-        modalidad === "todas" || empresa.modalidades.includes(modalidad);
-      return coincideBusqueda && coincideModalidad;
-    });
-  }, [empresas, busqueda, modalidad]);
+    const q = busqueda.trim().toLowerCase();
+    return empresas.filter((empresa) =>
+      empresa.nombre.toLowerCase().includes(q) ||
+      (empresa.giro ?? "").toLowerCase().includes(q) ||
+      empresa.vacantes.some((vacante) =>
+        [
+          vacante.titulo,
+          vacante.convocatoria ?? "",
+          vacante.tipo_practica ?? "",
+          vacante.actividades ?? "",
+          vacante.requisitos ?? "",
+        ].some((texto) => texto.toLowerCase().includes(q)),
+      ),
+    );
+  }, [empresas, busqueda]);
 
-  const toggleEmpresa = (idEmpresa: number) => {
+  function toggleVacante(idVacante: number) {
     if (!puedeSeleccionar) return;
-    if (seleccionadas.includes(idEmpresa)) {
-      setSeleccionadas(seleccionadas.filter((id) => id !== idEmpresa));
-      if (empresaPriorizada === idEmpresa) setEmpresaPriorizada(null);
+    if (seleccionadas.includes(idVacante)) {
+      setSeleccionadas(seleccionadas.filter((id) => id !== idVacante));
+      if (vacantePriorizada === idVacante) setVacantePriorizada(null);
       return;
     }
 
-    const empresa = empresas.find((item) => item.id_empresa === idEmpresa);
-    if (!empresa || empresa.cupo_disponible <= 0) return;
-    if (seleccionadas.length >= 3) return;
-    setSeleccionadas([...seleccionadas, idEmpresa]);
-  };
+    const vacante = vacantes.find((item) => item.id_vacante === idVacante);
+    if (!vacante || cuposDisponibles(vacante) <= 0 || seleccionadas.length >= 3) return;
+    setSeleccionadas([...seleccionadas, idVacante]);
+  }
 
   async function guardarPreferencias() {
     const idAlumno = obtenerIdAlumnoSesion();
     if (!idAlumno) {
-      alert("No se encontró el perfil de alumno.");
+      alert("No se encontro el perfil de alumno.");
       return;
     }
     if (seleccionadas.length === 0) {
-      alert("Selecciona al menos una empresa.");
+      alert("Selecciona al menos una vacante.");
       return;
     }
     if (!puedeSeleccionar) {
-      alert(motivoBloqueo ?? "Tu expediente debe estar aprobado antes de seleccionar empresa.");
+      alert(motivoBloqueo ?? "Tu expediente debe estar aprobado antes de seleccionar vacante.");
       return;
     }
 
@@ -199,41 +193,33 @@ export function PadronEmpresarial() {
       setGuardando(true);
       await gestionPadronUseCase.guardarPreferencias(
         idAlumno,
-        seleccionadas.map((idEmpresa, index) => ({
-          id_empresa: idEmpresa,
+        seleccionadas.map((idVacante, index) => ({
+          id_vacante: idVacante,
           prioridad: index + 1,
         })),
-        empresaPriorizada
+        vacantePriorizada,
       );
       alert("Preferencias guardadas correctamente");
       await cargarPadron();
     } catch (err) {
       console.error(err);
-      alert("No se pudieron guardar las preferencias.");
+      alert(getApiErrorMessage(err, "No se pudieron guardar las preferencias."));
     } finally {
       setGuardando(false);
     }
   }
 
   const opciones = seleccionadas
-    .map((id) => empresas.find((empresa) => empresa.id_empresa === id))
-    .filter(Boolean) as EmpresaPadron[];
+    .map((id) => vacantes.find((vacante) => vacante.id_vacante === id))
+    .filter(Boolean) as VacantePadron[];
 
   if (!cargando && estadoAlumno === "Asignado") {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#0d2b5e]">Padrón Empresarial</h1>
-          <p className="text-gray-500 text-sm mt-1">
-            Consulta la información de tu unidad receptora asignada.
-          </p>
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Padron Empresarial</h1>
+          <p className="text-gray-500 text-sm mt-1">Consulta la informacion de tu unidad receptora asignada.</p>
         </div>
-
-        {error && (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
-            {error}
-          </div>
-        )}
 
         {empresaAsignada ? (
           <section className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -242,11 +228,9 @@ export function PadronEmpresarial() {
                 <Building2 className="w-6 h-6" />
               </div>
               <div>
-                <p className="text-blue-200 text-sm">Ya estás asignado a la empresa</p>
+                <p className="text-blue-200 text-sm">Ya estas asignado a la empresa</p>
                 <h2 className="text-2xl font-bold mt-1">{empresaAsignada.nombre}</h2>
-                <p className="text-blue-100 text-sm mt-2">
-                  {empresaAsignada.giro ?? "Giro empresarial no registrado"}
-                </p>
+                <p className="text-blue-100 text-sm mt-2">{empresaAsignada.giro ?? "Giro empresarial no registrado"}</p>
               </div>
             </div>
 
@@ -256,52 +240,22 @@ export function PadronEmpresarial() {
                   <Briefcase className="w-4 h-4 text-[#1565c0]" />
                   Vacante asignada
                 </div>
-                <p className="font-semibold text-[#0d2b5e] mt-2">
-                  {empresaAsignada.vacante ?? "No registrada"}
-                </p>
-                {(empresaAsignada.modalidad || empresaAsignada.horario) && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    {[empresaAsignada.modalidad, empresaAsignada.horario]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                )}
-              </div>
-
-              <div className="border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-sm">
-                  <MapPin className="w-4 h-4 text-[#1565c0]" />
-                  Domicilio
-                </div>
-                <p className="font-semibold text-[#0d2b5e] mt-2">
-                  {empresaAsignada.domicilio ?? "No registrado"}
+                <p className="font-semibold text-[#0d2b5e] mt-2">{empresaAsignada.vacante ?? "No registrada"}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {[empresaAsignada.convocatoria, empresaAsignada.tipo_practica, empresaAsignada.periodo]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </p>
               </div>
 
-              <div className="border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-sm">
-                  <Mail className="w-4 h-4 text-[#1565c0]" />
-                  Correo de contacto
-                </div>
-                <p className="font-semibold text-[#0d2b5e] mt-2 break-words">
-                  {empresaAsignada.correo_contacto ?? "No registrado"}
-                </p>
-              </div>
-
-              <div className="border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-gray-500 text-sm">
-                  <Phone className="w-4 h-4 text-[#1565c0]" />
-                  Teléfono
-                </div>
-                <p className="font-semibold text-[#0d2b5e] mt-2">
-                  {empresaAsignada.telefono ?? "No registrado"}
-                </p>
-              </div>
+              <InfoEmpresa icon={<MapPin className="w-4 h-4 text-[#1565c0]" />} titulo="Domicilio" valor={empresaAsignada.domicilio} />
+              <InfoEmpresa icon={<Mail className="w-4 h-4 text-[#1565c0]" />} titulo="Correo de contacto" valor={empresaAsignada.correo_contacto} />
+              <InfoEmpresa icon={<Phone className="w-4 h-4 text-[#1565c0]" />} titulo="Telefono" valor={empresaAsignada.telefono} />
 
               <div className="sm:col-span-2 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
                 <CalendarDays className="w-5 h-5 text-green-700 flex-shrink-0" />
                 <p className="text-sm text-green-800">
-                  Asignación confirmada el{" "}
+                  Asignacion confirmada el{" "}
                   <span className="font-semibold">
                     {new Intl.DateTimeFormat("es-MX", {
                       day: "2-digit",
@@ -315,10 +269,8 @@ export function PadronEmpresarial() {
           </section>
         ) : (
           <div className="bg-orange-50 border border-orange-200 rounded-2xl p-6">
-            <h2 className="font-semibold text-orange-800">Asignación en proceso</h2>
-            <p className="text-sm text-orange-700 mt-1">
-              Tu estado figura como asignado, pero aún no está disponible la información de la empresa.
-            </p>
+            <h2 className="font-semibold text-orange-800">Asignacion en proceso</h2>
+            <p className="text-sm text-orange-700 mt-1">Tu estado figura como asignado, pero aun no esta disponible la informacion de la empresa.</p>
           </div>
         )}
       </div>
@@ -328,29 +280,20 @@ export function PadronEmpresarial() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Padrón Empresarial</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Consulta empresas aprobadas y selecciona hasta 3 opciones para tus prácticas profesionales.
-        </p>
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">Padron Empresarial</h1>
+        <p className="text-gray-500 text-sm mt-1">Consulta vacantes activas y selecciona hasta 3 opciones para tus practicas profesionales.</p>
       </div>
 
-      {error && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
 
       <div className="bg-[#0d2b5e] rounded-2xl p-6 text-white">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
           <div>
-            <h2 className="text-xl font-bold">Empresas autorizadas</h2>
-            <p className="text-blue-200 text-sm mt-1">
-              Aparecen empresas activas del padron; las que no tienen cupo no se pueden seleccionar.
-            </p>
+            <h2 className="text-xl font-bold">Vacantes autorizadas</h2>
+            <p className="text-blue-200 text-sm mt-1">Aparecen solo vacantes activas compatibles con tu periodo y tipo de practica.</p>
           </div>
-
           <span className="bg-green-100 text-green-700 px-4 py-2 rounded-full text-sm font-semibold w-fit">
-            {cargando ? "Cargando..." : `${empresas.length} empresas disponibles`}
+            {cargando ? "Cargando..." : `${vacantes.length} vacantes disponibles`}
           </span>
         </div>
       </div>
@@ -358,39 +301,31 @@ export function PadronEmpresarial() {
       {!puedeSeleccionar && !cargando && (
         <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-start gap-3">
           <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
-          <div>
-            <div className="font-semibold text-orange-700 text-sm">
-              Seleccion de empresa bloqueada
-            </div>
-            <div className="text-orange-700 text-xs mt-1">
-              {motivoBloqueo} Estado actual: {estadoAlumno || "Sin estado"}.
+          <div className="flex-1">
+            <div className="font-semibold text-orange-700 text-sm">Proceso no disponible</div>
+            <div className="text-orange-700 text-xs mt-1">{motivoBloqueo} Estado actual: {estadoAlumno || "Sin estado"}.</div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4 text-xs">
+              <DatoElegibilidad titulo="Tipo de practica" valor={elegibilidad?.tipo_practica?.nombre ?? "Sin asignar"} />
+              <DatoElegibilidad titulo="Periodo" valor={elegibilidad?.alumno?.periodo_practica ?? "Sin registrar"} />
+              <DatoElegibilidad titulo="Tu semestre actual" valor={String(elegibilidad?.alumno?.semestre ?? "Sin registrar")} />
+              <DatoElegibilidad
+                titulo="Creditos"
+                valor={`${elegibilidad?.alumno?.creditos_aprobados ?? 0} / ${elegibilidad?.tipo_practica?.creditos_minimos ?? 0}`}
+              />
             </div>
           </div>
         </div>
       )}
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="border rounded-xl px-3 py-2 flex items-center gap-2">
-            <Search className="w-4 h-4 text-gray-400" />
-            <input
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              className="outline-none text-sm w-full"
-              placeholder="Buscar empresa, giro o carrera..."
-            />
-          </div>
-
-          <select
-            value={modalidad}
-            onChange={(e) => setModalidad(e.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option value="todas">Todas las modalidades</option>
-            <option value="Presencial">Presencial</option>
-            <option value="Virtual">Virtual</option>
-            <option value="Hibrida">Híbrida</option>
-          </select>
+        <div className="border rounded-xl px-3 py-2 flex items-center gap-2">
+          <Search className="w-4 h-4 text-gray-400" />
+          <input
+            value={busqueda}
+            onChange={(event) => setBusqueda(event.target.value)}
+            className="outline-none text-sm w-full"
+            placeholder="Buscar empresa, vacante, convocatoria o tipo de practica..."
+          />
         </div>
       </div>
 
@@ -398,143 +333,26 @@ export function PadronEmpresarial() {
         <div className="lg:col-span-2 grid md:grid-cols-2 gap-5">
           {cargando && (
             <div className="md:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
-              Cargando padrón empresarial...
+              Cargando padron empresarial...
             </div>
           )}
 
           {!cargando &&
-            filtradas.map((empresa) => {
-              const selected = seleccionadas.includes(empresa.id_empresa);
-              const priorizada = empresaPriorizada === empresa.id_empresa;
-              const sinCupo = empresa.cupo_disponible <= 0;
-              const solicitud = solicitudesPorEmpresa[empresa.id_empresa];
-              const disabled = !puedeSeleccionar || (!selected && (sinCupo || seleccionadas.length >= 3));
-
-              return (
-                <div
-                  key={empresa.id_empresa}
-                  className={`rounded-2xl border shadow-sm p-6 relative ${
-                    priorizada
-                      ? "bg-yellow-50 border-yellow-300"
-                      : "bg-white border-gray-200"
-                  }`}
-                >
-                  {priorizada && (
-                    <div className="absolute top-4 right-4 bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
-                      <Star className="w-3 h-3" />
-                      Priorizada
-                    </div>
-                  )}
-
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="font-bold text-[#0d2b5e]">{empresa.nombre}</h3>
-                      <p className="text-sm text-gray-500 mt-1">
-                        {empresa.giro ?? "Sin giro registrado"}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-2">
-                      {selected && !priorizada && (
-                        <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">
-                          Seleccionada
-                        </span>
-                      )}
-                      {solicitud && (
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            solicitud.estado_seleccion === "Aprobada"
-                              ? "bg-green-100 text-green-700"
-                              : solicitud.estado_seleccion === "Rechazada"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          Solicitud {solicitud.estado_seleccion}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mt-5">
-                    <div className="border rounded-xl p-3 bg-white/70">
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <MapPin className="w-4 h-4" />
-                        Ubicación
-                      </div>
-                      <p className="font-semibold text-[#0d2b5e] mt-1">
-                        {empresa.domicilio ?? "No registrada"}
-                      </p>
-                    </div>
-
-                    <div className="border rounded-xl p-3 bg-white/70">
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <Briefcase className="w-4 h-4" />
-                        Vacantes
-                      </div>
-                      <p className="font-semibold text-[#0d2b5e] mt-1">
-                        {empresa.cupo_disponible} espacios
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-gray-500 mb-1">
-                      Vacantes disponibles
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      {empresa.vacantes.length > 0
-                        ? empresa.vacantes.map((vacante) => vacante.titulo).join(", ")
-                        : "Sin vacantes disponibles por ahora."}
-                    </p>
-                  </div>
-
-                  {solicitud?.observaciones && (
-                    <div className="mt-3 bg-orange-50 border border-orange-100 rounded-xl p-3 text-xs text-orange-700">
-                      {solicitud.observaciones}
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2 mt-5">
-                    <button
-                      onClick={() => setDetalle(empresa)}
-                      className="border border-blue-200 text-[#1565c0] rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1"
-                    >
-                      <Eye className="w-3 h-3" />
-                      Ver detalles
-                    </button>
-
-                    <button
-                      disabled={disabled}
-                      onClick={() => toggleEmpresa(empresa.id_empresa)}
-                      className={`rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1 ${
-                        selected
-                          ? "border border-red-200 text-red-600"
-                          : disabled
-                            ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                            : "bg-[#1565c0] text-white"
-                      }`}
-                    >
-                      {selected ? (
-                        <>
-                          <X className="w-3 h-3" />
-                          Quitar
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-3 h-3" />
-                          {sinCupo ? "Sin cupo" : "Seleccionar"}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            filtradas.map((empresa) => (
+              <EmpresaCard
+                key={empresa.id_empresa}
+                empresa={empresa}
+                puedeSeleccionar={puedeSeleccionar}
+                seleccionadas={seleccionadas}
+                solicitudesPorVacante={solicitudesPorVacante}
+                onToggle={toggleVacante}
+                onDetalle={() => setDetalle(empresa)}
+              />
+            ))}
 
           {!cargando && filtradas.length === 0 && (
             <div className="md:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
-              No hay empresas disponibles con los filtros seleccionados.
+              No hay vacantes disponibles con los filtros seleccionados.
             </div>
           )}
         </div>
@@ -542,91 +360,37 @@ export function PadronEmpresarial() {
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sticky top-24">
             <h3 className="font-bold text-[#0d2b5e] mb-2">Mis opciones</h3>
-            <p className="text-sm text-gray-500 mb-5">
-              Selecciona hasta 3 empresas en orden de preferencia.
-            </p>
+            <p className="text-sm text-gray-500 mb-5">Selecciona hasta 3 vacantes en orden de preferencia.</p>
 
             <div className="space-y-3">
               {[0, 1, 2].map((i) => {
-                const empresa = opciones[i];
-                const priorizada = empresa && empresaPriorizada === empresa.id_empresa;
-
+                const vacante = opciones[i];
+                const priorizada = vacante && vacantePriorizada === vacante.id_vacante;
                 return (
-                  <div
-                    key={i}
-                    className={`border rounded-xl p-4 flex items-center gap-3 ${
-                      priorizada ? "bg-yellow-50 border-yellow-300" : "bg-white"
-                    }`}
-                  >
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                        priorizada
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-blue-50 text-[#1565c0]"
-                      }`}
-                    >
+                  <div key={i} className={`border rounded-xl p-4 flex items-center gap-3 ${priorizada ? "bg-yellow-50 border-yellow-300" : "bg-white"}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${priorizada ? "bg-yellow-100 text-yellow-700" : "bg-blue-50 text-[#1565c0]"}`}>
                       {priorizada ? <Star className="w-4 h-4" /> : i + 1}
                     </div>
-
                     <div className="flex-1">
-                      {empresa ? (
+                      {vacante ? (
                         <>
-                          <p className="font-semibold text-[#0d2b5e] text-sm">
-                            {empresa.nombre}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {empresa.vacantes.length} vacante(s)
-                          </p>
-                          {priorizada && (
-                            <p className="text-xs text-yellow-700 font-semibold mt-1">
-                              Empresa priorizada
-                            </p>
-                          )}
+                          <p className="font-semibold text-[#0d2b5e] text-sm">{vacante.titulo}</p>
+                          <p className="text-xs text-gray-500">{vacante.empresa}</p>
+                          <button
+                            onClick={() => setVacantePriorizada(vacantePriorizada === vacante.id_vacante ? null : vacante.id_vacante)}
+                            className="text-xs text-yellow-700 font-semibold mt-1"
+                          >
+                            {priorizada ? "Quitar prioridad" : "Marcar priorizada"}
+                          </button>
                         </>
                       ) : (
-                        <p className="text-sm text-gray-400">Opción pendiente</p>
+                        <p className="text-sm text-gray-400">Opcion pendiente</p>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
-
-            {seleccionadas.length > 0 && (
-              <div className="mt-5 bg-yellow-50 border border-yellow-200 rounded-2xl p-4">
-                <p className="text-sm font-bold text-[#0d2b5e]">
-                  ¿Estás priorizado en alguna empresa?
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Selecciónala antes de guardar. Coordinación validará esa prioridad.
-                </p>
-
-                <div className="space-y-2 mt-4">
-                  {opciones.map((empresa) => (
-                    <button
-                      key={empresa.id_empresa}
-                      onClick={() =>
-                        setEmpresaPriorizada(
-                          empresaPriorizada === empresa.id_empresa
-                            ? null
-                            : empresa.id_empresa
-                        )
-                      }
-                      className={`w-full rounded-xl px-4 py-3 text-sm font-semibold flex items-center justify-between border ${
-                        empresaPriorizada === empresa.id_empresa
-                          ? "bg-yellow-100 border-yellow-400 text-yellow-800"
-                          : "bg-white border-gray-200 text-gray-600"
-                      }`}
-                    >
-                      <span>{empresa.nombre}</span>
-                      {empresaPriorizada === empresa.id_empresa && (
-                        <Star className="w-4 h-4" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <button
               onClick={guardarPreferencias}
@@ -636,99 +400,202 @@ export function PadronEmpresarial() {
               <Save className="w-4 h-4" />
               {guardando ? "Guardando..." : "Guardar preferencias"}
             </button>
-
-            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-sm text-[#0d2b5e]">
-                Guardar preferencias crea solicitudes pendientes. Coordinación confirmará la asignación final y solo entonces se descuenta el cupo.
-              </p>
-            </div>
           </div>
         </div>
       </div>
 
       {detalle && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-bold text-[#0d2b5e]">{detalle.nombre}</h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  {detalle.giro ?? "Sin giro registrado"}
-                </p>
-              </div>
+        <DetalleEmpresa
+          empresa={detalle}
+          seleccionadas={seleccionadas}
+          puedeSeleccionar={puedeSeleccionar}
+          onClose={() => setDetalle(null)}
+          onToggle={toggleVacante}
+        />
+      )}
+    </div>
+  );
+}
 
+function InfoEmpresa({ icon, titulo, valor }: { icon: ReactNode; titulo: string; valor: string | null }) {
+  return (
+    <div className="border border-gray-200 rounded-xl p-4">
+      <div className="flex items-center gap-2 text-gray-500 text-sm">
+        {icon}
+        {titulo}
+      </div>
+      <p className="font-semibold text-[#0d2b5e] mt-2 break-words">{valor ?? "No registrado"}</p>
+    </div>
+  );
+}
+
+function DatoElegibilidad({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="bg-white border border-orange-100 rounded-xl p-3">
+      <div className="text-gray-500">{titulo}</div>
+      <div className="font-semibold text-[#0d2b5e]">{valor}</div>
+    </div>
+  );
+}
+
+function EmpresaCard({
+  empresa,
+  puedeSeleccionar,
+  seleccionadas,
+  solicitudesPorVacante,
+  onToggle,
+  onDetalle,
+}: {
+  empresa: EmpresaGrupo;
+  puedeSeleccionar: boolean;
+  seleccionadas: number[];
+  solicitudesPorVacante: Record<number, SeleccionEmpresaAlumno>;
+  onToggle: (idVacante: number) => void;
+  onDetalle: () => void;
+}) {
+  const espacios = empresa.vacantes.reduce((total, vacante) => total + cuposDisponibles(vacante), 0);
+  return (
+    <div className="rounded-2xl border shadow-sm p-6 bg-white border-gray-200">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-bold text-[#0d2b5e]">{empresa.nombre}</h3>
+          <p className="text-sm text-gray-500 mt-1">{empresa.giro ?? "Sin giro registrado"}</p>
+        </div>
+        <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">{espacios} cupos</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mt-5">
+        <div className="border rounded-xl p-3 bg-white/70">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <MapPin className="w-4 h-4" />
+            Ubicacion
+          </div>
+          <p className="font-semibold text-[#0d2b5e] mt-1">{empresa.domicilio ?? "No registrada"}</p>
+        </div>
+        <div className="border rounded-xl p-3 bg-white/70">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <Briefcase className="w-4 h-4" />
+            Vacantes
+          </div>
+          <p className="font-semibold text-[#0d2b5e] mt-1">{empresa.vacantes.length}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {empresa.vacantes.map((vacante) => {
+          const selected = seleccionadas.includes(vacante.id_vacante);
+          const solicitud = solicitudesPorVacante[vacante.id_vacante];
+          const sinCupo = cuposDisponibles(vacante) <= 0;
+          const disabled = !puedeSeleccionar || (!selected && (sinCupo || seleccionadas.length >= 3));
+          return (
+            <div key={vacante.id_vacante} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#0d2b5e]">{vacante.titulo}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {[vacante.convocatoria, vacante.tipo_practica, vacante.periodo].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-semibold">
+                  {cuposDisponibles(vacante)} / {vacante.cupos}
+                </span>
+              </div>
+              {solicitud && (
+                <div className="mt-2 text-xs text-yellow-700">Solicitud {solicitud.estado_seleccion}</div>
+              )}
               <button
-                onClick={() => setDetalle(null)}
-                className="text-gray-400 hover:text-gray-600"
+                disabled={disabled}
+                onClick={() => onToggle(vacante.id_vacante)}
+                className={`mt-3 rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1 ${
+                  selected
+                    ? "border border-red-200 text-red-600"
+                    : disabled
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-[#1565c0] text-white"
+                }`}
               >
-                <X className="w-5 h-5" />
+                {selected ? <X className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                {selected ? "Quitar" : sinCupo ? "Sin cupo" : "Seleccionar"}
               </button>
             </div>
+          );
+        })}
+      </div>
 
-            <div className="grid md:grid-cols-2 gap-4 mt-5">
-              <div className="border rounded-xl p-4">
-                <p className="text-xs text-gray-500">Ubicación</p>
-                <p className="font-semibold text-[#0d2b5e]">
-                  {detalle.domicilio ?? "No registrada"}
-                </p>
-              </div>
+      <button onClick={onDetalle} className="mt-5 border border-blue-200 text-[#1565c0] rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1">
+        <Eye className="w-3 h-3" />
+        Ver detalles
+      </button>
+    </div>
+  );
+}
 
-              <div className="border rounded-xl p-4">
-                <p className="text-xs text-gray-500">Contacto</p>
-                <p className="font-semibold text-[#0d2b5e]">
-                  {detalle.correo_contacto ?? detalle.telefono ?? "No registrado"}
-                </p>
-              </div>
-            </div>
+function DetalleEmpresa({
+  empresa,
+  seleccionadas,
+  puedeSeleccionar,
+  onClose,
+  onToggle,
+}: {
+  empresa: EmpresaGrupo;
+  seleccionadas: number[];
+  puedeSeleccionar: boolean;
+  onClose: () => void;
+  onToggle: (idVacante: number) => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-bold text-[#0d2b5e]">{empresa.nombre}</h3>
+            <p className="text-sm text-gray-500 mt-1">{empresa.giro ?? "Sin giro registrado"}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-            <div className="mt-5">
-              <h4 className="font-bold text-[#0d2b5e]">Vacantes disponibles</h4>
+        <div className="grid md:grid-cols-2 gap-4 mt-5">
+          <InfoEmpresa icon={<MapPin className="w-4 h-4 text-[#1565c0]" />} titulo="Ubicacion" valor={empresa.domicilio} />
+          <InfoEmpresa icon={<Mail className="w-4 h-4 text-[#1565c0]" />} titulo="Contacto" valor={empresa.correo_contacto ?? empresa.telefono} />
+        </div>
 
-              <div className="space-y-3 mt-3">
-                {detalle.vacantes.length === 0 && (
-                  <div className="border rounded-xl p-4 text-sm text-gray-500">
-                    Esta empresa esta registrada en el padron, pero no tiene vacantes disponibles por ahora.
-                  </div>
-                )}
-                {detalle.vacantes.map((vacante) => (
-                  <div key={vacante.id_vacante} className="border rounded-xl p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-[#0d2b5e]">{vacante.titulo}</p>
-                        <p className="text-xs text-gray-500 mt-1">{vacante.carrera}</p>
-                      </div>
-                      <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-semibold">
-                        {vacante.cupo_disponible} cupo(s)
-                      </span>
+        <div className="mt-5">
+          <h4 className="font-bold text-[#0d2b5e]">Vacantes disponibles</h4>
+          <div className="space-y-3 mt-3">
+            {empresa.vacantes.map((vacante) => {
+              const selected = seleccionadas.includes(vacante.id_vacante);
+              const disabled = !puedeSeleccionar || (!selected && cuposDisponibles(vacante) <= 0);
+              return (
+                <div key={vacante.id_vacante} className="border rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-[#0d2b5e]">{vacante.titulo}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {[vacante.convocatoria, vacante.tipo_practica, vacante.periodo].filter(Boolean).join(" · ")}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-600 mt-3">
-                      {vacante.descripcion ?? "Sin descripción registrada."}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-2">
-                      {vacante.modalidad} · {vacante.horario ?? "Horario no registrado"}
-                    </p>
+                    <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-semibold">
+                      {cuposDisponibles(vacante)} cupos
+                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                toggleEmpresa(detalle.id_empresa);
-                setDetalle(null);
-              }}
-              disabled={!puedeSeleccionar || (!seleccionadas.includes(detalle.id_empresa) && detalle.cupo_disponible <= 0)}
-              className="mt-6 w-full bg-[#1565c0] text-white rounded-xl py-2 text-sm font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              {seleccionadas.includes(detalle.id_empresa)
-                ? "Quitar de mis opciones"
-                : detalle.cupo_disponible <= 0
-                  ? "Sin vacantes disponibles"
-                  : "Seleccionar como opción"}
-            </button>
+                  <p className="text-sm text-gray-600 mt-3">{vacante.descripcion ?? "Sin descripcion registrada."}</p>
+                  {vacante.actividades && <p className="text-xs text-gray-500 mt-2">Actividades: {vacante.actividades}</p>}
+                  {vacante.requisitos && <p className="text-xs text-gray-500 mt-2">Requisitos: {vacante.requisitos}</p>}
+                  <button
+                    onClick={() => onToggle(vacante.id_vacante)}
+                    disabled={disabled}
+                    className="mt-4 bg-[#1565c0] text-white rounded-xl px-3 py-2 text-xs font-semibold disabled:bg-gray-300"
+                  >
+                    {selected ? "Quitar de mis opciones" : "Seleccionar vacante"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

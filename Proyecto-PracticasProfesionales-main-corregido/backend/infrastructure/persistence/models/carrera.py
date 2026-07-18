@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, DateTime, Enum, Integer, String, func
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -7,8 +7,20 @@ class CarreraModel(Base):
     __tablename__ = "carrera"
 
     id_carrera = Column(Integer, primary_key=True, autoincrement=True)
-    clave = Column(String(20), nullable=False, unique=True)
     nombre = Column(String(100), nullable=False, unique=True)
+    tipo_periodo = Column(
+        Enum("Semestral", "Cuatrimestral"),
+        nullable=False,
+        default="Semestral",
+        server_default="Semestral",
+    )
+    estado = Column(
+        Enum("Activa", "Inactiva"),
+        nullable=False,
+        default="Activa",
+        server_default="Activa",
+    )
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     alumnos = relationship("AlumnoModel", back_populates="carrera")
-    vacantes = relationship("VacanteModel", back_populates="carrera")

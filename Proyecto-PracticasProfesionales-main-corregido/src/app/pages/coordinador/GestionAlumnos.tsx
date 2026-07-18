@@ -49,7 +49,7 @@ export function GestionAlumnos() {
   const [estado, setEstado] = useState("todos");
   const [carrera, setCarrera] = useState("todas");
   const [empresa, setEmpresa] = useState("todas");
-  const [docente, setDocente] = useState("todos");
+  const [asesor, setAsesor] = useState("todos");
   const [fase, setFase] = useState("todas");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -79,8 +79,8 @@ export function GestionAlumnos() {
     () => [...new Set(alumnos.map((a) => a.empresa).filter(Boolean))],
     [alumnos],
   );
-  const docentes = useMemo(
-    () => [...new Set(alumnos.map((a) => a.docente).filter(Boolean))],
+  const asesores = useMemo(
+    () => [...new Set(alumnos.map((a) => a.asesor).filter(Boolean))],
     [alumnos],
   );
   const fases = useMemo(
@@ -116,7 +116,7 @@ export function GestionAlumnos() {
             a.matricula,
             a.carrera,
             a.empresa,
-            a.docente,
+            a.asesor,
             a.fase,
             a.siguiente_paso,
           ].some((valor) => valor.toLowerCase().includes(busqueda));
@@ -125,7 +125,7 @@ export function GestionAlumnos() {
           estado === "todos" || a.estado_documental === estado;
         const coincideCarrera = carrera === "todas" || a.carrera === carrera;
         const coincideEmpresa = empresa === "todas" || a.empresa === empresa;
-        const coincideDocente = docente === "todos" || a.docente === docente;
+        const coincideAsesor = asesor === "todos" || a.asesor === asesor;
         const coincideFase = fase === "todas" || a.fase === fase;
 
         return (
@@ -133,7 +133,7 @@ export function GestionAlumnos() {
           coincideEstado &&
           coincideCarrera &&
           coincideEmpresa &&
-          coincideDocente &&
+          coincideAsesor &&
           coincideFase
         );
       })
@@ -142,14 +142,14 @@ export function GestionAlumnos() {
           a.prioridad - b.prioridad ||
           a.nombre.localeCompare(b.nombre, "es"),
       );
-  }, [alumnos, q, estado, carrera, empresa, docente, fase]);
+  }, [alumnos, q, estado, carrera, empresa, asesor, fase]);
 
   function limpiarFiltros() {
     setQ("");
     setEstado("todos");
     setCarrera("todas");
     setEmpresa("todas");
-    setDocente("todos");
+    setAsesor("todos");
     setFase("todas");
   }
 
@@ -165,7 +165,7 @@ export function GestionAlumnos() {
           Gestion de Alumnos
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Control de expedientes, seleccion de empresa, asignacion, docentes y
+          Control de expedientes, seleccion de empresa, asignacion, asesores y
           seguimiento de alumnos en practicas profesionales.
         </p>
       </div>
@@ -225,7 +225,7 @@ export function GestionAlumnos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar por alumno, matricula, carrera, empresa o docente..."
+              placeholder="Buscar por alumno, matricula, carrera, empresa o asesor..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#1565c0]"
@@ -285,12 +285,12 @@ export function GestionAlumnos() {
           </select>
 
           <select
-            value={docente}
-            onChange={(e) => setDocente(e.target.value)}
+            value={asesor}
+            onChange={(e) => setAsesor(e.target.value)}
             className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-[#1565c0]"
           >
-            <option value="todos">Todos los docentes</option>
-            {docentes.map((item) => (
+            <option value="todos">Todos los asesores</option>
+            {asesores.map((item) => (
               <option key={item} value={item}>
                 {item}
               </option>
@@ -316,7 +316,7 @@ export function GestionAlumnos() {
                   "Alumno",
                   "Carrera",
                   "Empresa",
-                  "Docente",
+                  "Asesor",
                   "Fase",
                   "Documentos",
                   "Estado",
@@ -365,7 +365,7 @@ export function GestionAlumnos() {
                   </td>
 
                   <td className="px-6 py-4 text-sm text-gray-600">
-                    {a.docente}
+                    {a.asesor}
                   </td>
 
                   <td className="px-6 py-4">

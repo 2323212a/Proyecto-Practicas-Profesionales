@@ -4,17 +4,19 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
-from infrastructure.persistence.models.convenio import ConvenioModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
+from infrastructure.persistence.models.personal_interno import PersonalInternoModel
+from infrastructure.persistence.models.rol import RolModel
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 from infrastructure.persistence.models.vacante import VacanteModel
+from infrastructure.security.auth_dependencies import requerir_roles
 from interfaces.api.schemas.asignacion import AsignacionCreate, AsignacionResponse
 from interfaces.api.service_factory import AsignacionService
 
@@ -28,11 +30,21 @@ router = APIRouter(
 
 class VacanteConfirmacionResponse(BaseModel):
     id_vacante: int
+    id_empresa: int
+    empresa: str
+    id_convocatoria: int
+    convocatoria: str | None = None
+    id_tipo_practica: int
+    tipo_practica: str | None = None
     titulo: str
-    modalidad: str
-    horario: str | None = None
-    cupo_total: int
-    cupo_disponible: int
+    descripcion: str | None = None
+    actividades: str | None = None
+    requisitos: str | None = None
+    cupos: int
+    cupos_usados: int
+    cupos_disponibles: int
+    periodo: str
+    estado_vacante: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,6 +52,7 @@ class VacanteConfirmacionResponse(BaseModel):
 class PreferenciaConfirmacionResponse(BaseModel):
     id_seleccion: int
     id_empresa: int
+    id_convocatoria: int
     id_vacante: int | None = None
     empresa: str
     prioridad: int
@@ -55,6 +68,7 @@ class AlumnoConfirmacionResponse(BaseModel):
     matricula: str
     carrera: str
     estado_alumno: str
+    periodo_practica: str
     ya_asignado: bool
     id_asignacion: int | None = None
     empresa_asignada: str | None = None
@@ -62,9 +76,19 @@ class AlumnoConfirmacionResponse(BaseModel):
     preferencias: list[PreferenciaConfirmacionResponse]
 
 
+class AsesorInternoResponse(BaseModel):
+    id_asesor: int
+    id_usuario: int
+    nombre: str
+    correo: str | None = None
+    departamento: str | None = None
+    cargo: str | None = None
+
+
 class ConfirmacionAsignacionesResponse(BaseModel):
     convocatoria_id: int | None
     convocatoria: str | None
+    asesores: list[AsesorInternoResponse]
     alumnos: list[AlumnoConfirmacionResponse]
 
 
@@ -72,7 +96,7 @@ class ConfirmarAsignacionRequest(BaseModel):
     id_alumno: int
     id_empresa: int
     id_vacante: int
-    id_docente: int | None = None
+    id_asesor: int | None = None
     tipo_asignacion: str = "Normal"
 
 
@@ -84,41 +108,100 @@ def _convocatoria_vigente(db: Session):
     activa = (
         db.query(ConvocatoriaModel)
         .filter(ConvocatoriaModel.estado == "Activa")
-        .order_by(ConvocatoriaModel.fecha_inicio.desc())
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ConvocatoriaModel.created_at.desc())
         .first()
     )
     if activa is not None:
         return activa
+    return db.query(ConvocatoriaModel).order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ConvocatoriaModel.created_at.desc()).first()
 
-    return (
-        db.query(ConvocatoriaModel)
-        .order_by(ConvocatoriaModel.fecha_inicio.desc())
-        .first()
+
+def _nombre_alumno(alumno: AlumnoModel) -> str:
+    return " ".join(
+        parte
+        for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno]
+        if parte
     )
 
 
-def _nombre_usuario(usuario: UsuarioModel) -> str:
-    partes = [
-        usuario.nombre,
-        usuario.apellido_paterno,
-        usuario.apellido_materno,
-    ]
-    return " ".join([parte for parte in partes if parte])
+def _nombre_personal(persona: PersonalInternoModel | None) -> str:
+    if persona is None:
+        return "Sin asesor"
+    return " ".join(
+        parte
+        for parte in [persona.nombre, persona.apellido_paterno, persona.apellido_materno]
+        if parte
+    )
 
 
-def _tiene_convenio_vigente(db: Session, id_empresa: int) -> bool:
+def _cupos_usados(db: Session, id_vacante: int) -> int:
     return (
-        db.query(ConvenioModel)
+        db.query(func.count(AsignacionModel.id_asignacion))
         .filter(
-            ConvenioModel.id_empresa == id_empresa,
-            ConvenioModel.es_actual.is_(True),
-            ConvenioModel.estado_convenio == "Vigente",
-            ConvenioModel.fecha_inicio <= date.today(),
-            ConvenioModel.fecha_fin >= date.today(),
+            AsignacionModel.id_vacante == id_vacante,
+            AsignacionModel.estado_asignacion == "Activa",
         )
-        .first()
-        is not None
+        .scalar()
+        or 0
     )
+
+
+def _vacante_response(db: Session, vacante: VacanteModel) -> VacanteConfirmacionResponse:
+    cupos_usados = _cupos_usados(db, vacante.id_vacante)
+    return VacanteConfirmacionResponse(
+        id_vacante=vacante.id_vacante,
+        id_empresa=vacante.id_empresa,
+        empresa=vacante.empresa.nombre_empresa if vacante.empresa else "Sin empresa",
+        id_convocatoria=vacante.id_convocatoria,
+        convocatoria=vacante.convocatoria.nombre if vacante.convocatoria else None,
+        id_tipo_practica=vacante.id_tipo_practica,
+        tipo_practica=vacante.tipo_practica.nombre if vacante.tipo_practica else None,
+        titulo=vacante.titulo,
+        descripcion=vacante.descripcion,
+        actividades=vacante.actividades,
+        requisitos=vacante.requisitos,
+        cupos=vacante.cupos,
+        cupos_usados=cupos_usados,
+        cupos_disponibles=max(vacante.cupos - cupos_usados, 0),
+        periodo=vacante.periodo,
+        estado_vacante=vacante.estado_vacante,
+    )
+
+
+def _estado_seleccion_api(
+    seleccion: SeleccionEmpresaModel,
+    asignacion: AsignacionModel | None = None,
+) -> str:
+    if seleccion.estado == "Cancelada":
+        return "Rechazada"
+    if asignacion is not None and asignacion.id_vacante == seleccion.id_vacante:
+        return "Aprobada"
+    return "Pendiente"
+
+
+def _listar_asesores(db: Session) -> list[AsesorInternoResponse]:
+    asesores = (
+        db.query(PersonalInternoModel)
+        .join(PersonalInternoModel.usuario)
+        .join(UsuarioModel.rol)
+        .filter(
+            RolModel.id_rol == 6,
+            UsuarioModel.estado == "Activo",
+        )
+        .order_by(PersonalInternoModel.apellido_paterno.asc(), PersonalInternoModel.nombre.asc())
+        .all()
+    )
+    return [
+        AsesorInternoResponse(
+            id_asesor=asesor.id_personal,
+            id_usuario=asesor.id_usuario,
+            nombre=_nombre_personal(asesor),
+            correo=asesor.usuario.correo if asesor.usuario else None,
+            departamento=asesor.departamento,
+            cargo=asesor.cargo,
+        )
+        for asesor in asesores
+    ]
 
 
 @router.get("/", response_model=ConfirmacionAsignacionesResponse)
@@ -127,8 +210,8 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
 
     alumnos = (
         db.query(AlumnoModel)
-        .join(UsuarioModel, UsuarioModel.id_usuario == AlumnoModel.id_usuario)
-        .order_by(UsuarioModel.apellido_paterno.asc(), UsuarioModel.nombre.asc())
+        .options(joinedload(AlumnoModel.carrera))
+        .order_by(AlumnoModel.apellido_paterno.asc(), AlumnoModel.nombre.asc())
         .all()
     )
 
@@ -138,6 +221,7 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
         if convocatoria is not None:
             asignacion = (
                 db.query(AsignacionModel)
+                .options(joinedload(AsignacionModel.empresa), joinedload(AsignacionModel.vacante))
                 .filter(
                     AsignacionModel.id_alumno == alumno.id_alumno,
                     AsignacionModel.id_convocatoria == convocatoria.id_convocatoria,
@@ -146,8 +230,17 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
                 .first()
             )
 
+        selecciones_query = db.query(SeleccionEmpresaModel).options(
+            joinedload(SeleccionEmpresaModel.vacante).joinedload(VacanteModel.empresa),
+            joinedload(SeleccionEmpresaModel.vacante).joinedload(VacanteModel.convocatoria),
+            joinedload(SeleccionEmpresaModel.vacante).joinedload(VacanteModel.tipo_practica),
+        )
+        if convocatoria is not None:
+            selecciones_query = selecciones_query.filter(
+                SeleccionEmpresaModel.id_convocatoria == convocatoria.id_convocatoria
+            )
         selecciones = (
-            db.query(SeleccionEmpresaModel)
+            selecciones_query
             .filter(SeleccionEmpresaModel.id_alumno == alumno.id_alumno)
             .order_by(SeleccionEmpresaModel.prioridad.asc())
             .all()
@@ -155,33 +248,30 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
 
         preferencias = []
         for seleccion in selecciones:
-            empresa = seleccion.empresa
+            vacante = seleccion.vacante
             vacantes = []
+            estado_api = _estado_seleccion_api(seleccion, asignacion)
             if (
-                seleccion.estado_seleccion == "Pendiente"
-                and empresa.estado_empresa == "Activa"
-                and _tiene_convenio_vigente(db, empresa.id_empresa)
+                estado_api == "Pendiente"
+                and vacante is not None
+                and vacante.estado_vacante == "Activa"
+                and vacante.periodo == alumno.periodo_practica
+                and vacante.id_tipo_practica == alumno.id_tipo_practica
+                and _cupos_usados(db, vacante.id_vacante) < vacante.cupos
             ):
-                vacantes = (
-                    db.query(VacanteModel)
-                    .filter(
-                        VacanteModel.id_empresa == seleccion.id_empresa,
-                        VacanteModel.id_carrera == alumno.id_carrera,
-                        VacanteModel.estado_vacante == "Activa",
-                        VacanteModel.cupo_disponible > 0,
-                    )
-                    .order_by(VacanteModel.titulo.asc())
-                    .all()
-                )
+                vacantes = [_vacante_response(db, vacante)]
+
+            empresa = vacante.empresa if vacante else None
             preferencias.append(
                 PreferenciaConfirmacionResponse(
                     id_seleccion=seleccion.id_seleccion,
-                    id_empresa=seleccion.id_empresa,
+                    id_empresa=vacante.id_empresa if vacante else 0,
+                    id_convocatoria=seleccion.id_convocatoria,
                     id_vacante=seleccion.id_vacante,
-                    empresa=empresa.nombre_empresa,
+                    empresa=empresa.nombre_empresa if empresa else "Sin empresa",
                     prioridad=seleccion.prioridad,
-                    estado_empresa=empresa.estado_empresa,
-                    estado_seleccion=seleccion.estado_seleccion,
+                    estado_empresa=empresa.estado_empresa if empresa else "Sin empresa",
+                    estado_seleccion=estado_api,
                     observaciones=seleccion.observaciones,
                     vacantes=vacantes,
                 )
@@ -190,16 +280,15 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
         respuesta.append(
             AlumnoConfirmacionResponse(
                 id_alumno=alumno.id_alumno,
-                nombre=_nombre_usuario(alumno.usuario),
+                nombre=_nombre_alumno(alumno),
                 matricula=alumno.matricula,
-                carrera=alumno.carrera.nombre,
+                carrera=alumno.carrera.nombre if alumno.carrera else "Sin carrera",
                 estado_alumno=alumno.estado_alumno,
+                periodo_practica=alumno.periodo_practica,
                 ya_asignado=asignacion is not None,
                 id_asignacion=asignacion.id_asignacion if asignacion else None,
-                empresa_asignada=(
-                    asignacion.empresa.nombre_empresa if asignacion else None
-                ),
-                vacante_asignada=asignacion.vacante.titulo if asignacion else None,
+                empresa_asignada=asignacion.empresa.nombre_empresa if asignacion and asignacion.empresa else None,
+                vacante_asignada=asignacion.vacante.titulo if asignacion and asignacion.vacante else None,
                 preferencias=preferencias,
             )
         )
@@ -207,6 +296,7 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
     return ConfirmacionAsignacionesResponse(
         convocatoria_id=convocatoria.id_convocatoria if convocatoria else None,
         convocatoria=convocatoria.nombre if convocatoria else None,
+        asesores=_listar_asesores(db),
         alumnos=respuesta,
     )
 
@@ -223,36 +313,55 @@ def confirmar_asignacion(
     if convocatoria.estado != "Activa":
         raise HTTPException(status_code=400, detail="La convocatoria no esta activa")
 
+    vacante = (
+        db.query(VacanteModel)
+        .options(joinedload(VacanteModel.empresa))
+        .filter(VacanteModel.id_vacante == datos.id_vacante)
+        .first()
+    )
+    if vacante is None:
+        raise HTTPException(status_code=404, detail="Vacante no encontrada")
+    if vacante.id_empresa != datos.id_empresa:
+        raise HTTPException(status_code=400, detail="La vacante no pertenece a la empresa indicada")
+    if vacante.id_convocatoria != convocatoria.id_convocatoria:
+        raise HTTPException(status_code=400, detail="La vacante no pertenece a la convocatoria activa")
+
     seleccion = (
         db.query(SeleccionEmpresaModel)
         .filter(
             SeleccionEmpresaModel.id_alumno == datos.id_alumno,
-            SeleccionEmpresaModel.id_empresa == datos.id_empresa,
+            SeleccionEmpresaModel.id_vacante == datos.id_vacante,
+            SeleccionEmpresaModel.id_convocatoria == convocatoria.id_convocatoria,
         )
         .first()
     )
     if seleccion is None:
-        raise HTTPException(
-            status_code=400,
-            detail="La empresa seleccionada no pertenece a las preferencias del alumno",
+        raise HTTPException(status_code=400, detail="La vacante seleccionada no pertenece a las preferencias del alumno")
+    if seleccion.estado != "Registrada":
+        raise HTTPException(status_code=400, detail="La seleccion ya fue revisada por coordinacion")
+
+    id_asesor = datos.id_asesor
+    if id_asesor is not None:
+        asesor = (
+            db.query(PersonalInternoModel)
+            .join(PersonalInternoModel.usuario)
+            .filter(
+                PersonalInternoModel.id_personal == id_asesor,
+                UsuarioModel.id_rol == 6,
+                UsuarioModel.estado == "Activo",
+            )
+            .first()
         )
-    if seleccion.estado_seleccion != "Pendiente":
-        raise HTTPException(
-            status_code=400,
-            detail="La seleccion ya fue revisada por coordinacion",
-        )
-    if not _tiene_convenio_vigente(db, datos.id_empresa):
-        raise HTTPException(
-            status_code=400,
-            detail="No se puede asignar una empresa sin convenio vigente",
-        )
+        if asesor is None:
+            raise HTTPException(status_code=400, detail="El asesor interno no existe o no esta activo")
 
     asignacion = AsignacionCreate(
         id_alumno=datos.id_alumno,
         id_empresa=datos.id_empresa,
         id_vacante=datos.id_vacante,
         id_convocatoria=convocatoria.id_convocatoria,
-        id_docente=datos.id_docente,
+        id_tipo_practica=vacante.id_tipo_practica,
+        id_asesor=id_asesor,
         fecha_asignacion=date.today(),
         estado_asignacion="Activa",
         tipo_asignacion=datos.tipo_asignacion,
@@ -260,26 +369,25 @@ def confirmar_asignacion(
     nueva_asignacion = AsignacionService(db).crear(asignacion)
 
     ahora = datetime.now()
-    seleccion.id_vacante = datos.id_vacante
-    seleccion.estado_seleccion = "Aprobada"
     seleccion.observaciones = "Asignacion confirmada por coordinacion."
     seleccion.fecha_revision = ahora
-    seleccion.id_usuario_revisor = usuario.id_usuario
+    seleccion.revisado_por = usuario.id_usuario
 
     otras = (
         db.query(SeleccionEmpresaModel)
         .filter(
             SeleccionEmpresaModel.id_alumno == datos.id_alumno,
             SeleccionEmpresaModel.id_seleccion != seleccion.id_seleccion,
-            SeleccionEmpresaModel.estado_seleccion == "Pendiente",
+            SeleccionEmpresaModel.id_convocatoria == convocatoria.id_convocatoria,
+            SeleccionEmpresaModel.estado == "Registrada",
         )
         .all()
     )
     for otra in otras:
-        otra.estado_seleccion = "Rechazada"
+        otra.estado = "Cancelada"
         otra.observaciones = "Se aprobo otra opcion para este alumno."
         otra.fecha_revision = ahora
-        otra.id_usuario_revisor = usuario.id_usuario
+        otra.revisado_por = usuario.id_usuario
 
     db.commit()
     db.refresh(nueva_asignacion)
@@ -300,12 +408,12 @@ def rechazar_seleccion(
     )
     if seleccion is None:
         raise HTTPException(status_code=404, detail="Seleccion no encontrada")
-    if seleccion.estado_seleccion != "Pendiente":
+    if seleccion.estado != "Registrada":
         raise HTTPException(status_code=400, detail="La seleccion ya fue revisada")
 
-    seleccion.estado_seleccion = "Rechazada"
+    seleccion.estado = "Cancelada"
     seleccion.observaciones = datos.observaciones or "Solicitud rechazada por coordinacion."
     seleccion.fecha_revision = datetime.now()
-    seleccion.id_usuario_revisor = usuario.id_usuario
+    seleccion.revisado_por = usuario.id_usuario
     db.commit()
     return {"mensaje": "Seleccion rechazada correctamente"}

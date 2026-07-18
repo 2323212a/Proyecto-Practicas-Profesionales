@@ -1,7 +1,10 @@
+from app.services.auditoria_service import registrar_bitacora
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
+from infrastructure.persistence.models.usuario import UsuarioModel
+from infrastructure.security.auth_dependencies import obtener_usuario_actual
 from infrastructure.security.auth_dependencies import requerir_roles
 from interfaces.api.schemas.carrera import CarreraCreate, CarreraResponse, CarreraUpdate
 from interfaces.api.service_factory import CarreraService
@@ -53,8 +56,19 @@ def obtener_carrera(
 def crear_carrera(
     carrera: CarreraCreate,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
-    return CarreraService(db).crear(carrera)
+    nueva_carrera = CarreraService(db).crear(carrera)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Crear carrera",
+        "carreras",
+        f"Admin creo la carrera {nueva_carrera.nombre}",
+        "carrera",
+        nueva_carrera.id_carrera,
+    )
+    return nueva_carrera
 
 
 @router.put(
@@ -66,10 +80,20 @@ def actualizar_carrera(
     id_carrera: int,
     carrera: CarreraUpdate,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     carrera_actualizada = CarreraService(db).actualizar(id_carrera, carrera)
     if carrera_actualizada is None:
         raise HTTPException(status_code=404, detail="Carrera no encontrada")
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Editar carrera",
+        "carreras",
+        f"Admin edito la carrera {carrera_actualizada.nombre}",
+        "carrera",
+        carrera_actualizada.id_carrera,
+    )
     return carrera_actualizada
 
 
@@ -80,8 +104,21 @@ def actualizar_carrera(
 def eliminar_carrera(
     id_carrera: int,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
-    carrera = CarreraService(db).eliminar(id_carrera)
+    carrera = CarreraService(db).obtener_por_id(id_carrera)
     if carrera is None:
         raise HTTPException(status_code=404, detail="Carrera no encontrada")
-    return {"mensaje": "Carrera eliminada correctamente"}
+    carrera.estado = "Inactiva"
+    db.commit()
+    db.refresh(carrera)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Desactivar carrera",
+        "carreras",
+        f"Admin desactivo la carrera {carrera.nombre}",
+        "carrera",
+        id_carrera,
+    )
+    return {"mensaje": "Carrera desactivada correctamente"}

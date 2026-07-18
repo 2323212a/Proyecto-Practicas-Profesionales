@@ -25,14 +25,14 @@ const estadoColor: Record<string, string> = {
   Final: "bg-green-100 text-green-700",
 };
 
-function obtenerIdDocenteSesion() {
+function obtenerIdAsesorSesion() {
   const usuario = localStorage.getItem("usuario");
   if (!usuario) return null;
 
   try {
     const sesion = JSON.parse(usuario);
-    const idDocente = sesion?.perfil?.id_docente;
-    return typeof idDocente === "number" ? idDocente : null;
+    const idAsesor = sesion?.perfil?.id_personal;
+    return typeof idAsesor === "number" ? idAsesor : null;
   } catch {
     return null;
   }
@@ -50,8 +50,8 @@ export function AsesorDashboard() {
   }, []);
 
   async function cargarDashboard() {
-    const idDocente = obtenerIdDocenteSesion();
-    if (!idDocente) {
+    const idAsesor = obtenerIdAsesorSesion();
+    if (!idAsesor) {
       setError("No se encontró el perfil de asesor en la sesión actual.");
       setCargando(false);
       return;
@@ -60,7 +60,7 @@ export function AsesorDashboard() {
     try {
       setCargando(true);
       setError("");
-      const data = await gestionAsesorUseCase.listarAlumnos(idDocente);
+      const data = await gestionAsesorUseCase.listarAlumnos(idAsesor);
       setResumen(data.resumen);
       setAlumnos(data.alumnos);
     } catch (err) {

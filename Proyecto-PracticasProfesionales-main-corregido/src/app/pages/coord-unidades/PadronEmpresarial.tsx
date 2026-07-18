@@ -56,6 +56,7 @@ export function PadronEmpresarial() {
   const [empresas, setEmpresas] = useState<EmpresaRevision[]>([]);
   const [vacantes, setVacantes] = useState<VacanteRevision[]>([]);
   const [tab, setTab] = useState<"PrePadron" | "Activa">("PrePadron");
+  const [convocatoria, setConvocatoria] = useState("Todas");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
@@ -95,8 +96,26 @@ export function PadronEmpresarial() {
   );
 
   const vacantesPadron = useMemo(
-    () => vacantes.filter((vacante) => vacante.estado_vacante === tab),
-    [tab, vacantes],
+    () =>
+      vacantes.filter(
+        (vacante) =>
+          vacante.estado_vacante === tab &&
+          (convocatoria === "Todas" || String(vacante.id_convocatoria) === convocatoria),
+      ),
+    [tab, vacantes, convocatoria],
+  );
+
+  const convocatorias = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          vacantes.map((vacante) => [
+            vacante.id_convocatoria,
+            vacante.convocatoria ?? `Convocatoria ${vacante.id_convocatoria}`,
+          ]),
+        ),
+      ),
+    [vacantes],
   );
 
   async function liberarPrepadron() {
@@ -106,7 +125,9 @@ export function PadronEmpresarial() {
     }
     try {
       setError("");
-      await gestionVacantesRevisionUseCase.liberarPrepadron();
+      await gestionVacantesRevisionUseCase.liberarPrepadron(
+        convocatoria === "Todas" ? undefined : Number(convocatoria),
+      );
       await cargar();
     } catch (err) {
       console.error(err);
@@ -173,6 +194,18 @@ export function PadronEmpresarial() {
             {label}
           </button>
         ))}
+        <select
+          value={convocatoria}
+          onChange={(event) => setConvocatoria(event.target.value)}
+          className="ml-auto border rounded-xl px-3 py-2 text-sm bg-white"
+        >
+          <option value="Todas">Todas las convocatorias</option>
+          {convocatorias.map(([id, nombre]) => (
+            <option key={id} value={String(id)}>
+              {nombre}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
@@ -197,8 +230,8 @@ export function PadronEmpresarial() {
               <tr className="text-left text-gray-500">
                 <th className="px-6 py-3">Empresa</th>
                 <th>Vacante</th>
-                <th>Carrera</th>
-                <th>Cupo</th>
+                <th>Convocatoria</th>
+                <th>Cupos</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -208,12 +241,12 @@ export function PadronEmpresarial() {
                 <tr key={vacante.id_vacante} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div className="font-medium text-[#0d2b5e]">{vacante.empresa}</div>
-                    <div className="text-xs text-gray-400">{vacante.modalidad}</div>
+                    <div className="text-xs text-gray-400">{vacante.tipo_practica ?? "Sin tipo de practica"}</div>
                   </td>
 
                   <td className="text-gray-600">{vacante.titulo}</td>
-                  <td className="text-gray-600">{vacante.carrera}</td>
-                  <td className="text-gray-600">{vacante.cupo_disponible}/{vacante.cupo_total}</td>
+                  <td className="text-gray-600">{vacante.convocatoria ?? "Sin convocatoria"}</td>
+                  <td className="text-gray-600">{vacante.cupos}</td>
 
                   <td>
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">

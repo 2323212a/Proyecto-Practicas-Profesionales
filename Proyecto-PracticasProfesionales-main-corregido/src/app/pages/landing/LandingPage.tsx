@@ -17,6 +17,7 @@ const CONFIG_DEFAULT: ConfiguracionSistema = {
   escuela_facultad: "ETDA C-I",
   correo_institucional: "practicas@unach.mx",
   estado_sistema: "Activo",
+  inscripcion_empresas_estado: "Abierta",
   ciclo_escolar: "Ciclo escolar vigente",
   hero_titulo: "Sistema Integral de Practicas Profesionales",
   hero_subtitulo:

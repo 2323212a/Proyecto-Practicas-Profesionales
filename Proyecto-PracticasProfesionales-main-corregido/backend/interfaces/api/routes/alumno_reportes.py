@@ -70,7 +70,7 @@ def _asignacion_activa(db: Session, id_alumno: int):
         .options(
             joinedload(AsignacionModel.empresa),
             joinedload(AsignacionModel.vacante),
-            joinedload(AsignacionModel.docente),
+            joinedload(AsignacionModel.asesor),
             joinedload(AsignacionModel.reportes),
         )
         .filter(
@@ -321,7 +321,7 @@ def subir_reporte_alumno(
 
     crear_notificacion(
         db,
-        asignacion.docente.id_usuario if asignacion.docente else None,
+        asignacion.asesor.id_usuario if asignacion.asesor else None,
         "Reporte nuevo para revision",
         f"{alumno.matricula} subio el {REPORTES_CONFIG[tipo]['titulo'].lower()}.",
     )

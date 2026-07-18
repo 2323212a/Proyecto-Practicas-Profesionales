@@ -14,4 +14,5 @@ export interface UsuarioRepository {
   actualizarPerfil(id: number, data: ActualizarUsuarioPerfil): Promise<UsuarioPerfil>;
   cambiarEstado(id: number): Promise<Usuario>;
   eliminar(id: number): Promise<void>;
+  eliminarDefinitivamente(id: number): Promise<void>;
 }

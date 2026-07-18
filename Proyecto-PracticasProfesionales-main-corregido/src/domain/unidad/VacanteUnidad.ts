@@ -14,18 +14,16 @@ export interface EmpresaVacantesUnidad {
 export interface VacanteUnidad {
   id_vacante: number;
   id_empresa: number;
-  id_carrera: number;
-  carrera?: string;
+  id_convocatoria: number;
+  id_tipo_practica: number;
   titulo: string;
   descripcion: string | null;
-  modalidad: "Presencial" | "Virtual" | "Hibrida";
-  horario: string | null;
-  cupo_total: number;
-  cupo_disponible: number;
+  actividades: string | null;
+  requisitos: string | null;
+  cupos: number;
   estado_vacante: string;
   visible_padron?: boolean;
   periodo?: "Semestral" | "Cuatrimestral" | null;
-  id_tipo_practica?: number | null;
   tipo_practica?: string | null;
   observaciones?: string | null;
 }
@@ -36,18 +34,19 @@ export interface VacantesUnidadResponse {
 }
 
 export interface CrearVacanteUnidadInput {
-  id_carrera: number;
+  id_convocatoria: number;
+  id_tipo_practica: number;
   titulo: string;
   descripcion?: string;
-  modalidad: "Presencial" | "Virtual" | "Hibrida";
-  horario?: string;
-  cupo_total: number;
-  periodo: "Semestral" | "Cuatrimestral";
-  id_tipo_practica: number;
+  actividades?: string;
+  requisitos?: string;
+  cupos: number;
 }
 
-export interface CarreraBasica {
-  id_carrera: number;
-  clave: string;
+export interface ConvocatoriaBasica {
+  id_convocatoria: number;
   nombre: string;
+  tipo_periodo: "Semestral" | "Cuatrimestral";
+  estado: string;
+  fase_actual?: string;
 }

@@ -203,7 +203,7 @@ export function PerfilEmpresa() {
               <div key={vacante.id_vacante} className="p-3 rounded-xl bg-blue-50 border border-blue-100">
                 <div className="text-sm text-[#0d2b5e] font-semibold">{vacante.titulo}</div>
                 <div className="text-xs text-gray-500 mt-1">
-                  {vacante.modalidad} - Cupo {vacante.cupo_disponible}/{vacante.cupo_total}
+                  {vacante.periodo ?? "Sin periodo"} - {vacante.cupos} cupo(s) - {vacante.estado_vacante}
                 </div>
               </div>
             ))}
@@ -227,7 +227,7 @@ export function PerfilEmpresa() {
               <div key={c.id_convenio} className="px-6 py-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50">
                 <div>
                   <div className="font-semibold text-sm text-gray-800">
-                    Convenio #{c.id_convenio} · Version {c.version}
+                    Convenio #{c.id_convenio}
                   </div>
                   <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
                     <CalendarDays className="w-3.5 h-3.5" />

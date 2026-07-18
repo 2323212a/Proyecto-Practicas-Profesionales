@@ -33,7 +33,7 @@ type ConfiguracionRequisitoForm = {
   obligatorio: boolean;
   requiere_formato: boolean;
   activo: boolean;
-  etapa: "Documentacion" | "Convenio";
+  etapa: "Documentacion" | "Convenio" | "Vinculacion";
 };
 
 const estadoColor: Record<string, string> = {
@@ -55,17 +55,6 @@ function archivoABase64(file: File): Promise<string> {
 function urlArchivo(url: string) {
   return resolveApiUrl(url);
 }
-
-function mimeFormato(archivo: File) {
-  if (archivo.type) return archivo.type;
-  const nombre = archivo.name.toLowerCase();
-  if (nombre.endsWith(".doc")) return "application/msword";
-  if (nombre.endsWith(".docx")) {
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  }
-  return "application/pdf";
-}
-
 
 function textoFormatoPorEtapa(etapa: string) {
   if (etapa === "Convenio") {
@@ -204,8 +193,6 @@ export function ExpedienteEmpresa() {
         id_tipo_documento_empresa: requisito.id_tipo_documento_empresa,
         nombre_archivo: archivo.name,
         contenido_base64: contenido,
-        mime_type: mimeFormato(archivo),
-        descripcion: configForm.descripcion.trim() || requisito.descripcion || undefined,
       });
       setExito(`Formato oficial actualizado para ${requisito.nombre}.`);
       await cargar();

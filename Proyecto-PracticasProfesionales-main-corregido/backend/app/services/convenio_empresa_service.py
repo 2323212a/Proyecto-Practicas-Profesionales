@@ -15,6 +15,8 @@ def convenio_esta_vigente(convenio: ConvenioModel | None, hoy: date | None = Non
     return (
         convenio.es_actual
         and convenio.estado_convenio == "Vigente"
+        and convenio.fecha_inicio is not None
+        and convenio.fecha_fin is not None
         and convenio.fecha_inicio <= fecha <= convenio.fecha_fin
     )
 
@@ -43,6 +45,8 @@ def obtener_convenio_vigente(
             ConvenioModel.id_empresa == id_empresa,
             ConvenioModel.es_actual.is_(True),
             ConvenioModel.estado_convenio == "Vigente",
+            ConvenioModel.fecha_inicio.isnot(None),
+            ConvenioModel.fecha_fin.isnot(None),
             ConvenioModel.fecha_inicio <= fecha,
             ConvenioModel.fecha_fin >= fecha,
         )
@@ -58,13 +62,12 @@ def activar_convenio_actual(
     *,
     fecha_inicio: date,
     fecha_fin: date,
-    documento_convenio: str | None,
 ) -> ConvenioModel:
     """Activa exactamente un convenio y deja los anteriores como historicos.
 
     El estado ``Vencido`` tambien se usa para un convenio sustituido porque el
     esquema heredado no incluye un estado ``Sustituido``. Se conservan sus
-    fechas, archivo y version para mantener el historial.
+    fechas y observaciones para mantener el historial.
     """
 
     anteriores = (
@@ -78,15 +81,12 @@ def activar_convenio_actual(
     )
     for anterior in anteriores:
         anterior.es_actual = False
-        anterior.renovacion_solicitada = False
         if anterior.estado_convenio == "Vigente":
             anterior.estado_convenio = "Vencido"
 
     convenio.fecha_inicio = fecha_inicio
     convenio.fecha_fin = fecha_fin
-    convenio.documento_convenio = documento_convenio
     convenio.es_actual = True
-    convenio.renovacion_solicitada = False
     convenio.estado_convenio = "Vigente"
 
     # Un convenio aprobado es la fuente de verdad del tipo de tramite. Esto

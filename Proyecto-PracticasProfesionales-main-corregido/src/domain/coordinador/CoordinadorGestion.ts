@@ -19,7 +19,7 @@ export interface AlumnoGestionCoordinador {
   estado_alumno: string;
   estado_expediente: string;
   empresa: string;
-  docente: string;
+  asesor: string;
   tipo_asignacion: string;
   horas_aprobadas: number;
   fase: string;

@@ -37,14 +37,14 @@ const estadoColor: Record<EstadoReporteAsesor, string> = {
   Rechazado: "bg-red-100 text-red-700",
 };
 
-function obtenerIdDocenteSesion() {
+function obtenerIdAsesorSesion() {
   const usuario = localStorage.getItem("usuario");
   if (!usuario) return null;
 
   try {
     const sesion = JSON.parse(usuario);
-    const idDocente = sesion?.perfil?.id_docente;
-    return typeof idDocente === "number" ? idDocente : null;
+    const idAsesor = sesion?.perfil?.id_personal;
+    return typeof idAsesor === "number" ? idAsesor : null;
   } catch {
     return null;
   }
@@ -78,14 +78,14 @@ export function AsesorReportes() {
   const [observacion, setObservacion] = useState("");
   const [procesando, setProcesando] = useState<number | null>(null);
 
-  const idDocente = obtenerIdDocenteSesion();
+  const idAsesor = obtenerIdAsesorSesion();
 
   useEffect(() => {
     void cargarReportes();
-  }, [idDocente]); // eslint-disable-line react-hooks/exhaustive-deps -- cargarReportes only reads the current advisor id.
+  }, [idAsesor]); // eslint-disable-line react-hooks/exhaustive-deps -- cargarReportes only reads the current advisor id.
 
   async function cargarReportes() {
-    if (!idDocente) {
+    if (!idAsesor) {
       setError("No se encontro el perfil de asesor en la sesion actual.");
       setCargando(false);
       return;
@@ -94,7 +94,7 @@ export function AsesorReportes() {
     try {
       setCargando(true);
       setError("");
-      const data = await gestionAsesorUseCase.listarReportes(idDocente);
+      const data = await gestionAsesorUseCase.listarReportes(idAsesor);
       setReportes(data.reportes);
       setResumen(data.resumen);
     } catch (err) {
@@ -142,13 +142,13 @@ export function AsesorReportes() {
     nuevoEstado: Exclude<EstadoReporteAsesor, "Pendiente">,
     nota?: string,
   ) => {
-    if (!idDocente) return;
+    if (!idAsesor) return;
 
     try {
       setProcesando(reporte.id_reporte);
       setError("");
       await gestionAsesorUseCase.cambiarEstadoReporte(
-        idDocente,
+        idAsesor,
         reporte.id_reporte,
         nuevoEstado,
         nota,

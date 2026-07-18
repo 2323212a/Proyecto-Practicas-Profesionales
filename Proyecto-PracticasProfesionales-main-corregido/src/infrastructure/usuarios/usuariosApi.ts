@@ -3,11 +3,14 @@ import { apiClient } from "../api/apiClient";
 export interface Usuario {
   id_usuario: number;
   id_rol: number;
-  nombre: string;
+  rol?: string | null;
+  nombre?: string | null;
   apellido_paterno?: string | null;
   apellido_materno?: string | null;
   correo: string;
   estado: string;
+  tipo_perfil?: string;
+  id_perfil?: number | null;
 }
 
 export async function obtenerUsuarios(): Promise<Usuario[]> {
@@ -22,6 +25,16 @@ export interface CrearUsuarioDTO {
   apellido_materno?: string;
   correo: string;
   password: string;
+  id_carrera?: number | null;
+  id_tipo_practica?: number | null;
+  matricula?: string | null;
+  semestre?: number | null;
+  grupo?: string | null;
+  creditos_aprobados?: number | null;
+  periodo_practica?: string | null;
+  departamento?: string | null;
+  cargo?: string | null;
+  telefono?: string | null;
 }
 
 export async function crearUsuario(data: CrearUsuarioDTO): Promise<Usuario> {

@@ -1,5 +1,5 @@
 import type {
-  CarreraBasica,
+  ConvocatoriaBasica,
   CrearVacanteUnidadInput,
   VacanteUnidad,
   VacantesUnidadResponse,
@@ -21,7 +21,11 @@ export class GestionVacantesUnidadUseCase {
     return this.repository.crear(idEmpresa, datos);
   }
 
-  listarCarreras(): Promise<CarreraBasica[]> {
-    return this.repository.listarCarreras();
+  listarConvocatorias(): Promise<ConvocatoriaBasica[]> {
+    return this.repository.listarConvocatorias();
+  }
+
+  solicitarParticipacion(idConvocatoria: number): Promise<void> {
+    return this.repository.solicitarParticipacion(idConvocatoria);
   }
 }

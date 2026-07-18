@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from infrastructure.database.connection import Base
@@ -12,6 +12,12 @@ class ConfiguracionSistemaModel(Base):
     escuela_facultad = Column(String(150), nullable=False)
     correo_institucional = Column(String(100), nullable=False)
     estado_sistema = Column(String(30), nullable=False, default="Activo", server_default="Activo")
+    inscripcion_empresas_estado = Column(
+        Enum("Abierta", "Cerrada"),
+        nullable=False,
+        default="Abierta",
+        server_default="Abierta",
+    )
     ciclo_escolar = Column(String(50), nullable=False)
     hero_titulo = Column(String(150), nullable=False)
     hero_subtitulo = Column(Text, nullable=False)

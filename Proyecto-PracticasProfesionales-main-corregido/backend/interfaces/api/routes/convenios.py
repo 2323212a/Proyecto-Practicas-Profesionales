@@ -71,13 +71,14 @@ def crear_convenio(convenio: ConvenioCreate, db: Session = Depends(obtener_db)):
         if empresa is None:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
         if nuevo_convenio.estado_convenio == "Vigente":
+            if nuevo_convenio.fecha_inicio is None or nuevo_convenio.fecha_fin is None:
+                raise HTTPException(status_code=400, detail="Un convenio vigente requiere fecha de inicio y fin")
             activar_convenio_actual(
                 db,
                 empresa,
                 nuevo_convenio,
                 fecha_inicio=nuevo_convenio.fecha_inicio,
                 fecha_fin=nuevo_convenio.fecha_fin,
-                documento_convenio=nuevo_convenio.documento_convenio,
             )
         else:
             _marcar_otros_como_historicos(
@@ -108,13 +109,14 @@ def actualizar_convenio(
         if empresa is None:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
         if convenio.estado_convenio == "Vigente":
+            if convenio.fecha_inicio is None or convenio.fecha_fin is None:
+                raise HTTPException(status_code=400, detail="Un convenio vigente requiere fecha de inicio y fin")
             activar_convenio_actual(
                 db,
                 empresa,
                 convenio,
                 fecha_inicio=convenio.fecha_inicio,
                 fecha_fin=convenio.fecha_fin,
-                documento_convenio=convenio.documento_convenio,
             )
         else:
             _marcar_otros_como_historicos(db, convenio.id_empresa, convenio.id_convenio)
@@ -134,8 +136,9 @@ def solicitar_renovacion_convenio(
     if convenio is None:
         raise HTTPException(status_code=404, detail="Convenio no encontrado")
 
-    convenio.renovacion_solicitada = True
-    convenio.estado_convenio = "Vencido" if convenio.fecha_fin < date.today() else convenio.estado_convenio
+    convenio.observaciones = datos.observaciones
+    if convenio.fecha_fin and convenio.fecha_fin < date.today():
+        convenio.estado_convenio = "Vencido"
 
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == convenio.id_empresa).first()
     responsables = (
@@ -147,11 +150,8 @@ def solicitar_renovacion_convenio(
         crear_notificacion(
             db,
             responsable.id_usuario,
-            "Renovacion de convenio solicitada",
-            (
-                f"Coordinacion solicito renovar el convenio de {empresa.nombre_empresa if empresa else 'la empresa'}. "
-                "Sube la nueva version desde Documentacion."
-            )
+            "Revision de convenio registrada",
+            f"Coordinacion registro una observacion sobre el convenio de {empresa.nombre_empresa if empresa else 'la empresa'}."
             + (f" Observaciones: {datos.observaciones}" if datos.observaciones else ""),
         )
 
@@ -205,7 +205,6 @@ def _marcar_otros_como_historicos(db: Session, id_empresa: int, excepto_id: int 
     convenios = query.all()
     for convenio in convenios:
         convenio.es_actual = False
-        convenio.renovacion_solicitada = False
         if convenio.estado_convenio == "Vigente":
             convenio.estado_convenio = "Vencido"
 

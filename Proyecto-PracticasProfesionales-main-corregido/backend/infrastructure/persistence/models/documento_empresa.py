@@ -23,16 +23,18 @@ class DocumentoEmpresaModel(Base):
     )
     nombre_archivo = Column(String(255), nullable=False)
     ruta_archivo = Column(String(255), nullable=False)
-    mime_type = Column(String(120), nullable=False)
     estado_documento = Column(
-        Enum("Pendiente", "Aprobado", "Rechazado"),
+        Enum("Pendiente", "Aprobado", "Con observaciones", "Rechazado"),
         nullable=False,
         default="Pendiente",
         server_default="Pendiente",
     )
     observaciones = Column(Text, nullable=True)
-    fecha_carga = Column(DateTime, nullable=False, server_default=func.now())
+    fecha_subida = Column(DateTime, nullable=False, server_default=func.now())
     fecha_revision = Column(DateTime, nullable=True)
+    revisado_por = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     empresa = relationship("EmpresaModel")
     tipo_documento = relationship("TipoDocumentoEmpresaModel", back_populates="documentos")

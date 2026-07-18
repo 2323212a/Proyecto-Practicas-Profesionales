@@ -19,7 +19,8 @@ class AsignacionModel(Base):
     id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=False)
     id_vacante = Column(Integer, nullable=False)
     id_convocatoria = Column(Integer, ForeignKey("convocatoria.id_convocatoria"), nullable=False)
-    id_docente = Column(Integer, ForeignKey("docente_asesor.id_docente"), nullable=True)
+    id_tipo_practica = Column(Integer, ForeignKey("tipo_practica.id_tipo_practica"), nullable=False)
+    id_asesor = Column(Integer, ForeignKey("personal_interno.id_personal"), nullable=True)
     fecha_asignacion = Column(Date, nullable=False)
     estado_asignacion = Column(
         Enum("Activa", "Finalizada", "Cancelada"),
@@ -38,7 +39,8 @@ class AsignacionModel(Base):
     empresa = relationship("EmpresaModel", back_populates="asignaciones", overlaps="asignaciones,vacante")
     vacante = relationship("VacanteModel", back_populates="asignaciones", overlaps="empresa")
     convocatoria = relationship("ConvocatoriaModel", back_populates="asignaciones")
-    docente = relationship("DocenteAsesorModel", back_populates="asignaciones")
+    tipo_practica = relationship("TipoPracticaModel")
+    asesor = relationship("PersonalInternoModel", foreign_keys=[id_asesor], back_populates="asignaciones")
     reportes = relationship("ReporteModel", back_populates="asignacion")
     evaluaciones = relationship("EvaluacionModel", back_populates="asignacion")
     liberacion = relationship("LiberacionModel", back_populates="asignacion", uselist=False)

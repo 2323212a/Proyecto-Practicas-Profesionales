@@ -1,18 +1,44 @@
 ﻿import { useEffect, useState } from "react";
-import { Users, Search, Plus, Edit2, Trash2, UserX } from "lucide-react";
+import { Users, Search, Plus, Edit2, Trash2, UserX, KeyRound, Download, Copy } from "lucide-react";
 import { gestionUsuariosUseCase } from "../../dependencies";
+import { apiClient } from "../../../infrastructure/api/apiClient";
+import { obtenerCarreras, obtenerTiposPractica } from "../../../infrastructure/catalogos/catalogosApi";
 
 type Usuario = {
   id_usuario: number;
   id_rol: number;
-  nombre: string;
+  rol?: string | null;
+  nombre?: string | null;
   apellido_paterno?: string | null;
   apellido_materno?: string | null;
   correo: string;
   estado: string;
+  debe_cambiar_password?: boolean;
+  tipo_perfil?: string;
+  id_perfil?: number | null;
+  puede_eliminar_definitivamente?: boolean;
+  relaciones?: string[];
+};
+
+type ResetPasswordResultado = {
+  correo: string;
+  id_rol: number;
+  debe_cambiar_password: boolean;
+  password_temporal: string;
+  mensaje: string;
 };
 
 type PerfilEditable = Record<string, string | number | null>;
+
+type CarreraCatalogo = {
+  id_carrera: number;
+  nombre: string;
+};
+
+type TipoPracticaCatalogo = {
+  id_tipo_practica: number;
+  nombre: string;
+};
 
 const roles: Record<number, string> = {
   1: "Alumno",
@@ -34,15 +60,38 @@ const rolC: Record<string, string> = {
   Direccion: "bg-orange-100 text-orange-700",
 };
 
+function extraerMensajeError(error: unknown, mensajeDefault: string) {
+  if (typeof error !== "object" || error === null) return mensajeDefault;
+  const response = (error as { response?: { data?: unknown } }).response;
+  const data = response?.data;
+
+  if (typeof data === "string") return data;
+  if (typeof data !== "object" || data === null) return mensajeDefault;
+
+  const detail = (data as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (typeof detail === "object" && detail !== null) {
+    const mensaje = (detail as { mensaje?: unknown }).mensaje;
+    if (typeof mensaje === "string") return mensaje;
+  }
+
+  const mensaje = (data as { mensaje?: unknown }).mensaje;
+  return typeof mensaje === "string" ? mensaje : mensajeDefault;
+}
+
 export function GestionUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [q, setQ] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [usuarioEditar, setUsuarioEditar] = useState<Usuario | null>(null);
+  const [filtroEstado, setFiltroEstado] = useState<"Todos" | "Activo" | "Inactivo">("Todos");
   const [perfilTipo, setPerfilTipo] = useState("");
   const [perfilEditar, setPerfilEditar] = useState<PerfilEditable>({});
   const [cargandoPerfil, setCargandoPerfil] = useState(false);
+  const [resetResultado, setResetResultado] = useState<ResetPasswordResultado | null>(null);
+  const [carreras, setCarreras] = useState<CarreraCatalogo[]>([]);
+  const [tiposPractica, setTiposPractica] = useState<TipoPracticaCatalogo[]>([]);
 
   const [nuevoUsuario, setNuevoUsuario] = useState({
     nombre: "",
@@ -51,10 +100,21 @@ export function GestionUsuarios() {
     correo: "",
     password: "",
     id_rol: 4,
+    id_carrera: "",
+    id_tipo_practica: "",
+    matricula: "",
+    semestre: "",
+    grupo: "",
+    creditos_aprobados: "",
+    periodo_practica: "",
+    departamento: "",
+    cargo: "",
+    telefono: "",
   });
 
   useEffect(() => {
     cargarUsuarios();
+    cargarCatalogosPerfil();
   }, []);
 
   async function cargarUsuarios() {
@@ -62,9 +122,28 @@ export function GestionUsuarios() {
     setUsuarios(data);
   }
 
+  async function cargarCatalogosPerfil() {
+    try {
+      const [carrerasData, tiposData] = await Promise.all([
+        obtenerCarreras(),
+        obtenerTiposPractica(),
+      ]);
+      setCarreras(carrerasData);
+      setTiposPractica(tiposData);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async function handleCrearUsuario() {
     try {
-      await gestionUsuariosUseCase.crear(nuevoUsuario);
+      await gestionUsuariosUseCase.crear({
+        ...nuevoUsuario,
+        id_carrera: nuevoUsuario.id_carrera ? Number(nuevoUsuario.id_carrera) : null,
+        id_tipo_practica: nuevoUsuario.id_tipo_practica ? Number(nuevoUsuario.id_tipo_practica) : null,
+        semestre: nuevoUsuario.semestre ? Number(nuevoUsuario.semestre) : null,
+        creditos_aprobados: nuevoUsuario.creditos_aprobados ? Number(nuevoUsuario.creditos_aprobados) : 0,
+      });
 
       setShowCreate(false);
 
@@ -75,6 +154,16 @@ export function GestionUsuarios() {
         correo: "",
         password: "",
         id_rol: 4,
+        id_carrera: "",
+        id_tipo_practica: "",
+        matricula: "",
+        semestre: "",
+        grupo: "",
+        creditos_aprobados: "",
+        periodo_practica: "",
+        departamento: "",
+        cargo: "",
+        telefono: "",
       });
 
       await cargarUsuarios();
@@ -84,41 +173,66 @@ export function GestionUsuarios() {
     }
   }
 
-  async function handleCambiarEstado(id: number) {
-    try {
-      await gestionUsuariosUseCase.cambiarEstado(id);
-      await cargarUsuarios();
-    } catch (error) {
-      console.error(error);
-      alert("Error al cambiar estado");
-    }
-  }
-
-  async function handleEliminarUsuario(id: number) {
-    const confirmar = window.confirm("¿Deseas eliminar este usuario?");
+  async function handleCambiarEstado(usuario: Usuario) {
+    const esActivo = usuario.estado === "Activo";
+    const confirmar = window.confirm(
+      esActivo
+        ? "Este usuario sera desactivado y no podra iniciar sesion. Sus registros historicos se conservaran. Deseas continuar?"
+        : "Este usuario volvera a estar activo y podra iniciar sesion con su contrasena actual. Deseas continuar?"
+    );
 
     if (!confirmar) return;
 
     try {
-      await gestionUsuariosUseCase.eliminar(id);
+      await gestionUsuariosUseCase.cambiarEstado(usuario.id_usuario);
       await cargarUsuarios();
     } catch (error) {
       console.error(error);
-      alert("Error al eliminar usuario");
+      alert(extraerMensajeError(error, "Error al cambiar estado"));
     }
   }
 
-  async function abrirEdicion(usuario: Usuario) {
-    setUsuarioEditar({ ...usuario });
+  async function handleEliminarDefinitivamente(usuario: Usuario) {
+    if (!usuario.puede_eliminar_definitivamente) {
+      alert("Este usuario tiene registros asociados. Solo puede desactivarse.");
+      return;
+    }
+
+    const confirmar = window.confirm(
+      "Este usuario no tiene registros asociados. Se eliminara definitivamente de la base de datos. Esta accion no se puede deshacer. Deseas continuar?"
+    );
+
+    if (!confirmar) return;
+
+    try {
+      await gestionUsuariosUseCase.eliminarDefinitivamente(usuario.id_usuario);
+      await cargarUsuarios();
+    } catch (error) {
+      console.error(error);
+      alert(extraerMensajeError(error, "Error al eliminar definitivamente el usuario"));
+    }
+  }
+
+  async function abrirEdicion(usuarioBase: Usuario) {
+    setUsuarioEditar({ ...usuarioBase });
     setPerfilTipo("");
     setPerfilEditar({});
     setShowEdit(true);
 
     try {
       setCargandoPerfil(true);
-      const perfil = await gestionUsuariosUseCase.obtenerPerfil(usuario.id_usuario);
+      const perfil = await gestionUsuariosUseCase.obtenerPerfil(usuarioBase.id_usuario);
+      const datosPerfil = (perfil.datos ?? {}) as PerfilEditable;
       setPerfilTipo(perfil.tipo);
-      setPerfilEditar((perfil.datos ?? {}) as PerfilEditable);
+      setUsuarioEditar({
+        ...usuarioBase,
+        nombre: typeof datosPerfil.nombre === "string" ? datosPerfil.nombre : usuarioBase.nombre,
+        apellido_paterno: typeof datosPerfil.apellido_paterno === "string" ? datosPerfil.apellido_paterno : usuarioBase.apellido_paterno,
+        apellido_materno: typeof datosPerfil.apellido_materno === "string" ? datosPerfil.apellido_materno : usuarioBase.apellido_materno,
+        correo: perfil.usuario?.correo ?? usuarioBase.correo,
+        estado: perfil.usuario?.estado ?? usuarioBase.estado,
+      });
+      setPerfilEditar(datosPerfil);
     } catch (error) {
       console.error(error);
       setPerfilTipo("Sin perfil editable");
@@ -127,32 +241,63 @@ export function GestionUsuarios() {
     }
   }
 
+  async function handleResetPassword(usuario: Usuario) {
+    const confirmar = window.confirm(`Deseas resetear la contrasena de ${usuario.correo}?`);
+    if (!confirmar) return;
+
+    try {
+      const response = await apiClient.post<ResetPasswordResultado>(
+        `/usuarios/${usuario.id_usuario}/reset-password`
+      );
+      setResetResultado(response.data);
+      await cargarUsuarios();
+    } catch (error) {
+      console.error(error);
+      alert("Error al resetear contrasena");
+    }
+  }
+
+  function descargarCredencialReset() {
+    if (!resetResultado) return;
+    const contenido = [
+      "correo,password_temporal",
+      `"${resetResultado.correo}","${resetResultado.password_temporal}"`,
+    ].join("\n");
+    const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "credencial_temporal.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function cerrarResetPassword() {
+    setResetResultado((actual) =>
+      actual ? { ...actual, password_temporal: "" } : null
+    );
+    setResetResultado(null);
+  }
+
   async function handleActualizarUsuario() {
     if (!usuarioEditar) return;
 
     try {
-      await gestionUsuariosUseCase.actualizar(usuarioEditar.id_usuario, {
-        id_rol: usuarioEditar.id_rol,
+      await gestionUsuariosUseCase.actualizarPerfil(usuarioEditar.id_usuario, {
         nombre: usuarioEditar.nombre,
         apellido_paterno: usuarioEditar.apellido_paterno ?? "",
         apellido_materno: usuarioEditar.apellido_materno ?? "",
         correo: usuarioEditar.correo,
-        estado: usuarioEditar.estado,
+        ...normalizarPerfilParaGuardar(usuarioEditar.id_rol, perfilEditar),
       });
-
-      if (perfilEsEditable(usuarioEditar.id_rol)) {
-        await gestionUsuariosUseCase.actualizarPerfil(
-          usuarioEditar.id_usuario,
-          normalizarPerfilParaGuardar(usuarioEditar.id_rol, perfilEditar)
-        );
-      }
 
       setShowEdit(false);
       setUsuarioEditar(null);
       await cargarUsuarios();
+      alert("Perfil actualizado correctamente.");
     } catch (error) {
       console.error(error);
-      alert("Error al actualizar usuario");
+      alert(extraerMensajeError(error, "Error al actualizar perfil"));
     }
   }
 
@@ -163,11 +308,12 @@ export function GestionUsuarios() {
 
     const rol = roles[u.id_rol] ?? "Sin rol";
 
-    return (
+    const coincideBusqueda =
       nombreCompleto.toLowerCase().includes(q.toLowerCase()) ||
       u.correo.toLowerCase().includes(q.toLowerCase()) ||
-      rol.toLowerCase().includes(q.toLowerCase())
-    );
+      rol.toLowerCase().includes(q.toLowerCase());
+
+    return (filtroEstado === "Todos" || u.estado === filtroEstado) && coincideBusqueda;
   });
 
   function perfilEsEditable(idRol: number) {
@@ -200,8 +346,8 @@ export function GestionUsuarios() {
         matricula: texto(perfil.matricula),
         semestre: numeroONulo(perfil.semestre),
         grupo: texto(perfil.grupo),
+        id_tipo_practica: numeroONulo(perfil.id_tipo_practica),
         creditos_aprobados: numeroONulo(perfil.creditos_aprobados),
-        estado_alumno: texto(perfil.estado_alumno) || "Activo",
       };
     }
 
@@ -214,7 +360,6 @@ export function GestionUsuarios() {
 
     if (idRol === 5) {
       return {
-        id_empresa: numeroONulo(perfil.id_empresa),
         cargo: texto(perfil.cargo),
         telefono: texto(perfil.telefono),
       };
@@ -254,6 +399,32 @@ export function GestionUsuarios() {
     );
   }
 
+  function renderSelectPerfil(
+    label: string,
+    campo: string,
+    opciones: Array<{ value: number; label: string }>
+  ) {
+    return (
+      <label className="block">
+        <span className="block text-xs font-semibold text-gray-500 mb-1">
+          {label}
+        </span>
+        <select
+          value={texto(perfilEditar[campo])}
+          onChange={(e) => setCampoPerfil(campo, numeroONulo(e.target.value))}
+          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+        >
+          <option value="">Selecciona...</option>
+          {opciones.map((opcion) => (
+            <option key={opcion.value} value={opcion.value}>
+              {opcion.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
   function renderCamposPerfil() {
     if (!usuarioEditar) return null;
 
@@ -276,27 +447,26 @@ export function GestionUsuarios() {
     if (usuarioEditar.id_rol === 1) {
       return (
         <div className="grid sm:grid-cols-2 gap-4">
-          {renderInputPerfil("ID carrera", "id_carrera", "number")}
+          {renderSelectPerfil(
+            "Carrera",
+            "id_carrera",
+            carreras.map((carrera) => ({
+              value: carrera.id_carrera,
+              label: carrera.nombre,
+            }))
+          )}
           {renderInputPerfil("Matrícula", "matricula")}
           {renderInputPerfil("Semestre", "semestre", "number")}
           {renderInputPerfil("Grupo", "grupo")}
+          {renderSelectPerfil(
+            "Tipo de práctica",
+            "id_tipo_practica",
+            tiposPractica.map((tipo) => ({
+              value: tipo.id_tipo_practica,
+              label: tipo.nombre,
+            }))
+          )}
           {renderInputPerfil("Créditos aprobados", "creditos_aprobados", "number")}
-          <label className="block">
-            <span className="block text-xs font-semibold text-gray-500 mb-1">
-              Estado alumno
-            </span>
-            <select
-              value={texto(perfilEditar.estado_alumno) || "Activo"}
-              onChange={(e) => setCampoPerfil("estado_alumno", e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
-            >
-              <option value="Activo">Activo</option>
-              <option value="Elegible">Elegible</option>
-              <option value="Asignado">Asignado</option>
-              <option value="Liberado">Liberado</option>
-              <option value="No Elegible">No Elegible</option>
-            </select>
-          </label>
         </div>
       );
     }
@@ -312,10 +482,43 @@ export function GestionUsuarios() {
 
     if (usuarioEditar.id_rol === 5) {
       return (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {renderInputPerfil("ID empresa", "id_empresa", "number")}
-          {renderInputPerfil("Cargo", "cargo")}
-          {renderInputPerfil("Teléfono", "telefono")}
+        <div className="space-y-5">
+          <div>
+            <h5 className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
+              Responsable
+            </h5>
+            <div className="grid sm:grid-cols-2 gap-4">
+              {renderInputPerfil("Cargo del responsable", "cargo")}
+              {renderInputPerfil("Teléfono del responsable", "telefono")}
+            </div>
+          </div>
+
+          <div>
+            <h5 className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-3">
+              Empresa asociada
+            </h5>
+            <div className="grid sm:grid-cols-2 gap-3 rounded-xl bg-gray-50 border border-gray-200 p-4 text-sm">
+              <div>
+                <div className="text-xs font-semibold text-gray-500">Empresa</div>
+                <div className="font-semibold text-[#0d2b5e]">{texto(perfilEditar.nombre_empresa) || "Sin empresa"}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-500">RFC</div>
+                <div className="font-semibold text-[#0d2b5e]">{texto(perfilEditar.rfc) || "Sin RFC"}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-500">Correo de contacto</div>
+                <div className="font-semibold text-[#0d2b5e] break-all">{texto(perfilEditar.correo_contacto) || "Sin correo"}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-500">Estado de empresa</div>
+                <div className="font-semibold text-[#0d2b5e]">{texto(perfilEditar.estado_empresa) || "Sin estado"}</div>
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl bg-gray-50 border border-gray-200 p-3 text-xs text-gray-500">
+              La empresa, RFC, convenio, documentos, vacantes y padrón se administran desde sus flujos correspondientes.
+            </div>
+          </div>
         </div>
       );
     }
@@ -329,6 +532,10 @@ export function GestionUsuarios() {
     }
 
     return null;
+  }
+
+  function etiquetaNombreGeneral(usuario: Usuario) {
+    return usuario.id_rol === 5 ? "Nombre del responsable" : "Nombre";
   }
 
   return (
@@ -353,16 +560,28 @@ export function GestionUsuarios() {
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <div className="grid md:grid-cols-[1fr_auto] gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
 
-          <input
-            type="text"
-            placeholder="Buscar usuario, correo o rol..."
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#1565c0]"
-          />
+            <input
+              type="text"
+              placeholder="Buscar usuario, correo o rol..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#1565c0]"
+            />
+          </div>
+
+          <select
+            value={filtroEstado}
+            onChange={(e) => setFiltroEstado(e.target.value as "Todos" | "Activo" | "Inactivo")}
+            className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-white text-gray-600"
+          >
+            <option value="Todos">Todos</option>
+            <option value="Activo">Activos</option>
+            <option value="Inactivo">Inactivos</option>
+          </select>
         </div>
       </div>
 
@@ -404,6 +623,8 @@ export function GestionUsuarios() {
 
                 const rol = roles[u.id_rol] ?? "Sin rol";
                 const estadoActivo = u.estado === "Activo";
+                const puedeEliminar = Boolean(u.puede_eliminar_definitivamente);
+                const relaciones = u.relaciones ?? [];
 
                 return (
                   <tr key={u.id_usuario} className="hover:bg-gray-50">
@@ -455,21 +676,42 @@ export function GestionUsuarios() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => abrirEdicion(u)}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                          className="px-2.5 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg inline-flex items-center gap-1"
+                          title="Editar perfil"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
+                          Editar perfil
                         </button>
 
                         <button
-                          onClick={() => handleCambiarEstado(u.id_usuario)}
+                          onClick={() => handleCambiarEstado(u)}
                           className="p-1.5 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg"
+                          title={estadoActivo ? "Desactivar usuario" : "Reactivar usuario"}
                         >
                           <UserX className="w-3.5 h-3.5" />
                         </button>
 
                         <button
-                          onClick={() => handleEliminarUsuario(u.id_usuario)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                          onClick={() => handleResetPassword(u)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                          title="Resetear contrasena"
+                        >
+                          <KeyRound className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => handleEliminarDefinitivamente(u)}
+                          disabled={!puedeEliminar}
+                          className={`p-1.5 rounded-lg ${
+                            puedeEliminar
+                              ? "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                              : "text-gray-300 cursor-not-allowed"
+                          }`}
+                          title={
+                            puedeEliminar
+                              ? "Eliminar definitivamente"
+                              : `Este usuario tiene registros asociados. Solo puede desactivarse.${relaciones.length ? ` Relaciones: ${relaciones.join(", ")}` : ""}`
+                          }
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -578,6 +820,91 @@ export function GestionUsuarios() {
                   </option>
                 ))}
               </select>
+
+              {nuevoUsuario.id_rol === 1 && (
+                <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                  <select
+                    value={nuevoUsuario.id_carrera}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, id_carrera: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+                  >
+                    <option value="">Selecciona carrera</option>
+                    {carreras.map((carrera) => (
+                      <option key={carrera.id_carrera} value={carrera.id_carrera}>
+                        {carrera.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Matricula"
+                    value={nuevoUsuario.matricula}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, matricula: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="number"
+                      placeholder="Semestre"
+                      value={nuevoUsuario.semestre}
+                      onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, semestre: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Grupo"
+                      value={nuevoUsuario.grupo}
+                      onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, grupo: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                    />
+                  </div>
+                  <select
+                    value={nuevoUsuario.id_tipo_practica}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, id_tipo_practica: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+                  >
+                    <option value="">Tipo de practica sin asignar</option>
+                    {tiposPractica.map((tipo) => (
+                      <option key={tipo.id_tipo_practica} value={tipo.id_tipo_practica}>
+                        {tipo.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="Creditos aprobados"
+                    value={nuevoUsuario.creditos_aprobados}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, creditos_aprobados: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
+                </div>
+              )}
+
+              {[2, 3, 4, 6, 7].includes(nuevoUsuario.id_rol) && (
+                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <input
+                    type="text"
+                    placeholder="Departamento"
+                    value={nuevoUsuario.departamento}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, departamento: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Cargo"
+                    value={nuevoUsuario.cargo}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, cargo: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Telefono"
+                    value={nuevoUsuario.telefono}
+                    onChange={(e) => setNuevoUsuario({ ...nuevoUsuario, telefono: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -608,17 +935,39 @@ export function GestionUsuarios() {
             className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-bold text-xl text-[#0d2b5e] mb-6">
-              Editar Usuario
+            <h3 className="font-bold text-xl text-[#0d2b5e] mb-2">
+              Editar perfil
             </h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Este formulario edita los datos del perfil. La contrasena, estado y permisos se administran desde acciones separadas.
+            </p>
 
             <div className="space-y-4">
+              <div className="grid sm:grid-cols-3 gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-sm">
+                <div>
+                  <div className="text-xs font-semibold text-gray-500">Correo</div>
+                  <div className="font-semibold text-[#0d2b5e] break-all">{usuarioEditar.correo}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500">Rol</div>
+                  <div className="font-semibold text-[#0d2b5e]">{roles[usuarioEditar.id_rol] ?? "Sin rol"}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500">Estado</div>
+                  <div className="font-semibold text-[#0d2b5e]">{usuarioEditar.estado}</div>
+                </div>
+              </div>
+
               <div>
                 <h4 className="text-sm font-bold text-[#0d2b5e] mb-3">
                   Datos generales
                 </h4>
               </div>
 
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-500 mb-1">
+                  {etiquetaNombreGeneral(usuarioEditar)}
+                </span>
               <input
                 type="text"
                 value={usuarioEditar.nombre}
@@ -630,7 +979,10 @@ export function GestionUsuarios() {
                 }
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
               />
+              </label>
 
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-500 mb-1">Apellido paterno</span>
               <input
                 type="text"
                 value={usuarioEditar.apellido_paterno ?? ""}
@@ -642,7 +994,10 @@ export function GestionUsuarios() {
                 }
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
               />
+              </label>
 
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-500 mb-1">Apellido materno</span>
               <input
                 type="text"
                 value={usuarioEditar.apellido_materno ?? ""}
@@ -654,7 +1009,10 @@ export function GestionUsuarios() {
                 }
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
               />
+              </label>
 
+              <label className="block">
+                <span className="block text-xs font-semibold text-gray-500 mb-1">Correo</span>
               <input
                 type="email"
                 value={usuarioEditar.correo}
@@ -666,40 +1024,7 @@ export function GestionUsuarios() {
                 }
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
               />
-
-              <select
-                value={usuarioEditar.id_rol}
-                onChange={(e) => {
-                  const idRol = Number(e.target.value);
-                  setUsuarioEditar({
-                    ...usuarioEditar,
-                    id_rol: idRol,
-                  });
-                  setPerfilEditar({});
-                  setPerfilTipo(roles[idRol] ?? "Sin perfil editable");
-                }}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
-              >
-                {Object.entries(roles).map(([id, nombre]) => (
-                  <option key={id} value={id}>
-                    {nombre}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={usuarioEditar.estado}
-                onChange={(e) =>
-                  setUsuarioEditar({
-                    ...usuarioEditar,
-                    estado: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
-              >
-                <option value="Activo">Activo</option>
-                <option value="Inactivo">Inactivo</option>
-              </select>
+              </label>
 
               <div className="pt-4 border-t border-gray-100">
                 <div className="flex items-center justify-between mb-3">
@@ -729,6 +1054,67 @@ export function GestionUsuarios() {
                 Cancelar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {resetResultado && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={cerrarResetPassword}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-xl text-[#0d2b5e] mb-3">
+              Contrasena temporal
+            </h3>
+            <p className="text-sm text-gray-500">
+              Guarda esta contrasena ahora. No podra consultarse despues.
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              Por seguridad, esta contrasena temporal solo se muestra una vez.
+            </p>
+
+            <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="text-xs text-gray-500">Correo</div>
+              <div className="font-semibold text-[#0d2b5e]">{resetResultado.correo}</div>
+              <div className="text-xs text-gray-500 mt-3">Contrasena temporal</div>
+              <div className="font-mono font-bold text-lg text-[#0d2b5e]">
+                {resetResultado.password_temporal}
+              </div>
+            </div>
+
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-[#0d2b5e]">
+              {resetResultado.id_rol === 1
+                ? "Este alumno debera cambiar la contrasena al iniciar sesion."
+                : "Este usuario podra iniciar sesion con la contrasena temporal. No se le obligara a cambiarla automaticamente."}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => navigator.clipboard?.writeText(resetResultado.password_temporal)}
+                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50 flex items-center justify-center gap-2"
+              >
+                <Copy className="w-4 h-4" />
+                Copiar
+              </button>
+              <button
+                onClick={descargarCredencialReset}
+                className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0] flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Descargar
+              </button>
+            </div>
+
+            <button
+              onClick={cerrarResetPassword}
+              className="mt-3 w-full py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50"
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}

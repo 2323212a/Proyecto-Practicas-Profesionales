@@ -4,7 +4,7 @@ import { GestionDocumentosAlumnoUseCase } from "../application/alumno/GestionDoc
 import { GestionHorasAlumnoUseCase } from "../application/alumno/GestionHorasAlumnoUseCase";
 import { GestionReportesAlumnoUseCase } from "../application/alumno/GestionReportesAlumnoUseCase";
 import { GestionAsesorUseCase } from "../application/asesor/GestionAsesorUseCase";
-import { GestionAsignacionDocentesUseCase } from "../application/coordinador/GestionAsignacionDocentesUseCase";
+import { GestionAsignacionAsesoresUseCase } from "../application/coordinador/GestionAsignacionAsesoresUseCase";
 import { GestionConfirmacionAsignacionesUseCase } from "../application/coordinador/GestionConfirmacionAsignacionesUseCase";
 import { GestionLiberacionUseCase } from "../application/coordinador/GestionLiberacionUseCase";
 import { GestionEmpresasRevisionUseCase } from "../application/coord-unidades/GestionEmpresasRevisionUseCase";
@@ -25,7 +25,7 @@ import { DocumentoAlumnoHttpRepository } from "../infrastructure/alumno/Document
 import { HorasAlumnoHttpRepository } from "../infrastructure/alumno/HorasAlumnoHttpRepository";
 import { ReporteAlumnoHttpRepository } from "../infrastructure/alumno/ReporteAlumnoHttpRepository";
 import { AsesorHttpRepository } from "../infrastructure/asesor/AsesorHttpRepository";
-import { AsignacionDocenteHttpRepository } from "../infrastructure/coordinador/AsignacionDocenteHttpRepository";
+import { AsignacionAsesorHttpRepository } from "../infrastructure/coordinador/AsignacionAsesorHttpRepository";
 import { ConfirmacionAsignacionHttpRepository } from "../infrastructure/coordinador/ConfirmacionAsignacionHttpRepository";
 import { LiberacionHttpRepository } from "../infrastructure/coordinador/LiberacionHttpRepository";
 import { EmpresaRevisionHttpRepository } from "../infrastructure/coord-unidades/EmpresaRevisionHttpRepository";
@@ -47,7 +47,7 @@ const documentoAlumnoRepository = new DocumentoAlumnoHttpRepository();
 const horasAlumnoRepository = new HorasAlumnoHttpRepository();
 const reporteAlumnoRepository = new ReporteAlumnoHttpRepository();
 const asesorRepository = new AsesorHttpRepository();
-const asignacionDocenteRepository = new AsignacionDocenteHttpRepository();
+const asignacionAsesorRepository = new AsignacionAsesorHttpRepository();
 const confirmacionAsignacionRepository = new ConfirmacionAsignacionHttpRepository();
 const liberacionRepository = new LiberacionHttpRepository();
 const empresaRevisionRepository = new EmpresaRevisionHttpRepository();
@@ -69,7 +69,7 @@ export const gestionDocumentosAlumnoUseCase = new GestionDocumentosAlumnoUseCase
 export const gestionHorasAlumnoUseCase = new GestionHorasAlumnoUseCase(horasAlumnoRepository);
 export const gestionReportesAlumnoUseCase = new GestionReportesAlumnoUseCase(reporteAlumnoRepository);
 export const gestionAsesorUseCase = new GestionAsesorUseCase(asesorRepository);
-export const gestionAsignacionDocentesUseCase = new GestionAsignacionDocentesUseCase(asignacionDocenteRepository);
+export const gestionAsignacionAsesoresUseCase = new GestionAsignacionAsesoresUseCase(asignacionAsesorRepository);
 export const gestionConfirmacionAsignacionesUseCase = new GestionConfirmacionAsignacionesUseCase(confirmacionAsignacionRepository);
 export const gestionLiberacionUseCase = new GestionLiberacionUseCase(liberacionRepository);
 export const gestionEmpresasRevisionUseCase = new GestionEmpresasRevisionUseCase(empresaRevisionRepository);

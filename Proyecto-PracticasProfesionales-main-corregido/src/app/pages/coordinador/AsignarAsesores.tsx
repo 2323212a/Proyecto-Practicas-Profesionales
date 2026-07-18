@@ -13,16 +13,16 @@ import {
   Users,
 } from "lucide-react";
 
-import { gestionAsignacionDocentesUseCase } from "../../dependencies";
+import { gestionAsignacionAsesoresUseCase } from "../../dependencies";
 import type {
-  AsignacionParaDocente,
-  DocenteDisponible,
-} from "../../../domain/coordinador/AsignacionDocente";
+  AsignacionParaAsesor,
+  AsesorDisponible,
+} from "../../../domain/coordinador/AsignacionAsesor";
 
 import type { StatCard } from "../../../shared/types/ui";
 export function AsignarAsesores() {
-  const [asignaciones, setAsignaciones] = useState<AsignacionParaDocente[]>([]);
-  const [docentes, setDocentes] = useState<DocenteDisponible[]>([]);
+  const [asignaciones, setAsignaciones] = useState<AsignacionParaAsesor[]>([]);
+  const [asesores, setAsesores] = useState<AsesorDisponible[]>([]);
   const [selecciones, setSelecciones] = useState<Record<number, number>>({});
   const [busqueda, setBusqueda] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState("todos");
@@ -38,16 +38,16 @@ export function AsignarAsesores() {
     try {
       setCargando(true);
       setError("");
-      const data = await gestionAsignacionDocentesUseCase.listar();
+      const data = await gestionAsignacionAsesoresUseCase.listar();
       setAsignaciones(data.asignaciones);
-      setDocentes(data.docentes);
+      setAsesores(data.asesores);
       setSelecciones(
         Object.fromEntries(
           data.asignaciones
-            .filter((asignacion) => asignacion.id_docente)
+            .filter((asignacion) => asignacion.id_asesor)
             .map((asignacion) => [
               asignacion.id_asignacion,
-              asignacion.id_docente as number,
+              asignacion.id_asesor as number,
             ])
         )
       );
@@ -59,15 +59,15 @@ export function AsignarAsesores() {
     }
   }
 
-  async function guardarDocente(asignacion: AsignacionParaDocente) {
-    const idDocente = selecciones[asignacion.id_asignacion];
-    if (!idDocente) return;
+  async function guardarAsesor(asignacion: AsignacionParaAsesor) {
+    const idAsesor = selecciones[asignacion.id_asignacion];
+    if (!idAsesor) return;
 
     try {
       setGuardando(asignacion.id_asignacion);
-      await gestionAsignacionDocentesUseCase.asignarDocente(
+      await gestionAsignacionAsesoresUseCase.asignarAsesor(
         asignacion.id_asignacion,
-        idDocente
+        idAsesor
       );
       await cargarDatos();
     } catch (err) {
@@ -86,12 +86,12 @@ export function AsignarAsesores() {
         (asignacion.matricula ?? "").toLowerCase().includes(q) ||
         asignacion.carrera.toLowerCase().includes(q) ||
         asignacion.empresa.toLowerCase().includes(q) ||
-        asignacion.docente.toLowerCase().includes(q);
+        asignacion.asesor.toLowerCase().includes(q);
 
       const coincideEstado =
         estadoFiltro === "todos" ||
-        (estadoFiltro === "sin_docente" && !asignacion.id_docente) ||
-        (estadoFiltro === "con_docente" && Boolean(asignacion.id_docente));
+        (estadoFiltro === "sin_asesor" && !asignacion.id_asesor) ||
+        (estadoFiltro === "con_asesor" && Boolean(asignacion.id_asesor));
 
       return coincideBusqueda && coincideEstado;
     });
@@ -99,9 +99,9 @@ export function AsignarAsesores() {
 
   const resumen = {
     total: asignaciones.length,
-    sinDocente: asignaciones.filter((asignacion) => !asignacion.id_docente).length,
-    conDocente: asignaciones.filter((asignacion) => asignacion.id_docente).length,
-    docentes: docentes.length,
+    sinAsesor: asignaciones.filter((asignacion) => !asignacion.id_asesor).length,
+    conAsesor: asignaciones.filter((asignacion) => asignacion.id_asesor).length,
+    asesores: asesores.length,
   };
 
   function limpiarFiltros() {
@@ -116,7 +116,7 @@ export function AsignarAsesores() {
           Asignación de Asesores
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Asigna un docente asesor a los alumnos que ya cuentan con empresa y vacante.
+          Asigna un asesor interno a los alumnos que ya cuentan con empresa y vacante.
         </p>
       </div>
 
@@ -129,9 +129,9 @@ export function AsignarAsesores() {
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         {([
           ["Asignaciones", resumen.total, Users],
-          ["Sin asesor", resumen.sinDocente, AlertTriangle],
-          ["Con asesor", resumen.conDocente, CheckCircle2],
-          ["Docentes", resumen.docentes, BookUser],
+          ["Sin asesor", resumen.sinAsesor, AlertTriangle],
+          ["Con asesor", resumen.conAsesor, CheckCircle2],
+          ["Asesores", resumen.asesores, BookUser],
         ] satisfies StatCard[]).map(([titulo, valor, Icon]) => (
           <div
             key={titulo}
@@ -185,8 +185,8 @@ export function AsignarAsesores() {
             className="border rounded-xl px-3 py-2 text-sm bg-white"
           >
             <option value="todos">Todas las asignaciones</option>
-            <option value="sin_docente">Sin asesor</option>
-            <option value="con_docente">Con asesor</option>
+            <option value="sin_asesor">Sin asesor</option>
+            <option value="con_asesor">Con asesor</option>
           </select>
         </div>
       </div>
@@ -225,7 +225,7 @@ export function AsignarAsesores() {
                 filtradas.map((asignacion) => {
                   const idSeleccionado = selecciones[asignacion.id_asignacion] ?? "";
                   const cambioPendiente =
-                    idSeleccionado && idSeleccionado !== asignacion.id_docente;
+                    idSeleccionado && idSeleccionado !== asignacion.id_asesor;
 
                   return (
                     <tr key={asignacion.id_asignacion} className="hover:bg-gray-50">
@@ -255,12 +255,12 @@ export function AsignarAsesores() {
                       <td className="px-6 py-4">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            asignacion.id_docente
+                            asignacion.id_asesor
                               ? "bg-green-100 text-green-700"
                               : "bg-orange-100 text-orange-700"
                           }`}
                         >
-                          {asignacion.docente}
+                          {asignacion.asesor}
                         </span>
                       </td>
 
@@ -276,9 +276,9 @@ export function AsignarAsesores() {
                           className="border rounded-xl px-3 py-2 text-sm bg-white min-w-64"
                         >
                           <option value="">Selecciona asesor</option>
-                          {docentes.map((docente) => (
-                            <option key={docente.id_docente} value={docente.id_docente}>
-                              {docente.nombre} ({docente.asignaciones_activas})
+                          {asesores.map((asesor) => (
+                            <option key={asesor.id_asesor} value={asesor.id_asesor}>
+                              {asesor.nombre} ({asesor.asignaciones_activas})
                             </option>
                           ))}
                         </select>
@@ -286,7 +286,7 @@ export function AsignarAsesores() {
 
                       <td className="px-6 py-4">
                         <button
-                          onClick={() => guardarDocente(asignacion)}
+                          onClick={() => guardarAsesor(asignacion)}
                           disabled={!cambioPendiente || guardando === asignacion.id_asignacion}
                           className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >

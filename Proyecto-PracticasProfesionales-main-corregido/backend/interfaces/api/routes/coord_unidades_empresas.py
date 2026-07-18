@@ -7,17 +7,26 @@ from pydantic import BaseModel
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.services.auditoria_service import registrar_bitacora
+from app.services.empresa_reglas_service import (
+    obtener_convenio_vigente_actual,
+    obtener_vinculacion_aprobada_actual,
+    validar_habilitacion_empresa_para_vacantes,
+    validar_participacion_aceptada,
+)
 from infrastructure.database.dependencies import obtener_db
+from infrastructure.email.email_service import EmailError, enviar_credenciales_empresa_aceptada
 from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
-from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.convenio import ConvenioModel
+from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.rol import RolModel
 from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
+from infrastructure.persistence.models.participacion_empresa_convocatoria import ParticipacionEmpresaConvocatoriaModel
 from infrastructure.persistence.models.vacante import VacanteModel
 
 import secrets
@@ -50,9 +59,14 @@ class RechazarSolicitudRequest(BaseModel):
     observaciones: str | None = None
 
 
+class RevisarParticipacionRequest(BaseModel):
+    estado: str
+    observaciones: str | None = None
+    motivo_rechazo: str | None = None
+
+
 class LiberarPrepadronRequest(BaseModel):
     id_convocatoria: int | None = None
-    periodo: str | None = None
     id_tipo_practica: int | None = None
 
 
@@ -115,22 +129,17 @@ def _generar_password_temporal(longitud: int = 10) -> str:
     return "".join(secrets.choice(caracteres) for _ in range(longitud))
 
 def _tiene_convenio_vigente(db: Session, id_empresa: int) -> bool:
-    return (
-        db.query(ConvenioModel)
-        .filter(
-            ConvenioModel.id_empresa == id_empresa,
-            ConvenioModel.es_actual.is_(True),
-            ConvenioModel.estado_convenio == "Vigente",
-            ConvenioModel.fecha_inicio <= date.today(),
-            ConvenioModel.fecha_fin >= date.today(),
-        )
-        .first()
-        is not None
-    )
+    return obtener_convenio_vigente_actual(db, id_empresa) is not None
 
 
 def _empresa_publicable(db: Session, empresa: EmpresaModel) -> bool:
-    return empresa.estado_empresa == "Activa" and _tiene_convenio_vigente(db, empresa.id_empresa)
+    if empresa.estado_empresa != "Activa":
+        return False
+    if empresa.tipo_tramite == "Convenio":
+        return obtener_convenio_vigente_actual(db, empresa.id_empresa) is not None
+    if empresa.tipo_tramite == "Vinculacion":
+        return obtener_vinculacion_aprobada_actual(db, empresa.id_empresa) is not None
+    return False
 
 
 def _ultima_solicitud(db: Session, id_empresa: int) -> SolicitudEmpresaModel | None:
@@ -149,6 +158,17 @@ def _usuario_empresa(db: Session, id_empresa: int) -> UsuarioModel | None:
         .first()
     )
     return responsable.usuario if responsable else None
+
+
+def _extraer_detalle_empresa(empresa: EmpresaModel, etiqueta: str) -> str | None:
+    if not empresa.domicilio:
+        return None
+    prefijo = f"{etiqueta}:"
+    for linea in empresa.domicilio.splitlines():
+        texto = linea.strip()
+        if texto.lower().startswith(prefijo.lower()):
+            return texto[len(prefijo):].strip() or None
+    return None
 
 
 @router.get("/dashboard")
@@ -193,15 +213,14 @@ def obtener_dashboard_coord_unidades(db: Session = Depends(obtener_db)):
             ConvenioModel.fecha_inicio <= hoy,
             ConvenioModel.fecha_fin >= hoy,
             VacanteModel.estado_vacante == "Activa",
-            VacanteModel.cupo_disponible > 0,
         )
         .count()
     )
 
     actividad = (
         db.query(BitacoraAuditoriaModel)
-        .filter(BitacoraAuditoriaModel.tabla_afectada.in_(["empresa", "documento_empresa", "vacante", "convenio"]))
-        .order_by(BitacoraAuditoriaModel.fecha_accion.desc())
+        .filter(BitacoraAuditoriaModel.entidad.in_(["empresa", "documento_empresa", "vacante", "convenio"]))
+        .order_by(BitacoraAuditoriaModel.fecha.desc())
         .limit(6)
         .all()
     )
@@ -263,9 +282,9 @@ def obtener_dashboard_coord_unidades(db: Session = Depends(obtener_db)):
         "actividad": [
             {
                 "id_bitacora": item.id_bitacora,
-                "texto": f"{item.accion} en {item.tabla_afectada}",
-                "detalle": item.detalles,
-                "fecha": item.fecha_accion.isoformat() if item.fecha_accion else None,
+                "texto": f"{item.accion} en {item.modulo}",
+                "detalle": item.descripcion,
+                "fecha": item.fecha.isoformat() if item.fecha else None,
             }
             for item in actividad
         ],
@@ -290,8 +309,7 @@ def listar_empresas_revision(db: Session = Depends(obtener_db)):
             "telefono": empresa.telefono,
             "correo_contacto": empresa.correo_contacto,
             "estado_empresa": empresa.estado_empresa,
-            "tipo_tramite": empresa.tipo_tramite or (solicitud.tipo_tramite if solicitud else None),
-            "periodo_participacion": empresa.periodo_participacion or (solicitud.periodo_participacion if solicitud else None),
+            "tipo_tramite": empresa.tipo_tramite or (solicitud.tipo_tramite_solicitado if solicitud else None),
             "estado_solicitud": solicitud.estado_solicitud if solicitud else None,
             "motivo_rechazo": solicitud.motivo_rechazo if solicitud else None,
             "cuenta_creada": usuario is not None,
@@ -303,7 +321,6 @@ def listar_empresas_revision(db: Session = Depends(obtener_db)):
             .filter(
                 VacanteModel.id_empresa == empresa.id_empresa,
                 VacanteModel.estado_vacante == "Activa",
-                VacanteModel.cupo_disponible > 0,
             )
             .count(),
             "padron": "Publicado" if _empresa_publicable(db, empresa) else "No publicado",
@@ -332,8 +349,7 @@ def obtener_solicitud_empresa(id_empresa: int, db: Session = Depends(obtener_db)
         },
         "solicitud": {
             "id_solicitud_empresa": solicitud.id_solicitud_empresa if solicitud else None,
-            "tipo_tramite": solicitud.tipo_tramite if solicitud else empresa.tipo_tramite,
-            "periodo_participacion": solicitud.periodo_participacion if solicitud else empresa.periodo_participacion,
+            "tipo_tramite": solicitud.tipo_tramite_solicitado if solicitud else empresa.tipo_tramite,
             "estado_solicitud": solicitud.estado_solicitud if solicitud else None,
             "motivo_rechazo": solicitud.motivo_rechazo if solicitud else None,
             "observaciones": solicitud.observaciones if solicitud else None,
@@ -363,6 +379,8 @@ def aceptar_solicitud_empresa(
             "mensaje": "La empresa ya tiene cuenta creada",
             "cuenta_creada": False,
             "correo": _usuario_empresa(db, id_empresa).correo,
+            "correo_enviado": False,
+            "advertencia_correo": None,
             "password_temporal": None,
         }
 
@@ -373,6 +391,25 @@ def aceptar_solicitud_empresa(
         raise HTTPException(status_code=400, detail="No existe el rol Unidad Receptora")
 
     correo = empresa.correo_contacto.strip().lower()
+    responsable = (
+        db.query(ResponsableEmpresaModel)
+        .filter(ResponsableEmpresaModel.id_empresa == id_empresa)
+        .order_by(ResponsableEmpresaModel.id_responsable.desc())
+        .first()
+    )
+    nombre_contacto = (
+        " ".join(
+            parte
+            for parte in [
+                responsable.nombre if responsable else None,
+                responsable.apellido_paterno if responsable else None,
+                responsable.apellido_materno if responsable else None,
+            ]
+            if parte
+        )
+        or "Responsable"
+    )
+    cargo_contacto = responsable.cargo if responsable else None
     usuario = db.query(UsuarioModel).filter(UsuarioModel.correo == correo).first()
     password_temporal = None
     cuenta_creada = False
@@ -381,7 +418,6 @@ def aceptar_solicitud_empresa(
         password_temporal = _generar_password_temporal()
         usuario = UsuarioModel(
             id_rol=rol.id_rol,
-            nombre=empresa.nombre_empresa[:100],
             correo=correo,
             password_hash=generar_password_hash(password_temporal),
             estado="Activo",
@@ -400,21 +436,68 @@ def aceptar_solicitud_empresa(
     if responsable_existente and responsable_existente.id_empresa != id_empresa:
         raise HTTPException(status_code=400, detail="Ese correo ya esta ligado a otra empresa")
     if responsable_existente is None:
-        db.add(ResponsableEmpresaModel(id_empresa=id_empresa, id_usuario=usuario.id_usuario))
+        if responsable is None:
+            db.add(ResponsableEmpresaModel(
+                id_empresa=id_empresa,
+                id_usuario=usuario.id_usuario,
+                nombre="Responsable",
+                apellido_paterno="Empresa",
+                apellido_materno=None,
+                cargo=cargo_contacto,
+                telefono=empresa.telefono,
+                correo=correo,
+            ))
+        else:
+            responsable.id_usuario = usuario.id_usuario
+            responsable.correo = responsable.correo or correo
+            responsable.telefono = responsable.telefono or empresa.telefono
 
     empresa.estado_empresa = "Pendiente"
     if solicitud:
-        empresa.tipo_tramite = solicitud.tipo_tramite
-        empresa.periodo_participacion = solicitud.periodo_participacion
+        empresa.tipo_tramite = solicitud.tipo_tramite_solicitado
         solicitud.estado_solicitud = "Aceptada"
         solicitud.fecha_revision = func.now()
         solicitud.revisada_por = usuario_actual.id_usuario
 
     db.commit()
+    correo_enviado = False
+    advertencia_correo = None
+    if cuenta_creada and password_temporal:
+        try:
+            enviar_credenciales_empresa_aceptada(
+                destinatario=correo,
+                nombre_responsable=nombre_contacto,
+                nombre_empresa=empresa.nombre_empresa,
+                correo_acceso=correo,
+                password_temporal=password_temporal,
+            )
+            correo_enviado = True
+            registrar_bitacora(
+                db,
+                usuario_actual.id_usuario,
+                "Enviar credenciales empresa",
+                "coord_unidades_empresas",
+                f"Se enviaron credenciales de acceso a la empresa {empresa.nombre_empresa}.",
+                "empresa",
+                empresa.id_empresa,
+            )
+        except EmailError:
+            advertencia_correo = "La cuenta fue creada, pero no se pudo enviar el correo de acceso."
+            registrar_bitacora(
+                db,
+                usuario_actual.id_usuario,
+                "Fallo envio credenciales empresa",
+                "coord_unidades_empresas",
+                f"No se pudieron enviar credenciales de acceso a la empresa {empresa.nombre_empresa}.",
+                "empresa",
+                empresa.id_empresa,
+            )
     return {
         "mensaje": "Solicitud aceptada. La empresa ya puede iniciar sesion y subir documentos.",
         "cuenta_creada": cuenta_creada,
         "correo": correo,
+        "correo_enviado": correo_enviado,
+        "advertencia_correo": advertencia_correo,
         "password_temporal": password_temporal,
     }
 
@@ -448,6 +531,58 @@ def rechazar_solicitud_empresa(
     return {"mensaje": "Solicitud rechazada", "estado_empresa": empresa.estado_empresa}
 
 
+@router.get("/participaciones/")
+def listar_participaciones_empresa(db: Session = Depends(obtener_db)):
+    participaciones = (
+        db.query(ParticipacionEmpresaConvocatoriaModel)
+        .order_by(ParticipacionEmpresaConvocatoriaModel.id_participacion.desc())
+        .all()
+    )
+    return [
+        {
+            "id_participacion": item.id_participacion,
+            "id_empresa": item.id_empresa,
+            "empresa": item.empresa.nombre_empresa if item.empresa else None,
+            "id_convocatoria": item.id_convocatoria,
+            "convocatoria": item.convocatoria.nombre if item.convocatoria else None,
+            "tipo_periodo": item.convocatoria.tipo_periodo if item.convocatoria else None,
+            "estado": item.estado,
+            "fecha_solicitud": item.fecha_solicitud.isoformat() if item.fecha_solicitud else None,
+            "fecha_revision": item.fecha_revision.isoformat() if item.fecha_revision else None,
+            "observaciones": item.observaciones,
+            "motivo_rechazo": item.motivo_rechazo,
+        }
+        for item in participaciones
+    ]
+
+
+@router.patch("/participaciones/{id_participacion}")
+def revisar_participacion_empresa(
+    id_participacion: int,
+    datos: RevisarParticipacionRequest,
+    db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+):
+    if datos.estado not in {"Aceptada", "Rechazada", "Cerrada"}:
+        raise HTTPException(status_code=400, detail="Estado de participacion no valido")
+    if datos.estado == "Rechazada" and not (datos.motivo_rechazo or "").strip():
+        raise HTTPException(status_code=400, detail="El motivo de rechazo es obligatorio")
+    participacion = (
+        db.query(ParticipacionEmpresaConvocatoriaModel)
+        .filter(ParticipacionEmpresaConvocatoriaModel.id_participacion == id_participacion)
+        .first()
+    )
+    if participacion is None:
+        raise HTTPException(status_code=404, detail="Participacion no encontrada")
+    participacion.estado = datos.estado
+    participacion.observaciones = datos.observaciones
+    participacion.motivo_rechazo = datos.motivo_rechazo
+    participacion.fecha_revision = func.now()
+    participacion.revisada_por = usuario_actual.id_usuario
+    db.commit()
+    return {"mensaje": "Participacion actualizada", "estado": participacion.estado}
+
+
 @router.get("/vacantes/")
 def listar_vacantes_revision(db: Session = Depends(obtener_db)):
     tipos_practica = {
@@ -456,13 +591,7 @@ def listar_vacantes_revision(db: Session = Depends(obtener_db)):
             text("SELECT id_tipo_practica, nombre FROM tipo_practica")
         ).all()
     }
-    vacantes = (
-        db.query(VacanteModel)
-        .join(EmpresaModel, EmpresaModel.id_empresa == VacanteModel.id_empresa)
-        .join(CarreraModel, CarreraModel.id_carrera == VacanteModel.id_carrera)
-        .order_by(VacanteModel.id_vacante.desc())
-        .all()
-    )
+    vacantes = db.query(VacanteModel).order_by(VacanteModel.id_vacante.desc()).all()
 
     return [
         {
@@ -470,14 +599,11 @@ def listar_vacantes_revision(db: Session = Depends(obtener_db)):
             "id_empresa": vacante.id_empresa,
             "empresa": vacante.empresa.nombre_empresa,
             "estado_empresa": vacante.empresa.estado_empresa,
-            "id_carrera": vacante.id_carrera,
-            "carrera": vacante.carrera.nombre,
             "titulo": vacante.titulo,
             "descripcion": vacante.descripcion,
-            "modalidad": vacante.modalidad,
-            "horario": vacante.horario,
-            "cupo_total": vacante.cupo_total,
-            "cupo_disponible": vacante.cupo_disponible,
+            "actividades": vacante.actividades,
+            "requisitos": vacante.requisitos,
+            "cupos": vacante.cupos,
             "cupo_ocupado": db.query(AsignacionModel)
             .filter(
                 AsignacionModel.id_vacante == vacante.id_vacante,
@@ -491,10 +617,10 @@ def listar_vacantes_revision(db: Session = Depends(obtener_db)):
             "id_tipo_practica": vacante.id_tipo_practica,
             "tipo_practica": tipos_practica.get(vacante.id_tipo_practica),
             "id_convocatoria": vacante.id_convocatoria,
+            "convocatoria": vacante.convocatoria.nombre if vacante.convocatoria else None,
             "publicable": (
                 _empresa_publicable(db, vacante.empresa)
                 and vacante.estado_vacante == "Activa"
-                and vacante.cupo_disponible > 0
             ),
         }
         for vacante in vacantes
@@ -526,18 +652,11 @@ def cambiar_estado_vacante(
     if datos.estado_vacante not in transiciones.get(vacante.estado_vacante, set()):
         raise HTTPException(status_code=400, detail="Transicion de vacante no permitida")
 
-    if datos.estado_vacante == "Activa" and vacante.cupo_disponible <= 0:
-        raise HTTPException(status_code=400, detail="No se puede activar una vacante sin cupo")
-    if datos.estado_vacante == "Activa" and vacante.empresa.estado_empresa != "Activa":
-        raise HTTPException(
-            status_code=400,
-            detail="No se puede activar una vacante de una empresa suspendida, inactiva o pendiente",
-        )
-    if datos.estado_vacante == "Activa" and not _tiene_convenio_vigente(db, vacante.id_empresa):
-        raise HTTPException(
-            status_code=400,
-            detail="No se puede activar una vacante sin convenio vigente",
-        )
+    if datos.estado_vacante == "PrePadron":
+        validar_participacion_aceptada(db, vacante.id_empresa, vacante.id_convocatoria)
+        validar_habilitacion_empresa_para_vacantes(db, vacante.empresa)
+    if datos.estado_vacante == "Activa":
+        raise HTTPException(status_code=400, detail="La liberacion a Activa se realiza desde Padron Empresarial.")
 
     vacante.estado_vacante = datos.estado_vacante
     vacante.observaciones = datos.observaciones
@@ -555,8 +674,6 @@ def liberar_prepadron(
     query = db.query(VacanteModel).filter(VacanteModel.estado_vacante == "PrePadron")
     if filtros.id_convocatoria is not None:
         query = query.filter(VacanteModel.id_convocatoria == filtros.id_convocatoria)
-    if filtros.periodo is not None:
-        query = query.filter(VacanteModel.periodo == filtros.periodo)
     if filtros.id_tipo_practica is not None:
         query = query.filter(VacanteModel.id_tipo_practica == filtros.id_tipo_practica)
 
@@ -564,12 +681,15 @@ def liberar_prepadron(
     liberadas = 0
     for vacante in vacantes:
         if (
-            vacante.cupo_disponible > 0
-            and vacante.empresa.estado_empresa == "Activa"
-            and _tiene_convenio_vigente(db, vacante.id_empresa)
+            vacante.empresa.estado_empresa == "Activa"
         ):
-            vacante.estado_vacante = "Activa"
-            liberadas += 1
+            try:
+                validar_participacion_aceptada(db, vacante.id_empresa, vacante.id_convocatoria)
+                validar_habilitacion_empresa_para_vacantes(db, vacante.empresa)
+                vacante.estado_vacante = "Activa"
+                liberadas += 1
+            except HTTPException:
+                continue
     db.commit()
     return {"mensaje": "Pre-padron liberado", "vacantes_liberadas": liberadas}
 
@@ -590,11 +710,7 @@ def cambiar_estado_empresa(
 
     if datos.estado_empresa == "Activa":
         _validar_documentacion_empresa_aprobada(db, id_empresa)
-        if not _tiene_convenio_vigente(db, id_empresa):
-            raise HTTPException(
-                status_code=400,
-                detail="No se puede aprobar la empresa sin convenio vigente",
-            )
+        validar_habilitacion_empresa_para_vacantes(db, empresa)
 
     empresa.estado_empresa = datos.estado_empresa
     db.commit()

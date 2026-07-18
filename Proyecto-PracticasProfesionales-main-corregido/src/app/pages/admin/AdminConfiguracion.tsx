@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
+  AlertTriangle,
   CheckCircle2,
   GraduationCap,
-  Mail,
   Save,
   Settings,
   Upload,
@@ -15,6 +15,7 @@ import { obtenerEstadisticasAdmin } from "../../../infrastructure/admin/adminEst
 import { obtenerConvocatorias } from "../../../infrastructure/catalogos/catalogosApi";
 import type { ConfiguracionSistema } from "../../../domain/configuracion/ConfiguracionSistema";
 import type { ColoredStatCard } from "../../../shared/types/ui";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 type EstadisticasAdmin = {
   usuarios: number;
@@ -39,6 +40,7 @@ const CONFIG_INICIAL: ConfiguracionSistema = {
   escuela_facultad: "ETDA C-I",
   correo_institucional: "practicas@unach.mx",
   estado_sistema: "Activo",
+  inscripcion_empresas_estado: "Abierta",
   ciclo_escolar: "Ciclo escolar vigente",
   hero_titulo: "Sistema Integral de Practicas Profesionales",
   hero_subtitulo:
@@ -66,8 +68,15 @@ export function AdminConfiguracion() {
   const [configuracion, setConfiguracion] = useState<ConfiguracionSistema>(CONFIG_INICIAL);
   const [estadisticas, setEstadisticas] = useState<EstadisticasAdmin | null>(null);
   const [convocatorias, setConvocatorias] = useState<ConvocatoriaCatalogo[]>([]);
+  const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState("");
+  const [estadoSistemaOriginal, setEstadoSistemaOriginal] = useState(CONFIG_INICIAL.estado_sistema);
+  const [inscripcionEmpresasOriginal, setInscripcionEmpresasOriginal] = useState(
+    CONFIG_INICIAL.inscripcion_empresas_estado,
+  );
+  const [mostrarConfirmacionEstado, setMostrarConfirmacionEstado] = useState(false);
+  const [mostrarConfirmacionInscripcion, setMostrarConfirmacionInscripcion] = useState(false);
 
   useEffect(() => {
     void cargarDatos();
@@ -75,17 +84,23 @@ export function AdminConfiguracion() {
 
   async function cargarDatos() {
     try {
+      setCargando(true);
+      setMensaje("");
       const [configData, estadisticasData, convocatoriasData] = await Promise.all([
         gestionConfiguracionUseCase.obtener(),
         obtenerEstadisticasAdmin(),
         obtenerConvocatorias(),
       ]);
       setConfiguracion(configData);
+      setEstadoSistemaOriginal(configData.estado_sistema);
+      setInscripcionEmpresasOriginal(configData.inscripcion_empresas_estado);
       setEstadisticas(estadisticasData);
       setConvocatorias(convocatoriasData);
     } catch (error) {
       console.error(error);
-      setMensaje("No se pudieron cargar todos los datos de configuracion.");
+      setMensaje("No se pudieron cargar todos los datos de configuracion. Se muestran valores seguros por defecto.");
+    } finally {
+      setCargando(false);
     }
   }
 
@@ -114,19 +129,47 @@ export function AdminConfiguracion() {
     }));
   }
 
-  async function guardarCambios() {
+  async function guardarConfirmado() {
     try {
       setGuardando(true);
       setMensaje("");
       const guardada = await gestionConfiguracionUseCase.guardar(configuracion);
       setConfiguracion(guardada);
+      setEstadoSistemaOriginal(guardada.estado_sistema);
+      setInscripcionEmpresasOriginal(guardada.inscripcion_empresas_estado);
+      setMostrarConfirmacionEstado(false);
+      setMostrarConfirmacionInscripcion(false);
       setMensaje("Configuracion guardada correctamente.");
     } catch (error) {
       console.error(error);
-      setMensaje("No se pudo guardar la configuracion.");
+      setMensaje(getApiErrorMessage(error, "No se pudo guardar la configuracion."));
     } finally {
       setGuardando(false);
     }
+  }
+
+  function guardarCambios() {
+    if (estadoSistemaOriginal !== configuracion.estado_sistema) {
+      setMostrarConfirmacionEstado(true);
+      return;
+    }
+
+    if (inscripcionEmpresasOriginal !== configuracion.inscripcion_empresas_estado) {
+      setMostrarConfirmacionInscripcion(true);
+      return;
+    }
+
+    void guardarConfirmado();
+  }
+
+  function confirmarCambioEstado() {
+    setMostrarConfirmacionEstado(false);
+    if (inscripcionEmpresasOriginal !== configuracion.inscripcion_empresas_estado) {
+      setMostrarConfirmacionInscripcion(true);
+      return;
+    }
+
+    void guardarConfirmado();
   }
 
   const convocatoriaSeleccionada = useMemo(
@@ -151,6 +194,94 @@ export function AdminConfiguracion() {
     [`${estadisticas?.alumnos ?? 0} alumnos registrados`, Boolean(estadisticas?.alumnos)],
   ] as const;
 
+  const estadoVisual = {
+    Activo: {
+      texto: "Sistema activo. Los usuarios pueden operar normalmente.",
+      clase: "bg-green-50 border-green-200 text-green-700",
+    },
+    Mantenimiento: {
+      texto: "Modo mantenimiento activo. Solo Administradores pueden iniciar sesion.",
+      clase: "bg-yellow-50 border-yellow-200 text-yellow-800",
+    },
+    Suspendido: {
+      texto: "Sistema suspendido. Solo Administradores pueden iniciar sesion.",
+      clase: "bg-red-50 border-red-200 text-red-700",
+    },
+  }[configuracion.estado_sistema] ?? {
+    texto: "Estado del sistema sin descripcion configurada.",
+    clase: "bg-gray-50 border-gray-200 text-gray-600",
+  };
+
+  const confirmacionEstado = {
+    Activo: {
+      titulo: "Reactivar sistema",
+      mensaje:
+        "Al cambiar el sistema a Activo, los usuarios podran iniciar sesion nuevamente y el registro publico de empresas volvera a estar disponible.",
+      extra: "",
+      confirmar: "Reactivar sistema",
+      clase: "bg-green-50 border-green-200 text-green-700",
+    },
+    Mantenimiento: {
+      titulo: "Activar modo mantenimiento",
+      mensaje:
+        "Al activar el modo mantenimiento, los usuarios que no sean Administrador no podran iniciar sesion. Tambien se deshabilitara el registro publico de empresas.",
+      extra: "Los Administradores podran seguir entrando para volver a activar el sistema.",
+      confirmar: "Confirmar cambio",
+      clase: "bg-yellow-50 border-yellow-200 text-yellow-800",
+    },
+    Suspendido: {
+      titulo: "Suspender sistema",
+      mensaje:
+        "Al suspender el sistema, alumnos, empresas, coordinadores, asesores y direccion no podran iniciar sesion. El registro publico de empresas tambien quedara deshabilitado.",
+      extra: "Solo los Administradores podran ingresar para reactivar el sistema.",
+      confirmar: "Confirmar suspension",
+      clase: "bg-red-50 border-red-200 text-red-700",
+    },
+  }[configuracion.estado_sistema] ?? {
+    titulo: "Confirmar cambio",
+    mensaje: "El estado del sistema cambio. Confirma antes de guardar.",
+    extra: "",
+    confirmar: "Confirmar cambio",
+    clase: "bg-gray-50 border-gray-200 text-gray-700",
+  };
+
+  const inscripcionVisual = {
+    Abierta: {
+      texto: "Las empresas pueden enviar solicitudes publicas de registro.",
+      clase: "bg-green-50 border-green-200 text-green-700",
+    },
+    Cerrada: {
+      texto:
+        "El registro publico de nuevas empresas esta cerrado. Coordinacion puede seguir revisando solicitudes existentes.",
+      clase: "bg-yellow-50 border-yellow-200 text-yellow-800",
+    },
+  }[configuracion.inscripcion_empresas_estado] ?? {
+    texto: "Estado de inscripcion sin descripcion configurada.",
+    clase: "bg-gray-50 border-gray-200 text-gray-600",
+  };
+
+  const confirmacionInscripcion = {
+    Abierta: {
+      titulo: "Reabrir inscripcion de empresas",
+      mensaje:
+        "Al reabrir la inscripcion, nuevas empresas podran enviar solicitudes publicas de registro.",
+      confirmar: "Reabrir inscripcion",
+      clase: "bg-green-50 border-green-200 text-green-700",
+    },
+    Cerrada: {
+      titulo: "Cerrar inscripcion de empresas",
+      mensaje:
+        "Al cerrar la inscripcion, nuevas empresas ya no podran enviar solicitudes publicas. Las solicitudes existentes podran seguir revisandose desde Coordinacion de Unidades.",
+      confirmar: "Cerrar inscripcion",
+      clase: "bg-yellow-50 border-yellow-200 text-yellow-800",
+    },
+  }[configuracion.inscripcion_empresas_estado] ?? {
+    titulo: "Confirmar cambio",
+    mensaje: "El estado de inscripcion de empresas cambio. Confirma antes de guardar.",
+    confirmar: "Confirmar cambio",
+    clase: "bg-gray-50 border-gray-200 text-gray-700",
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -159,6 +290,12 @@ export function AdminConfiguracion() {
           Parametros institucionales y contenido visible en la pagina principal.
         </p>
       </div>
+
+      {cargando && (
+        <div className="bg-gray-50 border border-gray-200 text-gray-600 rounded-xl p-4 text-sm">
+          Cargando configuracion actual...
+        </div>
+      )}
 
       {mensaje && (
         <div className="bg-blue-50 border border-blue-200 text-[#0d2b5e] rounded-xl p-4 text-sm">
@@ -179,7 +316,7 @@ export function AdminConfiguracion() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
         <h3 className="font-bold text-[#0d2b5e] mb-5 flex items-center gap-2">
           <Settings className="w-5 h-5 text-[#1565c0]" />
-          Configuracion Institucional
+          Configuracion institucional
         </h3>
 
         <div className="grid md:grid-cols-2 gap-4">
@@ -221,6 +358,27 @@ export function AdminConfiguracion() {
               <option>Mantenimiento</option>
               <option>Suspendido</option>
             </select>
+            <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${estadoVisual.clase}`}>
+              {estadoVisual.texto}
+            </div>
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-semibold text-gray-700">Inscripcion de nuevas empresas</span>
+            <select
+              className="mt-2 w-full border rounded-xl px-3 py-2 text-sm bg-white"
+              value={configuracion.inscripcion_empresas_estado}
+              onChange={(e) => actualizarCampo("inscripcion_empresas_estado", e.target.value)}
+            >
+              <option>Abierta</option>
+              <option>Cerrada</option>
+            </select>
+            <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${inscripcionVisual.clase}`}>
+              {inscripcionVisual.texto}
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Controla si nuevas empresas pueden enviar solicitudes publicas de registro.
+            </p>
           </label>
         </div>
       </div>
@@ -268,6 +426,57 @@ export function AdminConfiguracion() {
               onChange={(e) => actualizarCampo("hero_subtitulo", e.target.value)}
             />
           </label>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+        <h3 className="font-bold text-[#0d2b5e] mb-5 flex items-center gap-2">
+          <Settings className="w-5 h-5 text-[#1565c0]" />
+          Vista previa publica
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Los cambios se muestran aqui antes de guardarse.
+        </p>
+
+        <div className="overflow-hidden rounded-2xl border border-blue-100 bg-[#0d2b5e] text-white">
+          <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-3 text-xs">
+            <div className="font-bold">{configuracion.nombre_sistema}</div>
+            <div className="rounded-full bg-white/15 px-3 py-1">{configuracion.estado_sistema}</div>
+          </div>
+
+          <div className="grid md:grid-cols-[1.5fr_1fr] gap-5 p-6">
+            <div>
+              <div className="text-sm text-blue-100">{configuracion.escuela_facultad}</div>
+              <h4 className="mt-3 text-2xl font-bold leading-tight">
+                {configuracion.hero_titulo || configuracion.nombre_sistema}
+              </h4>
+              <p className="mt-3 text-sm leading-6 text-blue-50">
+                {configuracion.hero_subtitulo}
+              </p>
+              <div className="mt-5 inline-flex rounded-xl bg-[#1565c0] px-4 py-2 text-sm font-semibold">
+                {configuracion.ciclo_escolar}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white p-5 text-[#0d2b5e]">
+              <div className="text-xs font-semibold text-gray-500">Convocatoria publicada</div>
+              <div className="mt-2 font-bold">{configuracion.convocatoria_nombre}</div>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl bg-blue-50 p-3">
+                  <div className="text-gray-500">Inicio</div>
+                  <div className="font-semibold">{formatearFecha(configuracion.convocatoria_inicio)}</div>
+                </div>
+                <div className="rounded-xl bg-blue-50 p-3">
+                  <div className="text-gray-500">Cierre</div>
+                  <div className="font-semibold">{formatearFecha(configuracion.convocatoria_cierre)}</div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-gray-500">
+                Soporte: {configuracion.correo_institucional}
+                {configuracion.soporte_telefono ? ` - ${configuracion.soporte_telefono}` : ""}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -362,26 +571,6 @@ export function AdminConfiguracion() {
       <div className="grid lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
           <h3 className="font-bold text-[#0d2b5e] mb-5 flex items-center gap-2">
-            <Mail className="w-5 h-5 text-[#1565c0]" />
-            Notificaciones del sistema
-          </h3>
-
-          <div className="space-y-3">
-            {[
-              "Notificar al alumno cuando su cuenta sea creada",
-              "Avisar al administrador sobre errores de carga masiva",
-              "Enviar aviso cuando una convocatoria este por cerrar",
-            ].map((item) => (
-              <label key={item} className="flex items-center gap-3 text-sm text-gray-700">
-                <input type="checkbox" defaultChecked className="w-4 h-4" />
-                {item}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-5 flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-[#1565c0]" />
             Estado administrativo
           </h3>
@@ -407,6 +596,93 @@ export function AdminConfiguracion() {
           {guardando ? "Guardando..." : "Guardar cambios"}
         </button>
       </div>
+
+      {mostrarConfirmacionEstado && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setMostrarConfirmacionEstado(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={`rounded-xl border p-4 ${confirmacionEstado.clase}`}>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-lg">{confirmacionEstado.titulo}</h3>
+                  <p className="text-sm mt-2">{confirmacionEstado.mensaje}</p>
+                  {confirmacionEstado.extra && (
+                    <p className="text-sm mt-2">{confirmacionEstado.extra}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600">
+              Cambio pendiente: {estadoSistemaOriginal} {"->"} {configuracion.estado_sistema}
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
+              <button
+                onClick={() => setMostrarConfirmacionEstado(false)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarCambioEstado}
+                disabled={guardando}
+                className="px-4 py-2.5 rounded-xl bg-[#1565c0] text-white text-sm font-semibold hover:bg-[#0d2b5e] disabled:opacity-60"
+              >
+                {guardando ? "Guardando..." : confirmacionEstado.confirmar}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarConfirmacionInscripcion && (
+        <div
+          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setMostrarConfirmacionInscripcion(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={`rounded-xl border p-4 ${confirmacionInscripcion.clase}`}>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-bold text-lg">{confirmacionInscripcion.titulo}</h3>
+                  <p className="text-sm mt-2">{confirmacionInscripcion.mensaje}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600">
+              Cambio pendiente: {inscripcionEmpresasOriginal} {"->"} {configuracion.inscripcion_empresas_estado}
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
+              <button
+                onClick={() => setMostrarConfirmacionInscripcion(false)}
+                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void guardarConfirmado()}
+                disabled={guardando}
+                className="px-4 py-2.5 rounded-xl bg-[#1565c0] text-white text-sm font-semibold hover:bg-[#0d2b5e] disabled:opacity-60"
+              >
+                {guardando ? "Guardando..." : confirmacionInscripcion.confirmar}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

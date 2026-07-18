@@ -1,9 +1,9 @@
 import type {
   AlumnosAsignadosAsesorResponse,
-  AlumnoEvaluacionDocente,
+  AlumnoEvaluacionAsesor,
   EstadoReporteAsesor,
-  EvaluacionesDocenteResponse,
-  GuardarEvaluacionDocenteInput,
+  EvaluacionesAsesorResponse,
+  GuardarEvaluacionAsesorInput,
   ReporteAsesor,
   ReportesAsesorResponse,
   ResumenAsesor,
@@ -12,21 +12,21 @@ import type { AsesorRepository } from "../../domain/asesor/AsesorRepository";
 import { apiClient } from "../api/apiClient";
 
 export class AsesorHttpRepository implements AsesorRepository {
-  async listarAlumnos(_idDocente: number): Promise<AlumnosAsignadosAsesorResponse> {
+  async listarAlumnos(_idAsesor: number): Promise<AlumnosAsignadosAsesorResponse> {
     const response = await apiClient.get<AlumnosAsignadosAsesorResponse>(
       "/asesor/me/alumnos"
     );
     return response.data;
   }
 
-  async obtenerDashboard(_idDocente: number): Promise<ResumenAsesor> {
+  async obtenerDashboard(_idAsesor: number): Promise<ResumenAsesor> {
     const response = await apiClient.get<ResumenAsesor>(
       "/asesor/me/dashboard"
     );
     return response.data;
   }
 
-  async listarReportes(_idDocente: number): Promise<ReportesAsesorResponse> {
+  async listarReportes(_idAsesor: number): Promise<ReportesAsesorResponse> {
     const response = await apiClient.get<ReportesAsesorResponse>(
       "/asesor/me/reportes"
     );
@@ -34,7 +34,7 @@ export class AsesorHttpRepository implements AsesorRepository {
   }
 
   async cambiarEstadoReporte(
-    _idDocente: number,
+    _idAsesor: number,
     idReporte: number,
     estado: Exclude<EstadoReporteAsesor, "Pendiente">,
     observacion?: string,
@@ -46,18 +46,18 @@ export class AsesorHttpRepository implements AsesorRepository {
     return response.data;
   }
 
-  async listarEvaluaciones(_idDocente: number): Promise<EvaluacionesDocenteResponse> {
-    const response = await apiClient.get<EvaluacionesDocenteResponse>(
+  async listarEvaluaciones(_idAsesor: number): Promise<EvaluacionesAsesorResponse> {
+    const response = await apiClient.get<EvaluacionesAsesorResponse>(
       "/asesor/me/evaluaciones"
     );
     return response.data;
   }
 
   async guardarEvaluacion(
-    _idDocente: number,
-    datos: GuardarEvaluacionDocenteInput,
-  ): Promise<AlumnoEvaluacionDocente> {
-    const response = await apiClient.post<AlumnoEvaluacionDocente>(
+    _idAsesor: number,
+    datos: GuardarEvaluacionAsesorInput,
+  ): Promise<AlumnoEvaluacionAsesor> {
+    const response = await apiClient.post<AlumnoEvaluacionAsesor>(
       "/asesor/me/evaluaciones",
       datos,
     );

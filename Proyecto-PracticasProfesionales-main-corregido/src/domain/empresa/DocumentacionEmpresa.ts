@@ -1,4 +1,4 @@
-export type EstadoDocumentoEmpresa = "Pendiente" | "Aprobado" | "Rechazado";
+export type EstadoDocumentoEmpresa = "Pendiente" | "Aprobado" | "Con observaciones" | "Rechazado";
 
 export interface EmpresaDocumentacionInfo {
   id_empresa: number;
@@ -15,9 +15,8 @@ export interface FormatoEmpresa {
   id_formato_empresa: number;
   nombre_archivo: string;
   url: string;
-  mime_type: string;
-  descripcion: string | null;
-  fecha_actualizacion: string | null;
+  version: string | null;
+  fecha_subida: string | null;
 }
 
 export interface DocumentoEmpresa {
@@ -26,10 +25,9 @@ export interface DocumentoEmpresa {
   id_tipo_documento_empresa: number;
   nombre_archivo: string;
   url: string;
-  mime_type: string;
   estado_documento: EstadoDocumentoEmpresa;
   observaciones: string | null;
-  fecha_carga: string | null;
+  fecha_subida: string | null;
   fecha_revision: string | null;
 }
 
@@ -40,7 +38,7 @@ export interface RequisitoEmpresa {
   obligatorio: boolean;
   activo?: boolean;
   requiere_formato: boolean;
-  etapa?: "Documentacion" | "Convenio";
+  etapa?: "Documentacion" | "Convenio" | "Vinculacion";
   puede_eliminar?: boolean;
   formato: FormatoEmpresa | null;
   documento: DocumentoEmpresa | null;
@@ -62,8 +60,8 @@ export interface DocumentacionEmpresaResponse {
     fecha_inicio: string;
     fecha_fin: string;
     estado_convenio: string;
-    version: number;
-    renovacion_solicitada: boolean;
+    es_actual: boolean;
+    observaciones: string | null;
   } | null;
   documentos: RequisitoEmpresa[];
 }
@@ -71,7 +69,6 @@ export interface DocumentacionEmpresaResponse {
 export interface ArchivoBase64Input {
   nombre_archivo: string;
   contenido_base64: string;
-  mime_type: string;
 }
 
 export interface SubirDocumentoEmpresaInput extends ArchivoBase64Input {
@@ -84,7 +81,7 @@ export interface EditarDocumentoEmpresaInput extends ArchivoBase64Input {
 
 export interface SubirFormatoEmpresaInput extends ArchivoBase64Input {
   id_tipo_documento_empresa: number;
-  descripcion?: string;
+  version?: string;
 }
 
 export interface ConfigurarRequisitoEmpresaInput {
@@ -93,7 +90,7 @@ export interface ConfigurarRequisitoEmpresaInput {
   obligatorio: boolean;
   requiere_formato: boolean;
   activo: boolean;
-  etapa: "Documentacion" | "Convenio";
+  etapa: "Documentacion" | "Convenio" | "Vinculacion";
 }
 
 export interface RevisarDocumentoEmpresaInput {

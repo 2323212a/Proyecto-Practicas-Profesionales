@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -14,6 +14,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { apiClient } from "../../../infrastructure/api/apiClient";
+import { gestionConfiguracionUseCase } from "../../dependencies";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 type SolicitudEmpresaForm = {
@@ -23,10 +24,11 @@ type SolicitudEmpresaForm = {
   domicilio: string;
   telefono: string;
   correo_contacto: string;
-  nombre_contacto: string;
-  cargo_contacto: string;
+  nombre_responsable: string;
+  apellido_paterno_responsable: string;
+  apellido_materno_responsable: string;
+  cargo_responsable: string;
   tipo_tramite: string;
-  periodo_participacion: string;
   descripcion: string;
 };
 
@@ -37,10 +39,11 @@ const FORM_INICIAL: SolicitudEmpresaForm = {
   domicilio: "",
   telefono: "",
   correo_contacto: "",
-  nombre_contacto: "",
-  cargo_contacto: "",
+  nombre_responsable: "",
+  apellido_paterno_responsable: "",
+  apellido_materno_responsable: "",
+  cargo_responsable: "",
   tipo_tramite: "",
-  periodo_participacion: "",
   descripcion: "",
 };
 
@@ -64,7 +67,29 @@ export function RegistroEmpresa() {
   const [submitted, setSubmitted] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const [estadoSistema, setEstadoSistema] = useState("Activo");
+  const [inscripcionEmpresasEstado, setInscripcionEmpresasEstado] = useState("Abierta");
   const [form, setForm] = useState<SolicitudEmpresaForm>(FORM_INICIAL);
+
+  useEffect(() => {
+    gestionConfiguracionUseCase
+      .obtener()
+      .then((configuracion) => {
+        setEstadoSistema(configuracion.estado_sistema);
+        setInscripcionEmpresasEstado(configuracion.inscripcion_empresas_estado);
+      })
+      .catch((err) => console.error(err));
+  }, []);
+
+  const registroBloqueado = estadoSistema !== "Activo" || inscripcionEmpresasEstado === "Cerrada";
+  const mensajeBloqueo =
+    estadoSistema === "Mantenimiento"
+      ? "El sistema esta en mantenimiento. Intenta mas tarde."
+      : estadoSistema === "Suspendido"
+        ? "El sistema se encuentra suspendido temporalmente. Contacta a la administracion."
+        : inscripcionEmpresasEstado === "Cerrada"
+          ? "El registro de nuevas empresas esta cerrado temporalmente. El padron empresarial se encuentra en preparacion."
+          : "";
 
   const set =
     (campo: keyof SolicitudEmpresaForm) =>
@@ -76,16 +101,25 @@ export function RegistroEmpresa() {
     if (!form.rfc.trim()) return "El RFC es obligatorio.";
     if (!form.correo_contacto.trim()) return "El correo de contacto es obligatorio.";
     if (!form.telefono.trim()) return "El telefono de contacto es obligatorio.";
-    if (!form.nombre_contacto.trim()) return "El nombre del contacto es obligatorio.";
-    if (!form.cargo_contacto.trim()) return "El cargo del contacto es obligatorio.";
+    if (!form.nombre_responsable.trim()) return "El nombre del responsable es obligatorio.";
+    if (!form.apellido_paterno_responsable.trim()) return "El apellido paterno del responsable es obligatorio.";
+    if (!form.cargo_responsable.trim()) return "El cargo del responsable es obligatorio.";
     if (!form.giro.trim()) return "Selecciona el giro o sector.";
     if (!form.domicilio.trim()) return "El domicilio fiscal o de operacion es obligatorio.";
     if (!form.tipo_tramite) return "Selecciona el tipo de tramite.";
-    if (!form.periodo_participacion) return "Selecciona el periodo de participacion.";
     return "";
   }
 
   async function enviarSolicitud() {
+    if (registroBloqueado) {
+      setError(
+        inscripcionEmpresasEstado === "Cerrada" && estadoSistema === "Activo"
+          ? "El registro de nuevas empresas esta cerrado temporalmente."
+          : "El registro de solicitudes esta temporalmente deshabilitado.",
+      );
+      return;
+    }
+
     const validacion = validar();
     if (validacion) {
       setError(validacion);
@@ -95,6 +129,14 @@ export function RegistroEmpresa() {
     try {
       setGuardando(true);
       setError("");
+      const nombreCompletoResponsable = [
+        form.nombre_responsable.trim(),
+        form.apellido_paterno_responsable.trim(),
+        form.apellido_materno_responsable.trim(),
+      ]
+        .filter(Boolean)
+        .join(" ");
+
       await apiClient.post("/empresas/solicitudes", {
         nombre_empresa: form.nombre_empresa.trim(),
         rfc: form.rfc.trim(),
@@ -102,10 +144,13 @@ export function RegistroEmpresa() {
         domicilio: form.domicilio.trim(),
         telefono: form.telefono.trim(),
         correo_contacto: form.correo_contacto.trim(),
-        nombre_contacto: form.nombre_contacto.trim(),
-        cargo_contacto: form.cargo_contacto.trim(),
+        nombre_responsable: form.nombre_responsable.trim(),
+        apellido_paterno_responsable: form.apellido_paterno_responsable.trim(),
+        apellido_materno_responsable: form.apellido_materno_responsable.trim() || null,
+        cargo_responsable: form.cargo_responsable.trim(),
+        nombre_contacto: nombreCompletoResponsable,
+        cargo_contacto: form.cargo_responsable.trim(),
         tipo_tramite: form.tipo_tramite,
-        periodo_participacion: form.periodo_participacion,
         descripcion: form.descripcion.trim() || null,
       });
       setSubmitted(true);
@@ -181,6 +226,12 @@ export function RegistroEmpresa() {
           </div>
         )}
 
+        {registroBloqueado && (
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-xl p-4 text-sm">
+            <strong>Registro temporalmente deshabilitado.</strong> {mensajeBloqueo}
+          </div>
+        )}
+
         <div className="grid lg:grid-cols-[1fr_320px] gap-6">
           <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="bg-[#0d2b5e] px-6 py-4 flex items-center gap-3">
@@ -206,12 +257,20 @@ export function RegistroEmpresa() {
                   <input value={form.telefono} onChange={set("telefono")} placeholder="961 123 4567" className={inputClass} />
                 </Campo>
 
-                <Campo label="Nombre del responsable *" icon={User}>
-                  <input value={form.nombre_contacto} onChange={set("nombre_contacto")} placeholder="Persona que atendera la revision" className={inputClass} />
+                <Campo label="Nombre(s) del responsable *" icon={User}>
+                  <input value={form.nombre_responsable} onChange={set("nombre_responsable")} placeholder="Ej. Juan Carlos" className={inputClass} />
+                </Campo>
+
+                <Campo label="Apellido paterno del responsable *" icon={User}>
+                  <input value={form.apellido_paterno_responsable} onChange={set("apellido_paterno_responsable")} placeholder="Ej. Perez" className={inputClass} />
+                </Campo>
+
+                <Campo label="Apellido materno del responsable" icon={User}>
+                  <input value={form.apellido_materno_responsable} onChange={set("apellido_materno_responsable")} placeholder="Ej. Lopez" className={inputClass} />
                 </Campo>
 
                 <Campo label="Cargo del responsable *" icon={User}>
-                  <input value={form.cargo_contacto} onChange={set("cargo_contacto")} placeholder="Ej. Gerente, Coordinador, RRHH" className={inputClass} />
+                  <input value={form.cargo_responsable} onChange={set("cargo_responsable")} placeholder="Ej. Gerente, Coordinador, RRHH" className={inputClass} />
                 </Campo>
 
                 <Campo label="Giro / Sector *" icon={Building2}>
@@ -241,14 +300,6 @@ export function RegistroEmpresa() {
                   </p>
                 </Campo>
 
-                <Campo label="Periodo de participacion *" icon={ClipboardCheck}>
-                  <select value={form.periodo_participacion} onChange={set("periodo_participacion")} className={`${inputClass} bg-white`}>
-                    <option value="">Selecciona...</option>
-                    <option value="Semestral">Semestral</option>
-                    <option value="Cuatrimestral">Cuatrimestral</option>
-                    <option value="Ambos">Ambos</option>
-                  </select>
-                </Campo>
               </div>
 
               <Campo label="Descripcion de actividades o areas disponibles" icon={FileText}>
@@ -267,10 +318,14 @@ export function RegistroEmpresa() {
 
               <button
                 onClick={enviarSolicitud}
-                disabled={guardando}
+                disabled={guardando || registroBloqueado}
                 className="w-full py-3.5 bg-[#0d2b5e] text-white rounded-xl font-bold hover:bg-[#1565c0] transition-colors shadow-lg text-sm disabled:opacity-60"
               >
-                {guardando ? "Enviando solicitud..." : "Enviar solicitud de revision"}
+                {registroBloqueado
+                  ? "Registro temporalmente deshabilitado"
+                  : guardando
+                    ? "Enviando solicitud..."
+                    : "Enviar solicitud de revision"}
               </button>
             </div>
           </section>

@@ -1,27 +1,27 @@
 import type {
   AlumnosAsignadosAsesorResponse,
-  AlumnoEvaluacionDocente,
+  AlumnoEvaluacionAsesor,
   EstadoReporteAsesor,
-  EvaluacionesDocenteResponse,
-  GuardarEvaluacionDocenteInput,
+  EvaluacionesAsesorResponse,
+  GuardarEvaluacionAsesorInput,
   ReporteAsesor,
   ReportesAsesorResponse,
   ResumenAsesor,
 } from "./Asesor";
 
 export interface AsesorRepository {
-  listarAlumnos(idDocente: number): Promise<AlumnosAsignadosAsesorResponse>;
-  obtenerDashboard(idDocente: number): Promise<ResumenAsesor>;
-  listarReportes(idDocente: number): Promise<ReportesAsesorResponse>;
+  listarAlumnos(idAsesor: number): Promise<AlumnosAsignadosAsesorResponse>;
+  obtenerDashboard(idAsesor: number): Promise<ResumenAsesor>;
+  listarReportes(idAsesor: number): Promise<ReportesAsesorResponse>;
   cambiarEstadoReporte(
-    idDocente: number,
+    idAsesor: number,
     idReporte: number,
     estado: Exclude<EstadoReporteAsesor, "Pendiente">,
     observacion?: string,
   ): Promise<ReporteAsesor>;
-  listarEvaluaciones(idDocente: number): Promise<EvaluacionesDocenteResponse>;
+  listarEvaluaciones(idAsesor: number): Promise<EvaluacionesAsesorResponse>;
   guardarEvaluacion(
-    idDocente: number,
-    datos: GuardarEvaluacionDocenteInput,
-  ): Promise<AlumnoEvaluacionDocente>;
+    idAsesor: number,
+    datos: GuardarEvaluacionAsesorInput,
+  ): Promise<AlumnoEvaluacionAsesor>;
 }

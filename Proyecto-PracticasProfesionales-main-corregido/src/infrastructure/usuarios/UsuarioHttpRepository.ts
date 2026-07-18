@@ -42,4 +42,8 @@ export class UsuarioHttpRepository implements UsuarioRepository {
   async eliminar(id: number): Promise<void> {
     await apiClient.delete(`/usuarios/${id}`);
   }
+
+  async eliminarDefinitivamente(id: number): Promise<void> {
+    await apiClient.delete(`/usuarios/${id}/definitivo`);
+  }
 }

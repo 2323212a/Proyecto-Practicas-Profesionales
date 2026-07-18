@@ -20,6 +20,27 @@ export interface DistribucionAdmin {
   total: number;
 }
 
+export type AdminReporteTablaValor = string | number | boolean | null;
+
+export type AdminReporteTablaFila = Record<string, AdminReporteTablaValor>;
+
+export interface AdminReportesFiltros {
+  periodo?: string;
+  modulo?: string;
+  rol?: string;
+  estado_usuario?: string;
+  busqueda?: string;
+  carrera?: string;
+  semestre?: string;
+  grupo?: string;
+  tipo_practica?: string;
+  periodo_practica?: string;
+  estado_empresa?: string;
+  tipo_tramite?: string;
+  tipo_periodo?: string;
+  estado_convocatoria?: string;
+}
+
 export interface AdminReportesResponse {
   resumen: Record<string, number>;
   reportes: ReporteAdminItem[];
@@ -27,4 +48,6 @@ export interface AdminReportesResponse {
   modulos: string[];
   actividad: ActividadAdmin[];
   contexto: Record<string, number | string | null>;
+  tablas?: Record<string, AdminReporteTablaFila[]>;
+  filtros?: Record<string, string>;
 }

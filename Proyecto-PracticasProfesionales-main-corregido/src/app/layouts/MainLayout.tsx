@@ -15,6 +15,7 @@ import {
   ClipboardList,
   FileCheck,
   FileText,
+  History,
   Home,
   LayoutDashboard,
   LogOut,
@@ -29,8 +30,10 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import logoInstitucional from "../../assets/Ocelote1.png";
+import { cerrarSesionLocal } from "../routes/authSession";
 
 type UsuarioSesion = {
+  id_rol?: number;
   nombre?: string;
   nombre_completo?: string;
   rol?: string | null;
@@ -114,6 +117,7 @@ function getNav(role: string): NavItem[] {
       { label: "Roles y Permisos", icon: Shield, path: "/admin/roles" },
       { label: "Catalogos", icon: ClipboardList, path: "/admin/catalogos" },
       { label: "Reportes", icon: BarChart3, path: "/admin/reportes" },
+      { label: "Bitacora", icon: History, path: "/admin/bitacora" },
       { label: "Configuracion", icon: Settings, path: "/admin/configuracion" },
     ];
   }
@@ -198,6 +202,16 @@ export function MainLayout() {
   const navItems = getNav(role);
   const breadcrumb = navItems.find((n) => n.path === location.pathname)?.label || "Inicio";
   const notifCount = navItems.reduce((a, n) => a + (n.badge || 0), 0);
+  function cerrarSesion() {
+    cerrarSesionLocal();
+    navigate("/login", { replace: true });
+  }
+
+  function irAInicioPublico() {
+    cerrarSesionLocal();
+    setMobileOpen(false);
+    navigate("/", { replace: true });
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -267,18 +281,14 @@ export function MainLayout() {
 
         <div className="border-t border-white/10 p-3 space-y-1">
           <button
-            onClick={() => navigate("/")}
+            onClick={irAInicioPublico}
             className={`w-full flex items-center gap-3 px-2.5 py-2 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
             <Home className="w-4 h-4 flex-shrink-0" />
             {!collapsed && <span className="text-xs">Inicio</span>}
           </button>
           <button
-            onClick={() => {
-              localStorage.removeItem("token");
-              localStorage.removeItem("usuario");
-              navigate("/login");
-            }}
+            onClick={cerrarSesion}
             className={`w-full flex items-center gap-3 px-2.5 py-2 text-blue-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors ${collapsed ? "justify-center" : ""}`}
           >
             <LogOut className="w-4 h-4 flex-shrink-0" />

@@ -2,8 +2,8 @@ from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.convenio import ConvenioModel
-from infrastructure.persistence.models.docente_asesor import DocenteAsesorModel
 from infrastructure.persistence.models.empresa import EmpresaModel
+from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from infrastructure.persistence.models.vacante import VacanteModel
 from infrastructure.persistence.repositories.base_repository import SQLAlchemyRepository
 
@@ -22,10 +22,10 @@ class AsignacionRepository(SQLAlchemyRepository):
             .first()
         )
 
-    def obtener_docente(self, id_docente: int):
+    def obtener_asesor(self, id_asesor: int):
         return (
-            self.db.query(DocenteAsesorModel)
-            .filter(DocenteAsesorModel.id_docente == id_docente)
+            self.db.query(PersonalInternoModel)
+            .filter(PersonalInternoModel.id_personal == id_asesor)
             .first()
         )
 
@@ -57,6 +57,16 @@ class AsignacionRepository(SQLAlchemyRepository):
                 AsignacionModel.id_convocatoria == id_convocatoria,
             )
             .first()
+        )
+
+    def contar_asignaciones_activas_vacante(self, id_vacante: int) -> int:
+        return (
+            self.db.query(AsignacionModel)
+            .filter(
+                AsignacionModel.id_vacante == id_vacante,
+                AsignacionModel.estado_asignacion == "Activa",
+            )
+            .count()
         )
 
     def nuevo(self, datos):

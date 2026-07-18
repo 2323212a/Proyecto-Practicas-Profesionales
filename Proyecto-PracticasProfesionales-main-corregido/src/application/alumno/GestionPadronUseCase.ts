@@ -1,6 +1,6 @@
 import type {
   PadronAlumnoResponse,
-  PreferenciaEmpresaRequest,
+  PreferenciaVacanteRequest,
 } from "../../domain/alumno/Padron";
 import type { PadronRepository } from "../../domain/alumno/PadronRepository";
 
@@ -17,13 +17,13 @@ export class GestionPadronUseCase {
 
   guardarPreferencias(
     idAlumno: number,
-    preferencias: PreferenciaEmpresaRequest[],
-    idEmpresaPrioritaria: number | null
+    preferencias: PreferenciaVacanteRequest[],
+    idVacantePrioritaria: number | null
   ): Promise<void> {
     return this.repository.guardarPreferencias(
       idAlumno,
       preferencias,
-      idEmpresaPrioritaria
+      idVacantePrioritaria
     );
   }
 }

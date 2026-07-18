@@ -108,7 +108,6 @@ export function ConveniosUnidad() {
         id_tipo_documento_empresa: requisito.id_tipo_documento_empresa,
         nombre_archivo: archivo.name,
         contenido_base64: contenido,
-        mime_type: archivo.type || "application/pdf",
       });
       await cargar();
     } catch (err) {
@@ -194,11 +193,7 @@ export function ConveniosUnidad() {
 
             <label className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold ${bloqueado ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-[#0d2b5e] text-white hover:bg-[#1565c0] cursor-pointer"}`}>
               <Upload className="w-3.5 h-3.5" />
-              {subiendo === requisito.id_tipo_documento_empresa
-                ? "Subiendo..."
-                : esRequisitoConvenio(requisito) && datos?.convenio_actual?.renovacion_solicitada
-                  ? "Subir renovacion"
-                  : "Subir PDF"}
+              {subiendo === requisito.id_tipo_documento_empresa ? "Subiendo..." : "Subir PDF"}
               <input
                 type="file"
                 accept="application/pdf"
@@ -261,21 +256,6 @@ export function ConveniosUnidad() {
         ))}
       </div>
 
-      {datos?.convenio_actual?.renovacion_solicitada && (
-        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold text-orange-800">Solicitar renovacion</p>
-            <p className="text-sm text-orange-700 mt-1">
-              Coordinacion solicito una nueva version del convenio. Sube el documento actualizado en el
-              requisito de convenio para que puedan aprobar una nueva vigencia.
-            </p>
-            <p className="text-xs text-orange-700 mt-2">
-              Convenio actual: version {datos.convenio_actual.version}, vence el {datos.convenio_actual.fecha_fin}.
-            </p>
-          </div>
-        </div>
-      )}
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">

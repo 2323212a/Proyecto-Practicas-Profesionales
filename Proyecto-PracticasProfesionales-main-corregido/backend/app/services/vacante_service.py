@@ -1,9 +1,7 @@
 from fastapi import HTTPException
 
 from domain.entities.vacante import Vacante
-from domain.exceptions import BusinessRuleError
 from domain.ports.repositories import VacanteRepositoryPort
-from domain.services.vacante_rules import validar_cupos
 
 
 class VacanteService:
@@ -18,8 +16,8 @@ class VacanteService:
 
     def crear(self, vacante):
         self._validar_empresa(vacante.id_empresa)
-        self._validar_carrera(vacante.id_carrera)
-        self._validar_cupos(vacante.cupo_total, vacante.cupo_disponible)
+        if vacante.cupos <= 0:
+            raise HTTPException(status_code=400, detail="Los cupos deben ser mayores a cero")
 
         nueva_vacante = self.repository.nuevo(vacante.model_dump())
         return self.repository.crear(nueva_vacante)
@@ -30,18 +28,15 @@ class VacanteService:
             return None
 
         cambios = datos.model_dump(exclude_unset=True)
-        if "id_carrera" in cambios:
-            self._validar_carrera(cambios["id_carrera"])
+        cupos = cambios.get("cupos", vacante.cupos)
+        if cupos <= 0:
+            raise HTTPException(status_code=400, detail="Los cupos deben ser mayores a cero")
 
-        cupo_total = cambios.get("cupo_total", vacante.cupo_total)
-        cupo_disponible = cambios.get("cupo_disponible", vacante.cupo_disponible)
-        ocupados = vacante.cupo_total - vacante.cupo_disponible
-
-        self._validar_cupos(cupo_total, cupo_disponible)
-        if cupo_total < ocupados:
+        ocupados = len(getattr(vacante, "asignaciones", []) or [])
+        if cupos < ocupados:
             raise HTTPException(
                 status_code=400,
-                detail="El cupo total no puede ser menor al número de asignaciones existentes"
+                detail="Los cupos no pueden ser menores al numero de asignaciones existentes",
             )
 
         return self.repository.actualizar(vacante, cambios)
@@ -52,34 +47,25 @@ class VacanteService:
             return None
         return self.repository.eliminar(vacante)
 
-    def _validar_cupos(self, cupo_total: int, cupo_disponible: int):
-        try:
-            validar_cupos(cupo_total, cupo_disponible)
-        except BusinessRuleError as exc:
-            raise HTTPException(status_code=400, detail=exc.message) from exc
-
     def _validar_empresa(self, id_empresa: int):
         empresa = self.repository.obtener_empresa(id_empresa)
         if empresa is None:
             raise HTTPException(status_code=404, detail="Empresa no encontrada")
         if empresa.estado_empresa != "Activa":
-            raise HTTPException(status_code=400, detail="La empresa no está activa")
-
-    def _validar_carrera(self, id_carrera: int):
-        carrera = self.repository.obtener_carrera(id_carrera)
-        if carrera is None:
-            raise HTTPException(status_code=404, detail="Carrera no encontrada")
+            raise HTTPException(status_code=400, detail="La empresa no esta activa")
 
     def _to_domain(self, vacante):
         return Vacante(
             id_vacante=vacante.id_vacante,
             id_empresa=vacante.id_empresa,
-            id_carrera=vacante.id_carrera,
+            id_convocatoria=vacante.id_convocatoria,
+            id_tipo_practica=vacante.id_tipo_practica,
             titulo=vacante.titulo,
-            modalidad=vacante.modalidad,
-            cupo_total=vacante.cupo_total,
-            cupo_disponible=vacante.cupo_disponible,
+            cupos=vacante.cupos,
+            periodo=vacante.periodo,
             estado_vacante=vacante.estado_vacante,
             descripcion=vacante.descripcion,
-            horario=vacante.horario,
+            actividades=vacante.actividades,
+            requisitos=vacante.requisitos,
+            observaciones=vacante.observaciones,
         )

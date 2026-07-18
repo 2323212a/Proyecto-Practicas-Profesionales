@@ -16,7 +16,7 @@ import {
 import { gestionVacantesUnidadUseCase } from "../../dependencies";
 import { apiClient } from "../../../infrastructure/api/apiClient";
 import type {
-  CarreraBasica,
+  ConvocatoriaBasica,
   CrearVacanteUnidadInput,
   VacanteUnidad,
   VacantesUnidadResponse,
@@ -30,10 +30,7 @@ type TipoPractica = {
   activo: boolean;
 };
 
-type VacanteForm = CrearVacanteUnidadInput & {
-  periodo: "Semestral" | "Cuatrimestral";
-  id_tipo_practica: number;
-};
+type VacanteForm = CrearVacanteUnidadInput;
 
 type UsuarioSesion = {
   perfil?: {
@@ -55,7 +52,7 @@ function obtenerIdEmpresa() {
 
 export function PlanTrabajo() {
   const [datos, setDatos] = useState<VacantesUnidadResponse | null>(null);
-  const [carreras, setCarreras] = useState<CarreraBasica[]>([]);
+  const [convocatorias, setConvocatorias] = useState<ConvocatoriaBasica[]>([]);
   const [tiposPractica, setTiposPractica] = useState<TipoPractica[]>([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -63,14 +60,13 @@ export function PlanTrabajo() {
   const [busqueda, setBusqueda] = useState("");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [form, setForm] = useState<VacanteForm>({
-    id_carrera: 0,
+    id_convocatoria: 0,
     id_tipo_practica: 0,
-    periodo: "Semestral",
     titulo: "",
     descripcion: "",
-    modalidad: "Presencial",
-    horario: "",
-    cupo_total: 1,
+    actividades: "",
+    requisitos: "",
+    cupos: 1,
   });
 
   const idEmpresa = obtenerIdEmpresa();
@@ -89,17 +85,18 @@ export function PlanTrabajo() {
     try {
       setCargando(true);
       setError("");
-      const [vacantesData, carrerasData, tiposData] = await Promise.all([
+      const [vacantesData, convocatoriasData, tiposData] = await Promise.all([
         gestionVacantesUnidadUseCase.listar(idEmpresa),
-        gestionVacantesUnidadUseCase.listarCarreras(),
+        gestionVacantesUnidadUseCase.listarConvocatorias(),
         apiClient.get<TipoPractica[]>("/tipos-practica/"),
       ]);
       setDatos(vacantesData);
-      setCarreras(carrerasData);
+      const convocatoriasActivas = convocatoriasData.filter((convocatoria) => convocatoria.estado === "Activa");
+      setConvocatorias(convocatoriasActivas);
       setTiposPractica(tiposData.data);
       setForm((actual) => ({
         ...actual,
-        id_carrera: actual.id_carrera || carrerasData[0]?.id_carrera || 0,
+        id_convocatoria: actual.id_convocatoria || convocatoriasActivas[0]?.id_convocatoria || 0,
         id_tipo_practica: actual.id_tipo_practica || tiposData.data[0]?.id_tipo_practica || 0,
       }));
     } catch (err) {
@@ -121,24 +118,42 @@ export function PlanTrabajo() {
         ...form,
         titulo: form.titulo.trim(),
         descripcion: form.descripcion?.trim() || undefined,
-        horario: form.horario?.trim() || undefined,
-        cupo_total: Number(form.cupo_total),
+        actividades: form.actividades?.trim() || undefined,
+        requisitos: form.requisitos?.trim() || undefined,
+        cupos: Number(form.cupos),
       });
       setMostrarFormulario(false);
       setForm({
-        id_carrera: carreras[0]?.id_carrera || 0,
+        id_convocatoria: convocatorias[0]?.id_convocatoria || 0,
         id_tipo_practica: tiposPractica[0]?.id_tipo_practica || 0,
-        periodo: "Semestral",
         titulo: "",
         descripcion: "",
-        modalidad: "Presencial",
-        horario: "",
-        cupo_total: 1,
+        actividades: "",
+        requisitos: "",
+        cupos: 1,
       });
       await cargar();
     } catch (err) {
       console.error(err);
-      setError("No se pudo crear la vacante. Verifica que tengas documentacion legal aprobada y convenio vigente.");
+      setError("No se pudo crear la vacante. Verifica participacion aceptada, documentacion y tramite vigente.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  async function solicitarParticipacion() {
+    if (!form.id_convocatoria) {
+      setError("Selecciona una convocatoria activa.");
+      return;
+    }
+    try {
+      setGuardando(true);
+      setError("");
+      await gestionVacantesUnidadUseCase.solicitarParticipacion(form.id_convocatoria);
+      await cargar();
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo solicitar la participacion. Puede que ya exista una solicitud para esta convocatoria.");
     } finally {
       setGuardando(false);
     }
@@ -147,7 +162,7 @@ export function PlanTrabajo() {
   const vacantesFiltradas = useMemo(() => {
     const q = busqueda.toLowerCase();
     return (datos?.vacantes ?? []).filter((vacante) =>
-      [vacante.titulo, vacante.carrera ?? "", vacante.modalidad, vacante.descripcion ?? ""]
+      [vacante.titulo, vacante.periodo ?? "", vacante.tipo_practica ?? "", vacante.descripcion ?? ""]
         .join(" ")
         .toLowerCase()
         .includes(q),
@@ -157,7 +172,7 @@ export function PlanTrabajo() {
   const total = datos?.vacantes.length ?? 0;
   const visibles = datos?.vacantes.filter((vacante) => vacante.visible_padron).length ?? 0;
   const cerradas = datos?.vacantes.filter((vacante) => vacante.estado_vacante === "Cerrada").length ?? 0;
-  const cupos = datos?.vacantes.reduce((suma, vacante) => suma + vacante.cupo_disponible, 0) ?? 0;
+  const cupos = datos?.vacantes.reduce((suma, vacante) => suma + vacante.cupos, 0) ?? 0;
   const puedeCapturar = datos?.empresa.puede_capturar_vacantes ?? datos?.empresa.puede_publicar ?? false;
 
   if (cargando) {
@@ -191,14 +206,23 @@ export function PlanTrabajo() {
           </div>
         </div>
 
-        <button
-          disabled={!puedeCapturar}
-          onClick={() => setMostrarFormulario((actual) => !actual)}
-          className="bg-white/20 px-4 py-2 rounded-xl text-white font-bold text-sm flex items-center gap-2 hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Nueva vacante
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            disabled={!puedeCapturar || !form.id_convocatoria || guardando}
+            onClick={solicitarParticipacion}
+            className="bg-white/20 px-4 py-2 rounded-xl text-white font-bold text-sm hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Solicitar participacion
+          </button>
+          <button
+            disabled={!puedeCapturar}
+            onClick={() => setMostrarFormulario((actual) => !actual)}
+            className="bg-white/20 px-4 py-2 rounded-xl text-white font-bold text-sm flex items-center gap-2 hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva vacante
+          </button>
+        </div>
       </div>
 
       {puedeCapturar ? (
@@ -254,46 +278,16 @@ export function PlanTrabajo() {
             />
 
             <select
-              value={form.id_carrera}
-              onChange={(event) => setForm({ ...form, id_carrera: Number(event.target.value) })}
+              value={form.id_convocatoria}
+              onChange={(event) => setForm({ ...form, id_convocatoria: Number(event.target.value) })}
               required
               className="border rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-[#1565c0]"
             >
-              {carreras.map((carrera) => (
-                <option key={carrera.id_carrera} value={carrera.id_carrera}>
-                  {carrera.nombre}
+              {convocatorias.map((convocatoria) => (
+                <option key={convocatoria.id_convocatoria} value={convocatoria.id_convocatoria}>
+                  {convocatoria.nombre} ({convocatoria.tipo_periodo})
                 </option>
               ))}
-            </select>
-
-            <select
-              value={form.modalidad}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  modalidad: event.target.value as CrearVacanteUnidadInput["modalidad"],
-                })
-              }
-              className="border rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-[#1565c0]"
-            >
-              <option value="Presencial">Presencial</option>
-              <option value="Virtual">Virtual</option>
-              <option value="Hibrida">Hibrida</option>
-            </select>
-
-            <select
-              value={form.periodo}
-              onChange={(event) =>
-                setForm({
-                  ...form,
-                  periodo: event.target.value as VacanteForm["periodo"],
-                })
-              }
-              required
-              className="border rounded-xl px-3 py-2 text-sm bg-white outline-none focus:border-[#1565c0]"
-            >
-              <option value="Semestral">Semestral</option>
-              <option value="Cuatrimestral">Cuatrimestral</option>
             </select>
 
             <select
@@ -310,19 +304,12 @@ export function PlanTrabajo() {
             </select>
 
             <input
-              value={form.horario}
-              onChange={(event) => setForm({ ...form, horario: event.target.value })}
-              placeholder="Horario"
-              className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1565c0]"
-            />
-
-            <input
               type="number"
               min={1}
-              value={form.cupo_total}
-              onChange={(event) => setForm({ ...form, cupo_total: Number(event.target.value) })}
+              value={form.cupos}
+              onChange={(event) => setForm({ ...form, cupos: Number(event.target.value) })}
               required
-              placeholder="Cupo total"
+              placeholder="Cupos"
               className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1565c0]"
             />
 
@@ -332,6 +319,20 @@ export function PlanTrabajo() {
               placeholder="Descripcion de actividades"
               rows={3}
               className="md:col-span-2 border rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-[#1565c0]"
+            />
+            <textarea
+              value={form.actividades}
+              onChange={(event) => setForm({ ...form, actividades: event.target.value })}
+              placeholder="Actividades"
+              rows={3}
+              className="border rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-[#1565c0]"
+            />
+            <textarea
+              value={form.requisitos}
+              onChange={(event) => setForm({ ...form, requisitos: event.target.value })}
+              placeholder="Requisitos"
+              rows={3}
+              className="border rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-[#1565c0]"
             />
           </div>
 
@@ -345,7 +346,7 @@ export function PlanTrabajo() {
             </button>
             <button
               type="submit"
-              disabled={guardando || !form.titulo.trim() || !form.id_carrera || !form.id_tipo_practica || !form.periodo}
+              disabled={guardando || !form.titulo.trim() || !form.id_convocatoria || !form.id_tipo_practica}
               className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50"
             >
               {guardando ? "Guardando..." : "Crear vacante"}
@@ -361,7 +362,7 @@ export function PlanTrabajo() {
             value={busqueda}
             onChange={(event) => setBusqueda(event.target.value)}
             className="outline-none text-sm w-full"
-            placeholder="Buscar por proyecto, carrera o modalidad..."
+            placeholder="Buscar por proyecto, convocatoria, periodo o tipo de practica..."
           />
         </div>
       </div>
@@ -390,23 +391,39 @@ export function PlanTrabajo() {
                     </span>
                   </div>
 
-                  <div className="text-sm text-gray-600">{vacante.carrera}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">
-                    {vacante.modalidad} · {vacante.periodo ?? "Sin periodo"} · {vacante.tipo_practica ?? "Sin tipo"} · {vacante.horario ?? "Horario no registrado"}
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Convocatoria #{vacante.id_convocatoria} - {vacante.periodo ?? "Periodo por convocatoria"} - {vacante.tipo_practica ?? "Sin tipo de practica"}
                   </div>
 
                   <p className="text-sm text-gray-600 mt-3">
                     {vacante.descripcion ?? "Sin descripcion registrada."}
                   </p>
 
+                  {(vacante.actividades || vacante.requisitos) && (
+                    <div className="grid md:grid-cols-2 gap-3 mt-4">
+                      {vacante.actividades && (
+                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                          <div className="text-xs font-semibold text-gray-500">Actividades</div>
+                          <p className="text-sm text-gray-600 mt-1">{vacante.actividades}</p>
+                        </div>
+                      )}
+                      {vacante.requisitos && (
+                        <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+                          <div className="text-xs font-semibold text-gray-500">Requisitos</div>
+                          <p className="text-sm text-gray-600 mt-1">{vacante.requisitos}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid sm:grid-cols-3 gap-3 mt-4">
                     <div className="border rounded-xl p-3">
-                      <div className="text-xs text-gray-500">Cupo total</div>
-                      <div className="font-bold text-[#0d2b5e]">{vacante.cupo_total}</div>
+                      <div className="text-xs text-gray-500">Cupos</div>
+                      <div className="font-bold text-[#0d2b5e]">{vacante.cupos}</div>
                     </div>
                     <div className="border rounded-xl p-3">
-                      <div className="text-xs text-gray-500">Disponible</div>
-                      <div className="font-bold text-[#0d2b5e]">{vacante.cupo_disponible}</div>
+                      <div className="text-xs text-gray-500">Periodo</div>
+                      <div className="font-bold text-[#0d2b5e]">{vacante.periodo ?? "Sin periodo"}</div>
                     </div>
                     <div className="border rounded-xl p-3">
                       <div className="text-xs text-gray-500">Estado</div>

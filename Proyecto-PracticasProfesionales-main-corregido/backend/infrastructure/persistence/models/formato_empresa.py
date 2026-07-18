@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from infrastructure.database.connection import Base
@@ -15,9 +15,11 @@ class FormatoEmpresaModel(Base):
     )
     nombre_archivo = Column(String(255), nullable=False)
     ruta_archivo = Column(String(255), nullable=False)
-    mime_type = Column(String(120), nullable=False)
-    descripcion = Column(Text, nullable=True)
+    version = Column(String(50), nullable=True)
+    fecha_subida = Column(DateTime, nullable=False, server_default=func.now())
+    subido_por = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
     activo = Column(Boolean, nullable=False, default=True, server_default="1")
-    fecha_actualizacion = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     tipo_documento = relationship("TipoDocumentoEmpresaModel", back_populates="formatos")

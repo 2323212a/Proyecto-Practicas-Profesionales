@@ -6,11 +6,9 @@ import {
   CheckCircle2,
   Clock,
   ClipboardCheck,
-  Eye,
   FileText,
   Filter,
   RotateCcw,
-  Send,
   Search,
   XCircle,
 } from "lucide-react";
@@ -20,25 +18,23 @@ import type { EmpresaRevision } from "../../../domain/coord-unidades/EmpresaRevi
 import { apiClient } from "../../../infrastructure/api/apiClient";
 import { gestionEmpresasRevisionUseCase } from "../../dependencies";
 
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
 import type { StatCard } from "../../../shared/types/ui";
+
 type ConvenioApi = {
   id_convenio: number;
   id_empresa: number;
-  fecha_inicio: string;
-  fecha_fin: string;
-  documento_convenio: string | null;
-  version: number;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
   es_actual: boolean;
-  renovacion_solicitada: boolean;
-  estado_convenio: "Vigente" | "Vencido" | "Pendiente";
+  estado_convenio: "Vigente" | "Vencido" | "Pendiente" | "Por vencer" | "Rechazado";
+  observaciones: string | null;
 };
 
 type ConvenioVista = ConvenioApi & {
   empresa: string;
   giro: string | null;
-  estado_calculado: "Vigente" | "Por vencer" | "Pendiente" | "Vencido";
-  dias_restantes: number;
+  estado_calculado: "Vigente" | "Por vencer" | "Pendiente" | "Vencido" | "Rechazado";
+  dias_restantes: number | null;
 };
 
 const estadoColor: Record<ConvenioVista["estado_calculado"], string> = {
@@ -46,16 +42,20 @@ const estadoColor: Record<ConvenioVista["estado_calculado"], string> = {
   "Por vencer": "bg-yellow-100 text-yellow-700",
   Pendiente: "bg-orange-100 text-orange-700",
   Vencido: "bg-red-100 text-red-700",
+  Rechazado: "bg-red-100 text-red-700",
 };
 
-function diasEntre(fecha: string) {
+function diasEntre(fecha: string | null) {
+  if (!fecha) return null;
   const hoy = new Date();
   const cierre = new Date(`${fecha}T00:00:00`);
+  if (Number.isNaN(cierre.getTime())) return null;
   hoy.setHours(0, 0, 0, 0);
   return Math.ceil((cierre.getTime() - hoy.getTime()) / 86400000);
 }
 
-function formatearFecha(fecha: string) {
+function formatearFecha(fecha: string | null) {
+  if (!fecha) return "Sin fecha";
   const date = new Date(`${fecha}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "Sin fecha";
   return new Intl.DateTimeFormat("es-MX", {
@@ -66,27 +66,32 @@ function formatearFecha(fecha: string) {
 }
 
 function construirConvenios(convenios: ConvenioApi[], empresas: EmpresaRevision[]): ConvenioVista[] {
-  return convenios.map((convenio) => {
-    const empresa = empresas.find((item) => item.id_empresa === convenio.id_empresa);
-    const diasRestantes = diasEntre(convenio.fecha_fin);
-    let estadoCalculado: ConvenioVista["estado_calculado"] = convenio.estado_convenio;
+  return convenios
+    .map((convenio) => {
+      const empresa = empresas.find((item) => item.id_empresa === convenio.id_empresa);
+      const diasRestantes = diasEntre(convenio.fecha_fin);
+      let estadoCalculado: ConvenioVista["estado_calculado"] = convenio.estado_convenio;
 
-    if (convenio.estado_convenio === "Vigente") {
-      if (diasRestantes < 0) estadoCalculado = "Vencido";
-      else if (diasRestantes <= 30) estadoCalculado = "Por vencer";
-    }
+      if (convenio.estado_convenio === "Vigente" && diasRestantes !== null) {
+        if (diasRestantes < 0) estadoCalculado = "Vencido";
+        else if (diasRestantes <= 30) estadoCalculado = "Por vencer";
+      }
 
-    return {
-      ...convenio,
-      empresa: empresa?.nombre_empresa ?? `Empresa #${convenio.id_empresa}`,
-      giro: empresa?.giro ?? null,
-      estado_calculado: estadoCalculado,
-      dias_restantes: diasRestantes,
-    };
-  }).sort((a, b) => {
-    const prioridad = { "Por vencer": 0, Vencido: 1, Pendiente: 2, Vigente: 3 };
-    return prioridad[a.estado_calculado] - prioridad[b.estado_calculado] || a.dias_restantes - b.dias_restantes;
-  });
+      return {
+        ...convenio,
+        empresa: empresa?.nombre_empresa ?? `Empresa #${convenio.id_empresa}`,
+        giro: empresa?.giro ?? null,
+        estado_calculado: estadoCalculado,
+        dias_restantes: diasRestantes,
+      };
+    })
+    .sort((a, b) => {
+      const prioridad = { "Por vencer": 0, Vencido: 1, Pendiente: 2, Vigente: 3, Rechazado: 4 };
+      return (
+        prioridad[a.estado_calculado] - prioridad[b.estado_calculado] ||
+        (a.dias_restantes ?? Number.MAX_SAFE_INTEGER) - (b.dias_restantes ?? Number.MAX_SAFE_INTEGER)
+      );
+    });
 }
 
 export function GestionConvenios() {
@@ -95,7 +100,6 @@ export function GestionConvenios() {
   const [empresas, setEmpresas] = useState<EmpresaRevision[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [estado, setEstado] = useState("Todos");
-  const [tipo, setTipo] = useState("Todos");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
@@ -125,22 +129,16 @@ export function GestionConvenios() {
 
   const filtrados = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
-
     return conveniosVista.filter((convenio) => {
       const coincideBusqueda =
         !texto ||
-        [convenio.empresa, convenio.giro ?? "", convenio.documento_convenio ?? ""].some((valor) =>
+        [convenio.empresa, convenio.giro ?? "", convenio.observaciones ?? ""].some((valor) =>
           valor.toLowerCase().includes(texto),
         );
       const coincideEstado = estado === "Todos" || convenio.estado_calculado === estado;
-      const coincideTipo =
-        tipo === "Todos" ||
-        (tipo === "Con documento" && Boolean(convenio.documento_convenio)) ||
-        (tipo === "Sin documento" && !convenio.documento_convenio);
-
-      return coincideBusqueda && coincideEstado && coincideTipo;
+      return coincideBusqueda && coincideEstado;
     });
-  }, [busqueda, conveniosVista, estado, tipo]);
+  }, [busqueda, conveniosVista, estado]);
 
   const resumen = useMemo(
     () => ({
@@ -155,37 +153,6 @@ export function GestionConvenios() {
   function limpiarFiltros() {
     setBusqueda("");
     setEstado("Todos");
-    setTipo("Todos");
-  }
-
-  function obtenerUrlDocumento(documento: string) {
-    if (documento.startsWith("http://") || documento.startsWith("https://")) return documento;
-    if (documento.startsWith("/")) return resolveApiUrl(documento);
-    return resolveApiUrl(`/uploads/convenios/${documento}`);
-  }
-
-  function abrirDocumento(convenio: ConvenioVista) {
-    if (!convenio.documento_convenio) return;
-    window.open(obtenerUrlDocumento(convenio.documento_convenio), "_blank");
-  }
-
-  async function solicitarRenovacion(convenio: ConvenioVista) {
-    const observaciones = window.prompt(
-      "Observaciones para la empresa",
-      "Favor de subir la nueva version firmada desde Documentacion.",
-    );
-    if (observaciones === null) return;
-
-    try {
-      setError("");
-      await apiClient.patch(`/convenios/${convenio.id_convenio}/solicitar-renovacion`, {
-        observaciones: observaciones.trim() || undefined,
-      });
-      await cargar();
-    } catch (err) {
-      console.error(err);
-      setError("No se pudo iniciar la renovacion del convenio.");
-    }
   }
 
   return (
@@ -205,7 +172,7 @@ export function GestionConvenios() {
 
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-sm text-[#0d2b5e]">
         Los convenios se generan cuando coordinacion aprueba el documento de convenio en Expedientes.
-        Para renovar, inicia la renovacion y la empresa sube la nueva version desde Documentacion.
+        Para renovar o corregir vigencias, revisa el expediente documental de la empresa.
       </div>
 
       {resumen.porVencer > 0 && (
@@ -254,14 +221,14 @@ export function GestionConvenios() {
           </button>
         </div>
 
-        <div className="grid md:grid-cols-4 gap-4">
+        <div className="grid md:grid-cols-3 gap-4">
           <div className="border rounded-xl px-3 py-2 flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400" />
             <input
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="outline-none text-sm w-full"
-              placeholder="Buscar empresa o documento..."
+              placeholder="Buscar empresa u observaciones..."
             />
           </div>
 
@@ -271,12 +238,7 @@ export function GestionConvenios() {
             <option>Por vencer</option>
             <option>Pendiente</option>
             <option>Vencido</option>
-          </select>
-
-          <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="border rounded-xl px-3 py-2 text-sm bg-white">
-            <option>Todos</option>
-            <option>Con documento</option>
-            <option>Sin documento</option>
+            <option>Rechazado</option>
           </select>
 
           <button
@@ -303,7 +265,7 @@ export function GestionConvenios() {
                 <th className="px-6 py-3">Empresa</th>
                 <th>Vigencia</th>
                 <th>Estado</th>
-                <th>Documento</th>
+                <th>Observaciones</th>
                 <th>Acciones</th>
               </tr>
             </thead>
@@ -317,9 +279,7 @@ export function GestionConvenios() {
                       {convenio.empresa}
                     </div>
                     <div className="text-xs text-gray-400">{convenio.giro ?? "Sin giro registrado"}</div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      Version {convenio.version} · {convenio.es_actual ? "Actual" : "Historico"}
-                    </div>
+                    <div className="text-xs text-gray-400 mt-1">{convenio.es_actual ? "Actual" : "Historico"}</div>
                   </td>
 
                   <td className="text-gray-600">
@@ -327,16 +287,13 @@ export function GestionConvenios() {
                       <CalendarDays className="w-3.5 h-3.5 text-gray-400" />
                       {formatearFecha(convenio.fecha_inicio)} - {formatearFecha(convenio.fecha_fin)}
                     </div>
-                    {convenio.estado_calculado === "Por vencer" && (
+                    {convenio.estado_calculado === "Por vencer" && convenio.dias_restantes !== null && (
                       <div className="text-xs text-yellow-700 mt-1 font-semibold">
-                        Iniciar renovacion · vence en {convenio.dias_restantes} dias
+                        Vence en {convenio.dias_restantes} dias
                       </div>
                     )}
-                    {convenio.estado_calculado === "Vencido" && (
+                    {convenio.estado_calculado === "Vencido" && convenio.dias_restantes !== null && (
                       <div className="text-xs text-red-700 mt-1">Vencido hace {Math.abs(convenio.dias_restantes)} dias</div>
-                    )}
-                    {convenio.renovacion_solicitada && (
-                      <div className="text-xs text-blue-700 mt-1">Renovacion solicitada a la empresa</div>
                     )}
                   </td>
 
@@ -346,46 +303,16 @@ export function GestionConvenios() {
                     </span>
                   </td>
 
-                  <td className="text-gray-500 text-xs">
-                    {convenio.documento_convenio ? (
-                      <div>
-                        <div className="font-medium text-gray-700">Expediente documental</div>
-                        <div className="max-w-xs truncate">{convenio.documento_convenio}</div>
-                      </div>
-                    ) : (
-                      "Sin documento"
-                    )}
-                  </td>
+                  <td className="text-gray-500 text-xs">{convenio.observaciones ?? "Sin observaciones"}</td>
 
                   <td>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => abrirDocumento(convenio)}
-                        disabled={!convenio.documento_convenio}
-                        className="border border-blue-200 text-[#1565c0] rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Eye className="w-3 h-3" />
-                        Ver
-                      </button>
-
-                      <button
-                        onClick={() => navigate(`/coord-unidades/empresas/${convenio.id_empresa}/expediente`)}
-                        className="border border-purple-200 text-purple-600 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1"
-                      >
-                        <FileText className="w-3 h-3" />
-                        Expediente
-                      </button>
-
-                      {convenio.es_actual && convenio.estado_calculado !== "Pendiente" && (
-                        <button
-                          onClick={() => solicitarRenovacion(convenio)}
-                          className="bg-orange-600 text-white rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1"
-                        >
-                          <Send className="w-3 h-3" />
-                          Iniciar renovacion
-                        </button>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => navigate(`/coord-unidades/empresas/${convenio.id_empresa}/expediente`)}
+                      className="border border-purple-200 text-purple-600 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1"
+                    >
+                      <FileText className="w-3 h-3" />
+                      Expediente
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -405,7 +332,7 @@ export function GestionConvenios() {
       <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 flex items-start gap-3">
         <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
         <p className="text-sm text-orange-700">
-          Una empresa solo debe permanecer disponible en el padron cuando cuenta con convenio vigente, documentacion validada y vacantes activas.
+          Una empresa solo debe permanecer disponible en el padron cuando cuenta con tramite vigente, documentacion validada y vacantes activas.
         </p>
       </div>
     </div>

@@ -4,6 +4,7 @@ export interface ConfiguracionSistema {
   escuela_facultad: string;
   correo_institucional: string;
   estado_sistema: string;
+  inscripcion_empresas_estado: string;
   ciclo_escolar: string;
   hero_titulo: string;
   hero_subtitulo: string;

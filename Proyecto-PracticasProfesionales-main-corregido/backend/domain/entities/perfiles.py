@@ -15,18 +15,15 @@ class Alumno:
 
 
 @dataclass(frozen=True)
-class DocenteAsesor:
-    id_docente: int | None
+class PersonalInterno:
+    id_personal: int | None
     id_usuario: int
-    departamento: str
-
-
-@dataclass(frozen=True)
-class Coordinador:
-    id_coordinador: int | None
-    id_usuario: int
-    area: str | None
+    nombre: str
+    apellido_paterno: str
+    apellido_materno: str | None
     departamento: str | None
+    cargo: str | None
+    telefono: str | None
 
 
 @dataclass(frozen=True)

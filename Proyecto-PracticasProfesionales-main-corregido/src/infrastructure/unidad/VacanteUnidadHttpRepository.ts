@@ -1,5 +1,5 @@
 import type {
-  CarreraBasica,
+  ConvocatoriaBasica,
   CrearVacanteUnidadInput,
   VacanteUnidad,
   VacantesUnidadResponse,
@@ -18,8 +18,12 @@ export class VacanteUnidadHttpRepository implements VacanteUnidadRepository {
     return data;
   }
 
-  async listarCarreras(): Promise<CarreraBasica[]> {
-    const { data } = await apiClient.get<CarreraBasica[]>("/carreras/");
+  async listarConvocatorias(): Promise<ConvocatoriaBasica[]> {
+    const { data } = await apiClient.get<ConvocatoriaBasica[]>("/convocatorias/");
     return data;
+  }
+
+  async solicitarParticipacion(idConvocatoria: number): Promise<void> {
+    await apiClient.post("/unidad/me/participaciones", { id_convocatoria: idConvocatoria });
   }
 }

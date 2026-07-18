@@ -6,25 +6,19 @@ from pydantic import BaseModel, ConfigDict
 
 class ConvenioCreate(BaseModel):
     id_empresa: int
-    fecha_inicio: date
-    fecha_fin: date
-    documento_convenio: str | None = None
-    id_documento_empresa: int | None = None
-    version: int = 1
-    es_actual: bool = True
-    renovacion_solicitada: bool = False
     estado_convenio: str = "Pendiente"
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    es_actual: bool = True
+    observaciones: str | None = None
 
 
 class ConvenioUpdate(BaseModel):
     fecha_inicio: date | None = None
     fecha_fin: date | None = None
-    documento_convenio: str | None = None
-    id_documento_empresa: int | None = None
-    version: int | None = None
     es_actual: bool | None = None
-    renovacion_solicitada: bool | None = None
     estado_convenio: str | None = None
+    observaciones: str | None = None
 
 
 class SolicitarRenovacionRequest(BaseModel):
@@ -34,13 +28,10 @@ class SolicitarRenovacionRequest(BaseModel):
 class ConvenioResponse(BaseModel):
     id_convenio: int
     id_empresa: int
-    fecha_inicio: date
-    fecha_fin: date
-    documento_convenio: str | None = None
-    id_documento_empresa: int | None = None
-    version: int
-    es_actual: bool
-    renovacion_solicitada: bool
     estado_convenio: str
+    fecha_inicio: date | None = None
+    fecha_fin: date | None = None
+    es_actual: bool
+    observaciones: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

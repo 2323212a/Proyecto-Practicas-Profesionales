@@ -14,6 +14,9 @@ export interface AuthSession {
   apellido_materno?: string | null;
   nombre_completo: string;
   correo: string;
+  debe_cambiar_password?: boolean;
+  tipo_perfil?: string;
+  id_perfil?: number | null;
   perfil_tipo: string | null;
   perfil: Record<string, unknown> | null;
 }

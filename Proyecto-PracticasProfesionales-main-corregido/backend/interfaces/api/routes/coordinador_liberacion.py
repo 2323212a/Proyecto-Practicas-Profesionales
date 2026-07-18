@@ -70,14 +70,18 @@ def _archivo_liberacion_response(ruta_archivo: Optional[str]):
     }
 
 
-def _nombre_usuario(usuario) -> str:
-    if usuario is None:
+def _nombre_perfil(perfil) -> str:
+    if perfil is None:
         return "Sin usuario"
     return " ".join(
         parte
-        for parte in [usuario.nombre, usuario.apellido_paterno, usuario.apellido_materno]
+        for parte in [
+            getattr(perfil, "nombre", None),
+            getattr(perfil, "apellido_paterno", None),
+            getattr(perfil, "apellido_materno", None),
+        ]
         if parte
-    ) or usuario.correo
+    ) or "Sin usuario"
 
 
 def _float(valor) -> float:
@@ -125,11 +129,11 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
         )
         .count()
     )
-    evaluacion_docente = (
+    evaluacion_asesor = (
         db.query(EvaluacionModel)
         .filter(
             EvaluacionModel.id_asignacion == asignacion.id_asignacion,
-            EvaluacionModel.tipo_evaluacion == "Docente",
+            EvaluacionModel.tipo_evaluacion == "Asesor",
         )
         .first()
     )
@@ -160,7 +164,7 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
         "expediente_aprobado": _expediente_aprobado(db, asignacion.id_alumno),
         "horas_completas": _float(horas_aprobadas) >= HORAS_META,
         "reportes_aprobados": reportes_pendientes == 0 and reportes_rechazados == 0,
-        "evaluacion_docente": evaluacion_docente is not None,
+        "evaluacion_asesor": evaluacion_asesor is not None,
         "evaluacion_empresa": evaluacion_empresa is not None,
         "evaluacion_alumno_empresa": evaluacion_alumno_empresa is not None,
         "incidencias_cerradas": incidencias_abiertas == 0,
@@ -175,7 +179,7 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
     return {
         "id_asignacion": asignacion.id_asignacion,
         "id_alumno": asignacion.id_alumno,
-        "alumno": _nombre_usuario(alumno.usuario if alumno else None),
+        "alumno": _nombre_perfil(alumno),
         "matricula": alumno.matricula if alumno else None,
         "carrera": alumno.carrera.nombre if alumno and alumno.carrera else "Sin carrera",
         "empresa": asignacion.empresa.nombre_empresa if asignacion.empresa else "Sin empresa",

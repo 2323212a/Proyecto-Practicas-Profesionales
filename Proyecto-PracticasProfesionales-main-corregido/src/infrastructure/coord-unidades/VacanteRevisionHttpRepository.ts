@@ -17,7 +17,9 @@ export class VacanteRevisionHttpRepository implements VacanteRevisionRepository 
     });
   }
 
-  async liberarPrepadron(): Promise<void> {
-    await apiClient.post("/coord-unidades/empresas/vacantes/liberar-prepadron", {});
+  async liberarPrepadron(idConvocatoria?: number): Promise<void> {
+    await apiClient.post("/coord-unidades/empresas/vacantes/liberar-prepadron", {
+      id_convocatoria: idConvocatoria,
+    });
   }
 }

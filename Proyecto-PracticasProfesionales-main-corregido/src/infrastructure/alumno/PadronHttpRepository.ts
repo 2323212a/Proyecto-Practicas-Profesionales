@@ -1,6 +1,6 @@
 import type {
   PadronAlumnoResponse,
-  PreferenciaEmpresaRequest,
+  PreferenciaVacanteRequest,
 } from "../../domain/alumno/Padron";
 import type { PadronRepository } from "../../domain/alumno/PadronRepository";
 import { apiClient } from "../api/apiClient";
@@ -15,12 +15,12 @@ export class PadronHttpRepository implements PadronRepository {
 
   async guardarPreferencias(
     _idAlumno: number,
-    preferencias: PreferenciaEmpresaRequest[],
-    idEmpresaPrioritaria: number | null
+    preferencias: PreferenciaVacanteRequest[],
+    idVacantePrioritaria: number | null
   ): Promise<void> {
     await apiClient.put("/alumno/padron/me/preferencias", {
       preferencias,
-      id_empresa_prioritaria: idEmpresaPrioritaria,
+      id_vacante_prioritaria: idVacantePrioritaria,
     });
   }
 }

@@ -10,6 +10,7 @@ class ConfiguracionSistemaUpdate(BaseModel):
     escuela_facultad: str
     correo_institucional: EmailStr
     estado_sistema: str
+    inscripcion_empresas_estado: str = "Abierta"
     ciclo_escolar: str
     hero_titulo: str
     hero_subtitulo: str

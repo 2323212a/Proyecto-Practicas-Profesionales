@@ -1,9 +1,12 @@
-import { createBrowserRouter } from "react-router";
+import { useEffect, useState } from "react";
+import { createBrowserRouter, Navigate, Outlet, useNavigate } from "react-router";
 
 import { LandingPage } from "../pages/landing/LandingPage";
 import { LoginPage } from "../pages/auth/LoginPage";
 import { MainLayout } from "../layouts/MainLayout";
 import { ProtectedRoute } from "./ProtectedRoute";
+import { cambiarPasswordInicial } from "../../infrastructure/auth/authApi";
+import { obtenerRutaInicioPorRol, obtenerRutaInicioSesionGuardada } from "./authSession";
 
 // Alumno
 import { AlumnoDashboard } from "../pages/alumno/AlumnoDashboard";
@@ -52,6 +55,7 @@ import { GestionUsuarios } from "../pages/admin/GestionUsuarios";
 import { AdminRolesPermisos } from "../pages/admin/AdminRolesPermisos";
 import { AdminCatalogos } from "../pages/admin/AdminCatalogos";
 import { AdminReportes } from "../pages/admin/AdminReportes";
+import { AdminBitacora } from "../pages/admin/AdminBitacora";
 import { AdminConfiguracion } from "../pages/admin/AdminConfiguracion";
 
 // Asesor
@@ -65,19 +69,144 @@ import { DireccionDashboard } from "../pages/direccion/DireccionDashboard";
 import { DireccionEstadisticas } from "../pages/direccion/DireccionEstadisticas";
 import { DireccionReportes } from "../pages/direccion/DireccionReportes";
 
+function PublicOnlyRoute() {
+  const rutaSesion = obtenerRutaInicioSesionGuardada();
+  if (rutaSesion) {
+    return <Navigate to={rutaSesion} replace />;
+  }
+  return <Outlet />;
+}
+
+function CambiarPasswordInicialPage() {
+  const navigate = useNavigate();
+  const [passwordActual, setPasswordActual] = useState("");
+  const [passwordNueva, setPasswordNueva] = useState("");
+  const [confirmarPassword, setConfirmarPassword] = useState("");
+  const [mensaje, setMensaje] = useState("");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const usuario = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("usuario") ?? "null");
+    } catch {
+      return null;
+    }
+  })();
+
+  useEffect(() => {
+    if (!usuario) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    const ruta = obtenerRutaInicioPorRol(usuario.rol, usuario.id_rol);
+    if (usuario.rol !== "Alumno" || usuario.debe_cambiar_password !== true) {
+      navigate(ruta, { replace: true });
+    }
+  }, [navigate, usuario]);
+
+  async function guardarPassword() {
+    try {
+      setGuardando(true);
+      setError("");
+      setMensaje("");
+
+      await cambiarPasswordInicial({
+        password_actual: passwordActual,
+        password_nueva: passwordNueva,
+        confirmar_password: confirmarPassword,
+      });
+
+      const usuarioActualizado = {
+        ...usuario,
+        debe_cambiar_password: false,
+      };
+      localStorage.setItem("usuario", JSON.stringify(usuarioActualizado));
+      setMensaje("Contrasena actualizada correctamente.");
+      navigate(obtenerRutaInicioPorRol(usuario.rol, usuario.id_rol), { replace: true });
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo cambiar la contrasena. Revisa los datos ingresados.");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f4f7fb] flex items-center justify-center p-4">
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm max-w-md w-full p-8">
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">Cambiar contrasena</h1>
+        <p className="text-sm text-gray-500 mt-2">
+          Como alumno, debes cambiar la contrasena temporal antes de continuar.
+        </p>
+
+        <div className="space-y-4 mt-6">
+          <input
+            type="password"
+            value={passwordActual}
+            onChange={(event) => setPasswordActual(event.target.value)}
+            placeholder="Contrasena temporal"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+          />
+          <input
+            type="password"
+            value={passwordNueva}
+            onChange={(event) => setPasswordNueva(event.target.value)}
+            placeholder="Nueva contrasena"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+          />
+          <input
+            type="password"
+            value={confirmarPassword}
+            onChange={(event) => setConfirmarPassword(event.target.value)}
+            placeholder="Confirmar nueva contrasena"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+          />
+        </div>
+
+        {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{error}</div>}
+        {mensaje && <div className="mt-4 bg-green-50 border border-green-200 text-green-700 rounded-xl p-3 text-sm">{mensaje}</div>}
+
+        <button
+          onClick={guardarPassword}
+          disabled={guardando}
+          className="mt-6 w-full py-3 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold disabled:opacity-60"
+        >
+          {guardando ? "Guardando..." : "Guardar nueva contrasena"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 export const router = createBrowserRouter([
   {
-    path: "/",
-    element: <LandingPage />,
+    element: <PublicOnlyRoute />,
+    children: [
+      {
+        path: "/",
+        element: <LandingPage />,
+      },
+      {
+        path: "/login",
+        element: <LoginPage />,
+      },
+      {
+        path: "/registro-empresa",
+        element: <RegistroEmpresa />,
+      },
+    ],
   },
   {
-    path: "/login",
-    element: <LoginPage />,
-  },
-  {
-    path: "/registro-empresa",
-    element: <RegistroEmpresa />,
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: "/cambiar-password-inicial",
+        element: <CambiarPasswordInicialPage />,
+      },
+    ],
   },
 
 {
@@ -203,6 +332,7 @@ export const router = createBrowserRouter([
         { path: "roles", element: <AdminRolesPermisos /> },
         { path: "catalogos", element: <AdminCatalogos /> },
         { path: "reportes", element: <AdminReportes /> },
+        { path: "bitacora", element: <AdminBitacora /> },
         { path: "configuracion", element: <AdminConfiguracion /> },
       ],
     },

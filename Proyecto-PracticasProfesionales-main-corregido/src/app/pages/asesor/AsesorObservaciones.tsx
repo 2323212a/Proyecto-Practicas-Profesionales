@@ -14,19 +14,19 @@ import {
 
 import { gestionAsesorUseCase } from "../../dependencies";
 import type {
-  AlumnoEvaluacionDocente,
-  EvaluacionesDocenteResponse,
+  AlumnoEvaluacionAsesor,
+  EvaluacionesAsesorResponse,
 } from "../../../domain/asesor/Asesor";
 
 import type { StatCard } from "../../../shared/types/ui";
-function obtenerIdDocenteSesion() {
+function obtenerIdAsesorSesion() {
   const usuario = localStorage.getItem("usuario");
   if (!usuario) return null;
 
   try {
     const sesion = JSON.parse(usuario);
-    const idDocente = sesion?.perfil?.id_docente;
-    return typeof idDocente === "number" ? idDocente : null;
+    const idAsesor = sesion?.perfil?.id_personal;
+    return typeof idAsesor === "number" ? idAsesor : null;
   } catch {
     return null;
   }
@@ -41,23 +41,23 @@ function formatearFecha(fecha: string) {
 }
 
 export function AsesorObservaciones() {
-  const [datos, setDatos] = useState<EvaluacionesDocenteResponse | null>(null);
+  const [datos, setDatos] = useState<EvaluacionesAsesorResponse | null>(null);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [busqueda, setBusqueda] = useState("");
-  const [seleccionado, setSeleccionado] = useState<AlumnoEvaluacionDocente | null>(null);
+  const [seleccionado, setSeleccionado] = useState<AlumnoEvaluacionAsesor | null>(null);
   const [calificacion, setCalificacion] = useState(90);
   const [comentarios, setComentarios] = useState("");
 
-  const idDocente = obtenerIdDocenteSesion();
+  const idAsesor = obtenerIdAsesorSesion();
 
   useEffect(() => {
     void cargar();
-  }, [idDocente]); // eslint-disable-line react-hooks/exhaustive-deps -- cargar only reads the current advisor id.
+  }, [idAsesor]); // eslint-disable-line react-hooks/exhaustive-deps -- cargar only reads the current advisor id.
 
   async function cargar() {
-    if (!idDocente) {
+    if (!idAsesor) {
       setError("No se encontro el perfil de asesor en la sesion actual.");
       setCargando(false);
       return;
@@ -66,11 +66,11 @@ export function AsesorObservaciones() {
     try {
       setCargando(true);
       setError("");
-      const respuesta = await gestionAsesorUseCase.listarEvaluaciones(idDocente);
+      const respuesta = await gestionAsesorUseCase.listarEvaluaciones(idAsesor);
       setDatos(respuesta);
     } catch (err) {
       console.error(err);
-      setError("No se pudieron cargar las evaluaciones docentes.");
+      setError("No se pudieron cargar las evaluaciones del asesor.");
     } finally {
       setCargando(false);
     }
@@ -86,7 +86,7 @@ export function AsesorObservaciones() {
     );
   }, [busqueda, datos]);
 
-  function abrirEvaluacion(alumno: AlumnoEvaluacionDocente) {
+  function abrirEvaluacion(alumno: AlumnoEvaluacionAsesor) {
     setSeleccionado(alumno);
     setCalificacion(alumno.evaluacion?.calificacion ?? 90);
     setComentarios(alumno.evaluacion?.comentarios ?? "");
@@ -94,12 +94,12 @@ export function AsesorObservaciones() {
 
   async function guardarEvaluacion(event: FormEvent) {
     event.preventDefault();
-    if (!idDocente || !seleccionado) return;
+    if (!idAsesor || !seleccionado) return;
 
     try {
       setGuardando(seleccionado.id_asignacion);
       setError("");
-      await gestionAsesorUseCase.guardarEvaluacion(idDocente, {
+      await gestionAsesorUseCase.guardarEvaluacion(idAsesor, {
         id_asignacion: seleccionado.id_asignacion,
         calificacion,
         comentarios: comentarios.trim() || undefined,
@@ -109,7 +109,7 @@ export function AsesorObservaciones() {
       await cargar();
     } catch (err) {
       console.error(err);
-      setError("No se pudo guardar la evaluacion docente.");
+      setError("No se pudo guardar la evaluacion del asesor.");
     } finally {
       setGuardando(null);
     }
@@ -125,7 +125,7 @@ export function AsesorObservaciones() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Evaluacion Docente</h1>
+        <h1 className="text-2xl font-bold text-[#0d2b5e]">evaluacion del asesor</h1>
         <p className="text-gray-500 text-sm mt-1">
           Registra la evaluacion academica de los alumnos asignados cuando sus reportes esten listos.
         </p>

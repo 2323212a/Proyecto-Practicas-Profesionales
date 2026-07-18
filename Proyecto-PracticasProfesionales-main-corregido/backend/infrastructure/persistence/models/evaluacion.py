@@ -13,7 +13,7 @@ class EvaluacionModel(Base):
     id_evaluacion = Column(Integer, primary_key=True, autoincrement=True)
     id_asignacion = Column(Integer, ForeignKey("asignacion.id_asignacion"), nullable=False)
     id_usuario_evaluador = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False)
-    tipo_evaluacion = Column(Enum("Empresa", "Docente"), nullable=False)
+    tipo_evaluacion = Column(Enum("Asesor", "Empresa"), nullable=False)
     calificacion = Column(Numeric(5, 2), nullable=False)
     comentarios = Column(Text, nullable=True)
     fecha_evaluacion = Column(Date, nullable=False)

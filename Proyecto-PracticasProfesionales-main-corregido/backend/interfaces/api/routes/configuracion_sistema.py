@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
+from app.services.auditoria_service import registrar_bitacora
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
+from infrastructure.persistence.models.usuario import UsuarioModel
+from infrastructure.security.auth_dependencies import obtener_usuario_actual
 from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
@@ -22,21 +26,49 @@ router = APIRouter(
 
 
 VALORES_DEFAULT = {
-    "nombre_sistema": "Sistema Integral de Prácticas Profesionales",
+    "nombre_sistema": "Sistema Integral de Practicas Profesionales",
     "escuela_facultad": "ETDA C-I",
     "correo_institucional": "practicas@unach.mx",
     "estado_sistema": "Activo",
+    "inscripcion_empresas_estado": "Abierta",
     "ciclo_escolar": "Ciclo Escolar 2026-2027",
-    "hero_titulo": "Sistema Integral de Prácticas Profesionales",
+    "hero_titulo": "Sistema Integral de Practicas Profesionales",
     "hero_subtitulo": (
-        "Plataforma institucional para la gestión, seguimiento y control "
-        "de las prácticas profesionales."
+        "Plataforma institucional para la gestion, seguimiento y control "
+        "de las practicas profesionales."
     ),
     "convocatoria_nombre": "Verano 2026",
     "convocatoria_inicio": date(2026, 6, 1),
     "convocatoria_cierre": date(2026, 7, 11),
     "soporte_telefono": "(961) 619-1200",
 }
+
+ESTADOS_SISTEMA = {"Activo", "Mantenimiento", "Suspendido"}
+ESTADOS_INSCRIPCION_EMPRESAS = {"Abierta", "Cerrada"}
+TELEFONO_PATTERN = re.compile(r"^[0-9+\-()\s]{7,30}$")
+
+
+def limpiar_texto(valor: str | None):
+    if valor is None:
+        return None
+    texto = valor.strip()
+    return texto or None
+
+
+def validar_texto_requerido(valor: str | None, campo: str):
+    texto = limpiar_texto(valor)
+    if not texto:
+        raise HTTPException(status_code=400, detail=f"{campo} es obligatorio")
+    return texto
+
+
+def validar_telefono(valor: str | None):
+    telefono = limpiar_texto(valor)
+    if telefono is None:
+        return None
+    if not TELEFONO_PATTERN.match(telefono):
+        raise HTTPException(status_code=400, detail="Telefono de soporte con formato no valido")
+    return telefono
 
 
 def obtener_convocatoria_principal(db: Session, id_convocatoria: int | None):
@@ -108,6 +140,7 @@ def serializar_configuracion(configuracion: ConfiguracionSistemaModel, db: Sessi
         "escuela_facultad": configuracion.escuela_facultad,
         "correo_institucional": configuracion.correo_institucional,
         "estado_sistema": configuracion.estado_sistema,
+        "inscripcion_empresas_estado": configuracion.inscripcion_empresas_estado,
         "ciclo_escolar": configuracion.ciclo_escolar,
         "hero_titulo": configuracion.hero_titulo,
         "hero_subtitulo": configuracion.hero_subtitulo,
@@ -144,9 +177,55 @@ def obtener_configuracion_sistema(db: Session = Depends(obtener_db)):
 def actualizar_configuracion_sistema(
     datos: ConfiguracionSistemaUpdate,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     configuracion = obtener_o_crear_configuracion(db)
+    estado_anterior = configuracion.estado_sistema
+    inscripcion_anterior = configuracion.inscripcion_empresas_estado
     datos_actualizar = datos.model_dump()
+
+    datos_actualizar["nombre_sistema"] = validar_texto_requerido(
+        datos_actualizar.get("nombre_sistema"),
+        "Nombre del sistema",
+    )
+    datos_actualizar["escuela_facultad"] = validar_texto_requerido(
+        datos_actualizar.get("escuela_facultad"),
+        "Escuela / Facultad",
+    )
+    datos_actualizar["correo_institucional"] = validar_texto_requerido(
+        str(datos_actualizar.get("correo_institucional") or ""),
+        "Correo institucional",
+    ).lower()
+    datos_actualizar["estado_sistema"] = validar_texto_requerido(
+        datos_actualizar.get("estado_sistema"),
+        "Estado del sistema",
+    )
+    if datos_actualizar["estado_sistema"] not in ESTADOS_SISTEMA:
+        raise HTTPException(status_code=400, detail="Estado del sistema no valido")
+    datos_actualizar["inscripcion_empresas_estado"] = validar_texto_requerido(
+        datos_actualizar.get("inscripcion_empresas_estado"),
+        "Inscripcion de nuevas empresas",
+    )
+    if datos_actualizar["inscripcion_empresas_estado"] not in ESTADOS_INSCRIPCION_EMPRESAS:
+        raise HTTPException(
+            status_code=400,
+            detail="Estado de inscripcion de empresas no valido",
+        )
+    datos_actualizar["ciclo_escolar"] = validar_texto_requerido(
+        datos_actualizar.get("ciclo_escolar"),
+        "Ciclo escolar",
+    )
+    datos_actualizar["hero_titulo"] = validar_texto_requerido(
+        datos_actualizar.get("hero_titulo"),
+        "Titulo principal",
+    )
+    datos_actualizar["hero_subtitulo"] = validar_texto_requerido(
+        datos_actualizar.get("hero_subtitulo"),
+        "Texto descriptivo principal",
+    )
+    datos_actualizar["soporte_telefono"] = validar_telefono(
+        datos_actualizar.get("soporte_telefono")
+    )
 
     id_convocatoria = datos_actualizar.get("id_convocatoria_principal")
     if id_convocatoria is not None:
@@ -166,4 +245,38 @@ def actualizar_configuracion_sistema(
 
     db.commit()
     db.refresh(configuracion)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Editar configuracion",
+        "configuracion_sistema",
+        "Admin actualizo la configuracion del sistema",
+        "configuracion_sistema",
+        configuracion.id_configuracion,
+    )
+    if estado_anterior != configuracion.estado_sistema:
+        registrar_bitacora(
+            db,
+            usuario_actual.id_usuario,
+            "Cambiar estado_sistema",
+            "configuracion_sistema",
+            f"Admin cambio estado_sistema de {estado_anterior} a {configuracion.estado_sistema}",
+            "configuracion_sistema",
+            configuracion.id_configuracion,
+        )
+    if inscripcion_anterior != configuracion.inscripcion_empresas_estado:
+        accion = (
+            "Abrir inscripcion de empresas"
+            if configuracion.inscripcion_empresas_estado == "Abierta"
+            else "Cerrar inscripcion de empresas"
+        )
+        registrar_bitacora(
+            db,
+            usuario_actual.id_usuario,
+            accion,
+            "configuracion_sistema",
+            f"Admin cambio inscripcion de empresas de {inscripcion_anterior} a {configuracion.inscripcion_empresas_estado}",
+            "configuracion_sistema",
+            configuracion.id_configuracion,
+        )
     return serializar_configuracion(configuracion, db)

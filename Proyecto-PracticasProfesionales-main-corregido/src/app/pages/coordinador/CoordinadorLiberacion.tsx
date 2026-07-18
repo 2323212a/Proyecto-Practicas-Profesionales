@@ -9,7 +9,7 @@ const requisitoLabel: Record<string, string> = {
   expediente_aprobado: "Expediente aprobado",
   horas_completas: "Horas completas",
   reportes_aprobados: "Reportes aprobados",
-  evaluacion_docente: "Evaluacion docente",
+  evaluacion_asesor: "Evaluacion asesor",
   evaluacion_empresa: "Evaluacion empresa",
   evaluacion_alumno_empresa: "Evaluacion alumno a empresa",
   incidencias_cerradas: "Incidencias cerradas",

@@ -128,12 +128,16 @@ def _normalizar_etapa(etapa: str | None) -> str:
     return (etapa or "").strip().lower().replace(" ", "_")
 
 
-def _nombre_usuario(usuario: UsuarioModel) -> str:
+def _nombre_perfil(perfil, fallback: str = "Sin nombre") -> str:
     return " ".join(
         parte
-        for parte in [usuario.nombre, usuario.apellido_paterno, usuario.apellido_materno]
+        for parte in [
+            getattr(perfil, "nombre", None),
+            getattr(perfil, "apellido_paterno", None),
+            getattr(perfil, "apellido_materno", None),
+        ]
         if parte
-    )
+    ) or fallback
 
 
 def _safe_filename(filename: str) -> str:
@@ -197,7 +201,7 @@ def _documento_response(db: Session, documento: DocumentoModel) -> DocumentoRevi
         validacion_automatica_estado=documento.validacion_automatica_estado,
         requiere_validacion_automatica=documento.requiere_validacion_automatica,
         id_alumno=alumno.id_alumno,
-        alumno=_nombre_usuario(alumno.usuario),
+        alumno=_nombre_perfil(alumno, "Alumno"),
         matricula=alumno.matricula,
         carrera=alumno.carrera.nombre,
         estado_expediente=documento.expediente.estado_expediente,
@@ -253,7 +257,7 @@ def _es_etapa_habilitante(etapa: str | None) -> bool:
 
 
 def _nombre_completo_alumno(alumno: AlumnoModel) -> str:
-    return _nombre_usuario(alumno.usuario) if alumno.usuario else "Alumno"
+    return _nombre_perfil(alumno, "Alumno")
 
 
 def _ultimo_expediente(alumno: AlumnoModel) -> ExpedienteModel | None:
@@ -323,7 +327,7 @@ def _resumen_fases_alumno(alumno: AlumnoModel, tipos: list[TipoDocumentoModel]) 
     elif inicial_aprobado and seleccion_realizada and asignacion is None:
         estado_documental = "Seleccion registrada"
         fase = "Asignacion"
-        siguiente_paso = "Confirmar empresa y docente asesor"
+        siguiente_paso = "Confirmar empresa y asesor interno"
         prioridad = 4
     elif asignacion is not None:
         estado_documental = "Asignado"
@@ -378,9 +382,9 @@ def _alumno_gestion_response(alumno: AlumnoModel, tipos: list[TipoDocumentoModel
         "estado_alumno": alumno.estado_alumno,
         "estado_expediente": expediente.estado_expediente if expediente else "Sin expediente",
         "empresa": asignacion.empresa.nombre_empresa if asignacion and asignacion.empresa else "Sin asignar",
-        "docente": (
-            _nombre_usuario(asignacion.docente.usuario)
-            if asignacion and asignacion.docente and asignacion.docente.usuario
+        "asesor": (
+            _nombre_perfil(asignacion.asesor, "Sin asignar")
+            if asignacion and asignacion.asesor
             else "Sin asignar"
         ),
         "tipo_asignacion": asignacion.tipo_asignacion if asignacion else "Sin asignacion",
@@ -404,7 +408,7 @@ def obtener_dashboard_coordinador_documental(db: Session = Depends(obtener_db)):
     alumnos = (
         db.query(AlumnoModel)
         .join(UsuarioModel, UsuarioModel.id_usuario == AlumnoModel.id_usuario)
-        .order_by(UsuarioModel.apellido_paterno.asc(), UsuarioModel.nombre.asc())
+        .order_by(AlumnoModel.apellido_paterno.asc(), AlumnoModel.nombre.asc())
         .all()
     )
     alumnos_gestion = [_alumno_gestion_response(alumno, tipos) for alumno in alumnos]
@@ -421,13 +425,23 @@ def obtener_dashboard_coordinador_documental(db: Session = Depends(obtener_db)):
         estado_documentos["Observados"] += item["resumen"]["observados"]
         estado_documentos["Faltantes"] += item["resumen"]["faltantes"]
 
+    asignaciones_activas = (
+        db.query(
+            AsignacionModel.id_vacante.label("id_vacante"),
+            func.count(AsignacionModel.id_asignacion).label("ocupados"),
+        )
+        .filter(AsignacionModel.estado_asignacion == "Activa")
+        .group_by(AsignacionModel.id_vacante)
+        .subquery()
+    )
     empresas_disponibles = (
         db.query(func.count(func.distinct(EmpresaModel.id_empresa)))
         .join(VacanteModel, VacanteModel.id_empresa == EmpresaModel.id_empresa)
+        .outerjoin(asignaciones_activas, asignaciones_activas.c.id_vacante == VacanteModel.id_vacante)
         .filter(
             EmpresaModel.estado_empresa == "Activa",
             VacanteModel.estado_vacante == "Activa",
-            VacanteModel.cupo_disponible > 0,
+            func.coalesce(asignaciones_activas.c.ocupados, 0) < VacanteModel.cupos,
         )
         .scalar()
         or 0
@@ -468,7 +482,7 @@ def listar_alumnos_gestion_coordinador(db: Session = Depends(obtener_db)):
     alumnos = (
         db.query(AlumnoModel)
         .join(UsuarioModel, UsuarioModel.id_usuario == AlumnoModel.id_usuario)
-        .order_by(UsuarioModel.apellido_paterno.asc(), UsuarioModel.nombre.asc())
+        .order_by(AlumnoModel.apellido_paterno.asc(), AlumnoModel.nombre.asc())
         .all()
     )
     return [_alumno_gestion_response(alumno, tipos) for alumno in alumnos]
@@ -576,7 +590,7 @@ def listar_revision_documental(db: Session = Depends(obtener_db)):
     alumnos = (
         db.query(AlumnoModel)
         .join(UsuarioModel, UsuarioModel.id_usuario == AlumnoModel.id_usuario)
-        .order_by(UsuarioModel.apellido_paterno.asc(), UsuarioModel.nombre.asc())
+        .order_by(AlumnoModel.apellido_paterno.asc(), AlumnoModel.nombre.asc())
         .all()
     )
     return RevisionDocumentalResponse(

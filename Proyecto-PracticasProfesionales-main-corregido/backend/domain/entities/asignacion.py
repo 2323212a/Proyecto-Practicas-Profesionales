@@ -10,7 +10,8 @@ class Asignacion:
     id_empresa: int
     id_vacante: int
     id_convocatoria: int
+    id_tipo_practica: int
     fecha_asignacion: date
     estado_asignacion: str
     tipo_asignacion: str
-    id_docente: int | None = None
+    id_asesor: int | None = None

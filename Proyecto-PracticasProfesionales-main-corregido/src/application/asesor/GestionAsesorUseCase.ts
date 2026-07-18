@@ -1,9 +1,9 @@
 import type {
   AlumnosAsignadosAsesorResponse,
-  AlumnoEvaluacionDocente,
+  AlumnoEvaluacionAsesor,
   EstadoReporteAsesor,
-  EvaluacionesDocenteResponse,
-  GuardarEvaluacionDocenteInput,
+  EvaluacionesAsesorResponse,
+  GuardarEvaluacionAsesorInput,
   ReporteAsesor,
   ReportesAsesorResponse,
   ResumenAsesor,
@@ -17,35 +17,35 @@ export class GestionAsesorUseCase {
     this.repository = repository;
   }
 
-  listarAlumnos(idDocente: number): Promise<AlumnosAsignadosAsesorResponse> {
-    return this.repository.listarAlumnos(idDocente);
+  listarAlumnos(idAsesor: number): Promise<AlumnosAsignadosAsesorResponse> {
+    return this.repository.listarAlumnos(idAsesor);
   }
 
-  obtenerDashboard(idDocente: number): Promise<ResumenAsesor> {
-    return this.repository.obtenerDashboard(idDocente);
+  obtenerDashboard(idAsesor: number): Promise<ResumenAsesor> {
+    return this.repository.obtenerDashboard(idAsesor);
   }
 
-  listarReportes(idDocente: number): Promise<ReportesAsesorResponse> {
-    return this.repository.listarReportes(idDocente);
+  listarReportes(idAsesor: number): Promise<ReportesAsesorResponse> {
+    return this.repository.listarReportes(idAsesor);
   }
 
   cambiarEstadoReporte(
-    idDocente: number,
+    idAsesor: number,
     idReporte: number,
     estado: Exclude<EstadoReporteAsesor, "Pendiente">,
     observacion?: string,
   ): Promise<ReporteAsesor> {
-    return this.repository.cambiarEstadoReporte(idDocente, idReporte, estado, observacion);
+    return this.repository.cambiarEstadoReporte(idAsesor, idReporte, estado, observacion);
   }
 
-  listarEvaluaciones(idDocente: number): Promise<EvaluacionesDocenteResponse> {
-    return this.repository.listarEvaluaciones(idDocente);
+  listarEvaluaciones(idAsesor: number): Promise<EvaluacionesAsesorResponse> {
+    return this.repository.listarEvaluaciones(idAsesor);
   }
 
   guardarEvaluacion(
-    idDocente: number,
-    datos: GuardarEvaluacionDocenteInput,
-  ): Promise<AlumnoEvaluacionDocente> {
-    return this.repository.guardarEvaluacion(idDocente, datos);
+    idAsesor: number,
+    datos: GuardarEvaluacionAsesorInput,
+  ): Promise<AlumnoEvaluacionAsesor> {
+    return this.repository.guardarEvaluacion(idAsesor, datos);
   }
 }

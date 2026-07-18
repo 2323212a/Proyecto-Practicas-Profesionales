@@ -11,10 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
-from app.services.convenio_empresa_service import (
-    activar_convenio_actual,
-    obtener_convenio_actual,
-)
+from app.services.convenio_empresa_service import activar_convenio_actual, obtener_convenio_actual
 from app.services.notificacion_service import crear_notificacion, notificar_roles
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, requerir_empresa_actual_o_roles, requerir_roles
@@ -31,26 +28,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Documentacion de Empresas"])
 UPLOAD_DOCUMENTOS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "documentos_empresa"
 UPLOAD_FORMATOS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "formatos_empresa"
-FORMATOS_MIME_PERMITIDOS = {
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
-
 class SubirDocumentoEmpresaRequest(BaseModel):
     id_tipo_documento_empresa: int
     nombre_archivo: str
     contenido_base64: str
-    mime_type: str = "application/pdf"
 
 
 class SubirFormatoEmpresaRequest(BaseModel):
     id_tipo_documento_empresa: int
     nombre_archivo: str
     contenido_base64: str
-    mime_type: str = "application/pdf"
-    descripcion: str | None = None
+    version: str | None = None
 
 
 class RevisarDocumentoEmpresaRequest(BaseModel):
@@ -63,7 +51,6 @@ class RevisarDocumentoEmpresaRequest(BaseModel):
 class EditarDocumentoEmpresaRequest(BaseModel):
     nombre_archivo: str
     contenido_base64: str
-    mime_type: str = "application/pdf"
     observaciones: str | None = None
 
 
@@ -98,17 +85,9 @@ def _decode_base64(content: str) -> bytes:
         raise HTTPException(status_code=400, detail="Archivo base64 invalido") from exc
 
 
-def _validar_mime_formato(mime_type: str) -> None:
-    if mime_type not in FORMATOS_MIME_PERMITIDOS:
-        raise HTTPException(
-            status_code=400,
-            detail="Solo se permiten formatos PDF, DOC o DOCX",
-        )
-
-
 def _validar_etapa(etapa: str) -> str:
-    if etapa not in {"Documentacion", "Convenio"}:
-        raise HTTPException(status_code=400, detail="La etapa debe ser Documentacion o Convenio")
+    if etapa not in {"Documentacion", "Convenio", "Vinculacion"}:
+        raise HTTPException(status_code=400, detail="La etapa debe ser Documentacion, Convenio o Vinculacion")
     return etapa
 
 
@@ -145,10 +124,9 @@ def _formato_response(formato: FormatoEmpresaModel | None):
         "id_formato_empresa": formato.id_formato_empresa,
         "nombre_archivo": formato.nombre_archivo,
         "url": f"/uploads/formatos_empresa/{Path(formato.ruta_archivo).name}",
-        "mime_type": formato.mime_type,
-        "descripcion": formato.descripcion,
+        "version": formato.version,
         "formato_activo": formato.activo,
-        "fecha_actualizacion": formato.fecha_actualizacion.isoformat() if formato.fecha_actualizacion else None,
+        "fecha_subida": formato.fecha_subida.isoformat() if formato.fecha_subida else None,
     }
 
 
@@ -161,10 +139,9 @@ def _documento_response(documento: DocumentoEmpresaModel | None):
         "id_tipo_documento_empresa": documento.id_tipo_documento_empresa,
         "nombre_archivo": documento.nombre_archivo,
         "url": f"/uploads/documentos_empresa/{Path(documento.ruta_archivo).name}",
-        "mime_type": documento.mime_type,
         "estado_documento": documento.estado_documento,
         "observaciones": documento.observaciones,
-        "fecha_carga": documento.fecha_carga.isoformat() if documento.fecha_carga else None,
+        "fecha_subida": documento.fecha_subida.isoformat() if documento.fecha_subida else None,
         "fecha_revision": documento.fecha_revision.isoformat() if documento.fecha_revision else None,
     }
 
@@ -185,7 +162,7 @@ def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = No
     formatos_activos = [formato for formato in tipo.formatos if formato.activo]
     formato = sorted(
         formatos_activos,
-        key=lambda item: item.fecha_actualizacion,
+        key=lambda item: item.updated_at or item.created_at,
         reverse=True,
     )[0] if formatos_activos else None
     return {
@@ -205,17 +182,13 @@ def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = No
     }
 
 
-def _es_documento_convenio(tipo: TipoDocumentoEmpresaModel | None) -> bool:
+def _es_requisito_de_convenio(tipo: TipoDocumentoEmpresaModel | None) -> bool:
     if tipo is None:
         return False
     if tipo.etapa == "Convenio":
         return True
     texto = f"{tipo.nombre} {tipo.descripcion or ''}".lower()
     return "convenio" in texto or "carta compromiso" in texto
-
-
-def _url_documento_empresa(documento: DocumentoEmpresaModel) -> str:
-    return f"/uploads/documentos_empresa/{Path(documento.ruta_archivo).name}"
 
 
 def _documentacion_legal_aprobada(db: Session, id_empresa: int) -> bool:
@@ -253,7 +226,7 @@ def _sincronizar_convenio_desde_documento(
     fecha_fin: date | None = None,
 ) -> None:
     tipo_documento = tipo or documento.tipo_documento
-    if empresa is None or not _es_documento_convenio(tipo_documento):
+    if empresa is None or not _es_requisito_de_convenio(tipo_documento):
         return
 
     convenio_actual = obtener_convenio_actual(db, empresa.id_empresa)
@@ -267,50 +240,15 @@ def _sincronizar_convenio_desde_documento(
                 detail="La fecha fin del convenio no puede ser menor a la fecha inicio",
             )
 
-        # Primero reutiliza una renovacion pendiente. Si el mismo documento ya
-        # estaba aprobado y se vuelve a revisar, actualiza el convenio ligado
-        # en lugar de crear un duplicado.
-        convenio_objetivo = (
-            db.query(ConvenioModel)
-            .filter(
-                ConvenioModel.id_empresa == empresa.id_empresa,
-                ConvenioModel.id_documento_empresa == documento.id_documento_empresa,
-                ConvenioModel.estado_convenio == "Pendiente",
-            )
-            .order_by(ConvenioModel.id_convenio.desc())
-            .first()
-        )
-        if convenio_objetivo is None:
-            convenio_objetivo = (
-                db.query(ConvenioModel)
-                .filter(
-                    ConvenioModel.id_empresa == empresa.id_empresa,
-                    ConvenioModel.id_documento_empresa == documento.id_documento_empresa,
-                )
-                .order_by(
-                    ConvenioModel.es_actual.desc(),
-                    ConvenioModel.id_convenio.desc(),
-                )
-                .first()
-            )
-
-        if convenio_objetivo is None:
-            version = (
-                db.query(ConvenioModel)
-                .filter(ConvenioModel.id_empresa == empresa.id_empresa)
-                .count()
-                + 1
-            )
+        convenio_objetivo = convenio_actual
+        if convenio_objetivo is None or convenio_objetivo.estado_convenio == "Vencido":
             convenio_objetivo = ConvenioModel(
                 id_empresa=empresa.id_empresa,
                 fecha_inicio=inicio,
                 fecha_fin=fin,
-                documento_convenio=_url_documento_empresa(documento),
-                id_documento_empresa=documento.id_documento_empresa,
-                version=version,
                 es_actual=False,
-                renovacion_solicitada=False,
                 estado_convenio="Pendiente",
+                observaciones=documento.observaciones,
             )
             db.add(convenio_objetivo)
             db.flush()
@@ -321,49 +259,29 @@ def _sincronizar_convenio_desde_documento(
             convenio_objetivo,
             fecha_inicio=inicio,
             fecha_fin=fin,
-            documento_convenio=_url_documento_empresa(documento),
         )
         return
 
     if documento.estado_documento == "Pendiente":
-        pendiente = (
-            db.query(ConvenioModel)
-            .filter(
-                ConvenioModel.id_empresa == empresa.id_empresa,
-                ConvenioModel.id_documento_empresa == documento.id_documento_empresa,
-                ConvenioModel.estado_convenio == "Pendiente",
-            )
-            .order_by(ConvenioModel.id_convenio.desc())
-            .first()
-        )
+        pendiente = convenio_actual if convenio_actual and convenio_actual.estado_convenio == "Pendiente" else None
         if pendiente is None:
-            version = (
-                db.query(ConvenioModel)
-                .filter(ConvenioModel.id_empresa == empresa.id_empresa)
-                .count()
-                + 1
-            )
             db.add(
                 ConvenioModel(
                     id_empresa=empresa.id_empresa,
-                    fecha_inicio=date.today(),
-                    fecha_fin=date.today(),
-                    documento_convenio=_url_documento_empresa(documento),
-                    id_documento_empresa=documento.id_documento_empresa,
-                    version=version,
+                    fecha_inicio=None,
+                    fecha_fin=None,
                     es_actual=False,
-                    renovacion_solicitada=False,
                     estado_convenio="Pendiente",
+                    observaciones=documento.observaciones,
                 )
             )
         else:
-            pendiente.documento_convenio = _url_documento_empresa(documento)
-        if convenio_actual is not None:
-            convenio_actual.renovacion_solicitada = False
+            pendiente.observaciones = documento.observaciones
         return
 
     if convenio_actual is not None and documento.estado_documento == "Rechazado":
-        convenio_actual.renovacion_solicitada = True
+        convenio_actual.estado_convenio = "Rechazado"
+        convenio_actual.observaciones = documento.observaciones
 
 def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
     tipos_obligatorios = (
@@ -442,7 +360,7 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
         formatos_activos = [formato for formato in tipo.formatos if formato.activo]
         formato = sorted(
             formatos_activos,
-            key=lambda item: item.fecha_actualizacion,
+            key=lambda item: item.updated_at or item.created_at,
             reverse=True,
         )[0] if formatos_activos else None
         documento = por_tipo.get(tipo.id_tipo_documento_empresa)
@@ -484,11 +402,11 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
         "convenio_actual": (
             {
                 "id_convenio": convenio_actual.id_convenio,
-                "fecha_inicio": convenio_actual.fecha_inicio.isoformat(),
-                "fecha_fin": convenio_actual.fecha_fin.isoformat(),
+                "fecha_inicio": convenio_actual.fecha_inicio.isoformat() if convenio_actual.fecha_inicio else None,
+                "fecha_fin": convenio_actual.fecha_fin.isoformat() if convenio_actual.fecha_fin else None,
                 "estado_convenio": convenio_actual.estado_convenio,
-                "version": convenio_actual.version,
-                "renovacion_solicitada": convenio_actual.renovacion_solicitada,
+                "es_actual": convenio_actual.es_actual,
+                "observaciones": convenio_actual.observaciones,
             }
             if convenio_actual
             else None
@@ -556,9 +474,6 @@ def subir_documento_empresa(
             status_code=400,
             detail="El convenio se habilita cuando la documentacion legal obligatoria esta aprobada",
         )
-    if datos.mime_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
     contenido = _decode_base64(datos.contenido_base64)
     if len(contenido) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
@@ -583,21 +498,16 @@ def subir_documento_empresa(
             id_tipo_documento_empresa=datos.id_tipo_documento_empresa,
             nombre_archivo=safe_name,
             ruta_archivo=str(ruta),
-            mime_type=datos.mime_type,
             estado_documento="Pendiente",
         )
         db.add(documento)
     else:
         documento.nombre_archivo = safe_name
         documento.ruta_archivo = str(ruta)
-        documento.mime_type = datos.mime_type
         documento.estado_documento = "Pendiente"
         documento.observaciones = None
         documento.fecha_revision = None
 
-    # El id del documento es necesario para enlazar de forma idempotente la
-    # version pendiente del convenio. Sin este flush, un documento nuevo queda
-    # con id_documento_empresa NULL y la aprobacion puede crear duplicados.
     db.flush()
     _sincronizar_convenio_desde_documento(db, documento, empresa, tipo)
     _recalcular_estado_empresa(db, empresa)
@@ -666,8 +576,6 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
         raise HTTPException(status_code=404, detail="Tipo de documento no encontrado")
     if not tipo.requiere_formato:
         raise HTTPException(status_code=400, detail="El requisito no esta configurado para usar formato")
-    _validar_mime_formato(datos.mime_type)
-
     contenido = _decode_base64(datos.contenido_base64)
     if len(contenido) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="El formato no debe superar 10 MB")
@@ -686,8 +594,7 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
         id_tipo_documento_empresa=tipo.id_tipo_documento_empresa,
         nombre_archivo=safe_name,
         ruta_archivo=str(ruta),
-        mime_type=datos.mime_type,
-        descripcion=datos.descripcion,
+        version=datos.version.strip() if datos.version else None,
         activo=True,
     )
     db.add(formato)
@@ -923,7 +830,7 @@ def revisar_documento_empresa(
     datos: RevisarDocumentoEmpresaRequest,
     db: Session = Depends(obtener_db),
 ):
-    if datos.estado_documento not in {"Aprobado", "Rechazado", "Pendiente"}:
+    if datos.estado_documento not in {"Aprobado", "Rechazado", "Pendiente", "Con observaciones"}:
         raise HTTPException(status_code=400, detail="Estado de documento no valido")
 
     documento = (
@@ -983,9 +890,6 @@ def reemplazar_documento_empresa_por_coordinacion(
     )
     if documento is None:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    if datos.mime_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
     contenido = _decode_base64(datos.contenido_base64)
     if len(contenido) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
@@ -999,10 +903,8 @@ def reemplazar_documento_empresa_por_coordinacion(
 
     documento.nombre_archivo = safe_name
     documento.ruta_archivo = str(ruta)
-    documento.mime_type = datos.mime_type
     documento.estado_documento = "Pendiente"
     documento.observaciones = datos.observaciones
-    documento.fecha_carga = datetime.now()
     documento.fecha_revision = None
 
     if empresa is not None:

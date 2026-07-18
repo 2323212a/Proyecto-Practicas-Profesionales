@@ -28,44 +28,48 @@ ON DUPLICATE KEY UPDATE
 
 INSERT INTO usuario (
     id_usuario,
+    correo,
+    password_hash,
     id_rol,
+    estado
+) VALUES
+    (1, 'admin@example.com', @demo_password_hash, 2, 'Activo'),
+    (2, 'coordinador@example.com', @demo_password_hash, 3, 'Activo'),
+    (3, 'asesor@example.com', @demo_password_hash, 6, 'Activo'),
+    (4, 'alumno1@example.com', @demo_password_hash, 1, 'Activo'),
+    (5, 'alumno2@example.com', @demo_password_hash, 1, 'Activo'),
+    (6, 'empresa@example.com', @demo_password_hash, 5, 'Activo'),
+    (7, 'coord.unidades@example.com', @demo_password_hash, 4, 'Activo'),
+    (8, 'direccion@example.com', @demo_password_hash, 7, 'Activo')
+ON DUPLICATE KEY UPDATE
+    correo = VALUES(correo),
+    password_hash = VALUES(password_hash),
+    id_rol = VALUES(id_rol),
+    estado = VALUES(estado);
+
+INSERT INTO personal_interno (
+    id_personal,
+    id_usuario,
     nombre,
     apellido_paterno,
     apellido_materno,
-    correo,
-    password_hash,
-    estado
+    departamento,
+    cargo,
+    telefono
 ) VALUES
-    (1, 2, 'Admin', 'Sistema', NULL, 'admin@example.com', @demo_password_hash, 'Activo'),
-    (2, 3, 'Carla', 'Mendez', 'Lopez', 'coordinador@example.com', @demo_password_hash, 'Activo'),
-    (3, 6, 'Mario', 'Santos', 'Perez', 'asesor@example.com', @demo_password_hash, 'Activo'),
-    (4, 1, 'Ana', 'Garcia', 'Torres', 'alumno1@example.com', @demo_password_hash, 'Activo'),
-    (5, 1, 'Luis', 'Hernandez', 'Diaz', 'alumno2@example.com', @demo_password_hash, 'Activo'),
-    (6, 5, 'Patricia', 'Ramirez', 'Nava', 'empresa@example.com', @demo_password_hash, 'Activo'),
-    (7, 4, 'Ana', 'Torres', 'Morales', 'coord.unidades@example.com', @demo_password_hash, 'Activo'),
-    (8, 7, 'Direccion', 'General', NULL, 'direccion@example.com', @demo_password_hash, 'Activo')
+    (1, 1, 'Admin', 'Sistema', NULL, 'Administracion', 'Administrador', NULL),
+    (2, 2, 'Carla', 'Mendez', 'Lopez', 'Vinculacion', 'Coordinador de Practicas', NULL),
+    (3, 3, 'Mario', 'Santos', 'Perez', 'Sistemas y Computacion', 'Asesor Interno', NULL),
+    (4, 7, 'Ana', 'Torres', 'Morales', 'Vinculacion', 'Coordinador de Unidades Receptoras', NULL),
+    (5, 8, 'Direccion', 'General', NULL, 'Direccion', 'Directivo', NULL)
 ON DUPLICATE KEY UPDATE
-    id_rol = VALUES(id_rol),
+    id_usuario = VALUES(id_usuario),
     nombre = VALUES(nombre),
     apellido_paterno = VALUES(apellido_paterno),
     apellido_materno = VALUES(apellido_materno),
-    correo = VALUES(correo),
-    password_hash = VALUES(password_hash),
-    estado = VALUES(estado);
-
-INSERT INTO coordinador (id_coordinador, id_usuario, area, departamento) VALUES
-    (1, 2, 'Practicas Profesionales', 'Vinculacion'),
-    (2, 7, 'Unidades Receptoras', 'Vinculacion')
-ON DUPLICATE KEY UPDATE
-    id_usuario = VALUES(id_usuario),
-    area = VALUES(area),
-    departamento = VALUES(departamento);
-
-INSERT INTO docente_asesor (id_docente, id_usuario, departamento) VALUES
-    (1, 3, 'Sistemas y Computacion')
-ON DUPLICATE KEY UPDATE
-    id_usuario = VALUES(id_usuario),
-    departamento = VALUES(departamento);
+    departamento = VALUES(departamento),
+    cargo = VALUES(cargo),
+    telefono = VALUES(telefono);
 
 INSERT INTO alumno (
     id_alumno,
@@ -113,11 +117,10 @@ INSERT INTO empresa (
     telefono,
     correo_contacto,
     estado_empresa,
-    tipo_tramite,
-    periodo_participacion
+    tipo_tramite
 ) VALUES
-    (1, 'TechNova Solutions', 'TNO260101AB1', 'Desarrollo de software', 'Av. Universidad 120, Ciudad de Mexico', '5550102030', 'contacto@technova.local', 'Activa', 'Convenio', 'Semestral'),
-    (2, 'Industrias Orion', 'IOR260101CD2', 'Manufactura', 'Parque Industrial Norte 45, Ciudad de Mexico', '5550102040', 'rh@orion.local', 'Activa', 'Convenio', 'Ambos')
+    (1, 'TechNova Solutions', 'TNO260101AB1', 'Desarrollo de software', 'Av. Universidad 120, Ciudad de Mexico', '5550102030', 'contacto@technova.local', 'Activa', 'Convenio'),
+    (2, 'Industrias Orion', 'IOR260101CD2', 'Manufactura', 'Parque Industrial Norte 45, Ciudad de Mexico', '5550102040', 'rh@orion.local', 'Activa', 'Convenio')
 ON DUPLICATE KEY UPDATE
     nombre_empresa = VALUES(nombre_empresa),
     rfc = VALUES(rfc),
@@ -126,8 +129,7 @@ ON DUPLICATE KEY UPDATE
     telefono = VALUES(telefono),
     correo_contacto = VALUES(correo_contacto),
     estado_empresa = VALUES(estado_empresa),
-    tipo_tramite = VALUES(tipo_tramite),
-    periodo_participacion = VALUES(periodo_participacion);
+    tipo_tramite = VALUES(tipo_tramite);
 
 INSERT INTO responsable_empresa (
     id_responsable,
@@ -148,22 +150,16 @@ INSERT INTO convenio (
     id_empresa,
     fecha_inicio,
     fecha_fin,
-    documento_convenio,
-    version,
     es_actual,
-    renovacion_solicitada,
     estado_convenio
 ) VALUES
-    (1, 1, '2026-01-01', '2026-12-31', 'uploads/documentos/convenio-technova.pdf', 1, TRUE, FALSE, 'Vigente'),
-    (2, 2, '2026-01-01', '2026-12-31', 'uploads/documentos/convenio-orion.pdf', 1, TRUE, FALSE, 'Vigente')
+    (1, 1, '2026-01-01', '2026-12-31', TRUE, 'Vigente'),
+    (2, 2, '2026-01-01', '2026-12-31', TRUE, 'Vigente')
 ON DUPLICATE KEY UPDATE
     id_empresa = VALUES(id_empresa),
     fecha_inicio = VALUES(fecha_inicio),
     fecha_fin = VALUES(fecha_fin),
-    documento_convenio = VALUES(documento_convenio),
-    version = VALUES(version),
     es_actual = VALUES(es_actual),
-    renovacion_solicitada = VALUES(renovacion_solicitada),
     estado_convenio = VALUES(estado_convenio);
 
 INSERT INTO tipo_practica (
@@ -181,30 +177,26 @@ ON DUPLICATE KEY UPDATE
 INSERT INTO vacante (
     id_vacante,
     id_empresa,
-    id_carrera,
     titulo,
     descripcion,
-    modalidad,
-    horario,
-    cupo_total,
-    cupo_disponible,
+    actividades,
+    requisitos,
+    cupos,
     estado_vacante,
     periodo,
     id_tipo_practica,
     id_convocatoria,
     observaciones
 ) VALUES
-    (1, 1, 1, 'Desarrollador Backend Jr.', 'Apoyo en desarrollo de APIs y automatizacion de procesos internos.', 'Hibrida', 'Lunes a viernes 09:00-14:00', 3, 2, 'Activa', 'Semestral', 1, 1, NULL),
-    (2, 2, 2, 'Analista de Procesos', 'Documentacion y mejora de procesos administrativos.', 'Presencial', 'Lunes a viernes 08:00-13:00', 2, 2, 'Activa', 'Semestral', 1, 1, NULL)
+    (1, 1, 'Desarrollador Backend Jr.', 'Apoyo en desarrollo de APIs y automatizacion de procesos internos.', 'Desarrollo de APIs y automatizacion.', 'Python, SQL y control de cambios.', 3, 'Activa', 'Semestral', 1, 1, NULL),
+    (2, 2, 'Analista de Procesos', 'Documentacion y mejora de procesos administrativos.', 'Mapeo y mejora de procesos.', 'Analisis, redaccion y trabajo en equipo.', 2, 'Activa', 'Semestral', 1, 1, NULL)
 ON DUPLICATE KEY UPDATE
     id_empresa = VALUES(id_empresa),
-    id_carrera = VALUES(id_carrera),
     titulo = VALUES(titulo),
     descripcion = VALUES(descripcion),
-    modalidad = VALUES(modalidad),
-    horario = VALUES(horario),
-    cupo_total = VALUES(cupo_total),
-    cupo_disponible = VALUES(cupo_disponible),
+    actividades = VALUES(actividades),
+    requisitos = VALUES(requisitos),
+    cupos = VALUES(cupos),
     estado_vacante = VALUES(estado_vacante),
     periodo = VALUES(periodo),
     id_tipo_practica = VALUES(id_tipo_practica),
@@ -290,7 +282,7 @@ INSERT INTO asignacion (
     id_empresa,
     id_vacante,
     id_convocatoria,
-    id_docente,
+    id_asesor,
     fecha_asignacion,
     estado_asignacion,
     tipo_asignacion
@@ -301,7 +293,7 @@ ON DUPLICATE KEY UPDATE
     id_empresa = VALUES(id_empresa),
     id_vacante = VALUES(id_vacante),
     id_convocatoria = VALUES(id_convocatoria),
-    id_docente = VALUES(id_docente),
+    id_asesor = VALUES(id_asesor),
     fecha_asignacion = VALUES(fecha_asignacion),
     estado_asignacion = VALUES(estado_asignacion),
     tipo_asignacion = VALUES(tipo_asignacion);
@@ -398,13 +390,15 @@ INSERT INTO bitacora_auditoria (
     id_bitacora,
     id_usuario,
     accion,
-    tabla_afectada,
-    detalles
+    modulo,
+    descripcion,
+    entidad
 ) VALUES
-    (1, 1, 'Carga de datos semilla', 'base_datos', 'Se insertaron catalogos y datos iniciales para pruebas.')
+    (1, 1, 'Carga de datos semilla', 'base_datos', 'Se insertaron catalogos y datos iniciales para pruebas.', 'base_datos')
 ON DUPLICATE KEY UPDATE
     id_usuario = VALUES(id_usuario),
     accion = VALUES(accion),
-    tabla_afectada = VALUES(tabla_afectada),
-    detalles = VALUES(detalles);
+    modulo = VALUES(modulo),
+    descripcion = VALUES(descripcion),
+    entidad = VALUES(entidad);
 

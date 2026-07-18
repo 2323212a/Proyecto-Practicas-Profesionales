@@ -4,12 +4,14 @@ import {
   CalendarDays,
   CheckCircle2,
   Database,
+  Download,
   Edit2,
+  Eye,
   FileSpreadsheet,
   GraduationCap,
+  KeyRound,
   Plus,
   RefreshCw,
-  Settings,
   Trash2,
   Upload,
   X,
@@ -18,76 +20,229 @@ import {
 import {
   actualizarCarrera,
   actualizarConvocatoria,
-  actualizarTipoDocumento,
+  actualizarTipoPractica,
   crearCarrera,
   crearConvocatoria,
-  crearTipoDocumento,
+  crearTipoPractica,
   eliminarCarrera,
   eliminarConvocatoria,
-  eliminarTipoDocumento,
   importarAlumnosMasivo,
+  importarPersonalMasivo,
   obtenerCarreras,
   obtenerConvocatorias,
-  obtenerTiposDocumento,
+  obtenerTiposPractica,
   validarAlumnosMasivo,
+  validarPersonalMasivo,
 } from "../../../infrastructure/catalogos/catalogosApi";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
-type CatalogoActivo = "carreras" | "convocatorias" | "tipos-documento" | null;
+
+type CatalogoActivo = "carreras" | "convocatorias" | "tipos-practica" | null;
+type TipoCarga = "alumnos" | "personal";
 
 type Carrera = {
   id_carrera: number;
-  clave: string;
   nombre: string;
+  tipo_periodo: "Semestral" | "Cuatrimestral";
+  estado: "Activa" | "Inactiva";
 };
 
 type Convocatoria = {
   id_convocatoria: number;
   nombre: string;
-  periodo: string;
-  fecha_inicio: string;
-  fecha_fin: string;
-  estado: string;
+  tipo_periodo: "Semestral" | "Cuatrimestral";
+  estado: "Activa" | "Inactiva" | "Cerrada";
+  fecha_inicio_general: string | null;
+  fecha_cierre_general: string | null;
+  fecha_inicio_empresas: string | null;
+  fecha_cierre_empresas: string | null;
+  fecha_inicio_documentos: string | null;
+  fecha_cierre_documentos: string | null;
+  fecha_inicio_validacion: string | null;
+  fecha_cierre_validacion: string | null;
+  fecha_inicio_seleccion: string | null;
+  fecha_cierre_seleccion: string | null;
+  fecha_inicio_asignacion: string | null;
+  fecha_cierre_asignacion: string | null;
+  fecha_inicio_practicas: string | null;
+  fecha_cierre_practicas: string | null;
+  fecha_inicio_cierre: string | null;
+  fecha_cierre_cierre: string | null;
+  observaciones: string | null;
+  fase_actual: string;
 };
 
-type TipoDocumento = {
-  id_tipo_documento: number;
-  nombre_documento: string;
-  descripcion: string | null;
-  etapa: string;
-  obligatorio: boolean;
-  requiere_formato: boolean;
+type TipoPractica = {
+  id_tipo_practica: number;
+  nombre: string;
+  semestre_requerido: number | null;
+  creditos_minimos: number | null;
+  horas_requeridas: number | null;
+  orden: number | null;
+  activo: boolean;
 };
 
 type ResultadoValidacion = {
   total: number;
   validos: number;
   errores: Array<{ fila: number; error: string }>;
+  vista_previa?: Array<Record<string, string | number | boolean | null>>;
+};
+
+type ResultadoImportacion = {
+  importados?: number;
+  errores?: Array<{ fila: number; error: string }>;
+  credenciales?: Array<Record<string, string | number>>;
+  mensaje_credenciales?: string;
 };
 
 const carreraInicial: Carrera = {
   id_carrera: 0,
-  clave: "",
   nombre: "",
+  tipo_periodo: "Semestral",
+  estado: "Activa",
 };
 
 const convocatoriaInicial: Convocatoria = {
   id_convocatoria: 0,
   nombre: "",
-  periodo: "",
-  fecha_inicio: "",
-  fecha_fin: "",
+  tipo_periodo: "Semestral",
   estado: "Activa",
+  fecha_inicio_general: null,
+  fecha_cierre_general: null,
+  fecha_inicio_empresas: null,
+  fecha_cierre_empresas: null,
+  fecha_inicio_documentos: null,
+  fecha_cierre_documentos: null,
+  fecha_inicio_validacion: null,
+  fecha_cierre_validacion: null,
+  fecha_inicio_seleccion: null,
+  fecha_cierre_seleccion: null,
+  fecha_inicio_asignacion: null,
+  fecha_cierre_asignacion: null,
+  fecha_inicio_practicas: null,
+  fecha_cierre_practicas: null,
+  fecha_inicio_cierre: null,
+  fecha_cierre_cierre: null,
+  observaciones: "",
+  fase_actual: "Sin calendario",
 };
 
-const tipoDocumentoInicial: TipoDocumento = {
-  id_tipo_documento: 0,
-  nombre_documento: "",
-  descripcion: "",
-  etapa: "",
-  obligatorio: true,
-  requiere_formato: false,
+const tipoPracticaInicial: TipoPractica = {
+  id_tipo_practica: 0,
+  nombre: "",
+  semestre_requerido: 5,
+  creditos_minimos: 0,
+  horas_requeridas: 480,
+  orden: 1,
+  activo: true,
 };
+
+const etapasConvocatoria: Array<[string, keyof Convocatoria, keyof Convocatoria]> = [
+  ["General", "fecha_inicio_general", "fecha_cierre_general"],
+  ["Registro de empresas", "fecha_inicio_empresas", "fecha_cierre_empresas"],
+  ["Documentacion de alumnos", "fecha_inicio_documentos", "fecha_cierre_documentos"],
+  ["Validacion documental", "fecha_inicio_validacion", "fecha_cierre_validacion"],
+  ["Seleccion de empresas", "fecha_inicio_seleccion", "fecha_cierre_seleccion"],
+  ["Asignacion", "fecha_inicio_asignacion", "fecha_cierre_asignacion"],
+  ["Practicas", "fecha_inicio_practicas", "fecha_cierre_practicas"],
+  ["Cierre administrativo", "fecha_inicio_cierre", "fecha_cierre_cierre"],
+];
+
+const columnasAlumnos = [
+  "nombre",
+  "apellido_paterno",
+  "apellido_materno",
+  "correo",
+  "matricula",
+  "carrera",
+  "semestre",
+  "grupo",
+  "tipo_practica",
+  "creditos_aprobados",
+];
+
+const columnasPersonal = [
+  "nombre",
+  "apellido_paterno",
+  "apellido_materno",
+  "correo",
+  "rol",
+  "departamento",
+  "cargo",
+  "telefono",
+];
+
+const ejemploAlumnos = [
+  "Ana",
+  "Pérez",
+  "López",
+  "ana.perez@unach.mx",
+  "A012345",
+  "Ingeniería en Software",
+  "5",
+  "A",
+  "Prácticas 1",
+];
+
+const ejemploAlumnosCarga = [
+  "Ana",
+  "Perez",
+  "Lopez",
+  "ana.perez@unach.mx",
+  "A012345",
+  "Ingenieria en Software",
+  "5",
+  "A",
+  "Practicas 1",
+  "120",
+];
+
+const ejemploPersonal = [
+  "Luis",
+  "García",
+  "Méndez",
+  "luis.garcia@unach.mx",
+  "Asesor Interno",
+  "Sistemas",
+  "Docente",
+  "9611234567",
+];
+
+const ejemploPersonalCarga = [
+  "Luis",
+  "Garcia",
+  "Mendez",
+  "luis.garcia@unach.mx",
+  "Asesor Interno",
+  "Sistemas",
+  "Docente",
+  "9611234567",
+];
+
+const rolesPersonalPermitidos = [
+  "Administrador",
+  "Coordinador de Prácticas",
+  "Coordinador de Unidades Receptoras",
+  "Asesor Interno",
+  "Dirección",
+];
+
+const rolesPersonalPlantilla = [
+  "Administrador",
+  "Coordinador de Practicas",
+  "Coordinador de Unidades Receptoras",
+  "Asesor Interno",
+  "Direccion",
+];
+
+const erroresPersonalPlantilla = [
+  "No usar id_rol.",
+  "No usar id_empresa.",
+  "No usar rol Alumno.",
+  "No usar rol Unidad Receptora.",
+  "No ligar personal a empresas.",
+];
 
 function fechaTexto(fecha: string) {
   if (!fecha) return "Sin fecha";
@@ -100,12 +255,218 @@ function fechaTexto(fecha: string) {
   }).format(date);
 }
 
+function descargarCsv(nombre: string, filas: Array<Array<string | number>>) {
+  const contenido = filas
+    .map((fila) =>
+      fila
+        .map((valor) => `"${String(valor).replace(/"/g, '""')}"`)
+        .join(","),
+    )
+    .join("\n");
+  const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nombre;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function descargarCsvSimple(nombre: string, encabezados: string[], ejemplo: string[]) {
+  const contenido = `${encabezados.join(",")}\n${ejemplo.join(",")}`;
+  const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nombre;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function xmlEscape(valor: string | number) {
+  return String(valor)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function columnaExcel(indice: number) {
+  let nombre = "";
+  let numero = indice + 1;
+  while (numero > 0) {
+    const resto = (numero - 1) % 26;
+    nombre = String.fromCharCode(65 + resto) + nombre;
+    numero = Math.floor((numero - 1) / 26);
+  }
+  return nombre;
+}
+
+type CeldaExcel = string | number | { value: string | number; style?: number };
+
+function celda(value: string | number, style?: number): CeldaExcel {
+  return { value, style };
+}
+
+function valorCelda(item: CeldaExcel) {
+  return typeof item === "object" && "value" in item ? item.value : item;
+}
+
+function estiloCelda(item: CeldaExcel, rowIndex: number) {
+  if (typeof item === "object" && "value" in item) return item.style ?? 0;
+  return rowIndex === 0 ? 1 : 0;
+}
+
+function hojaXml(
+  filas: Array<Array<CeldaExcel>>,
+  anchos: number[] = [],
+  congelarFila?: number,
+  merges: string[] = [],
+) {
+  const cols = anchos.length
+    ? `<cols>${anchos.map((ancho, index) => `<col min="${index + 1}" max="${index + 1}" width="${ancho}" customWidth="1"/>`).join("")}</cols>`
+    : "";
+  const sheetViews = congelarFila
+    ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${congelarFila}" topLeftCell="A${congelarFila + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
+    : "";
+  const rows = filas.map((fila, rowIndex) => {
+    const rowNumber = rowIndex + 1;
+    const cells = fila.map((item, colIndex) => {
+      const ref = `${columnaExcel(colIndex)}${rowNumber}`;
+      return `<c r="${ref}" t="inlineStr" s="${estiloCelda(item, rowIndex)}"><is><t>${xmlEscape(valorCelda(item))}</t></is></c>`;
+    }).join("");
+    return `<row r="${rowNumber}">${cells}</row>`;
+  }).join("");
+  const mergeCells = merges.length
+    ? `<mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`
+    : "";
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${sheetViews}${cols}<sheetData>${rows}</sheetData>${mergeCells}</worksheet>`;
+}
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function uint16(valor: number) {
+  return [valor & 255, (valor >>> 8) & 255];
+}
+
+function uint32(valor: number) {
+  return [valor & 255, (valor >>> 8) & 255, (valor >>> 16) & 255, (valor >>> 24) & 255];
+}
+
+function crearZip(files: Array<{ name: string; content: string }>) {
+  const encoder = new TextEncoder();
+  const locales: Uint8Array[] = [];
+  const centrales: Uint8Array[] = [];
+  let offset = 0;
+
+  files.forEach((file) => {
+    const nameBytes = encoder.encode(file.name);
+    const contentBytes = encoder.encode(file.content);
+    const crc = crc32(contentBytes);
+    const localHeader = new Uint8Array([
+      ...uint32(0x04034b50), ...uint16(20), ...uint16(0), ...uint16(0), ...uint16(0), ...uint16(0),
+      ...uint32(crc), ...uint32(contentBytes.length), ...uint32(contentBytes.length),
+      ...uint16(nameBytes.length), ...uint16(0),
+    ]);
+    const local = new Uint8Array(localHeader.length + nameBytes.length + contentBytes.length);
+    local.set(localHeader);
+    local.set(nameBytes, localHeader.length);
+    local.set(contentBytes, localHeader.length + nameBytes.length);
+    locales.push(local);
+
+    const centralHeader = new Uint8Array([
+      ...uint32(0x02014b50), ...uint16(20), ...uint16(20), ...uint16(0), ...uint16(0), ...uint16(0), ...uint16(0),
+      ...uint32(crc), ...uint32(contentBytes.length), ...uint32(contentBytes.length),
+      ...uint16(nameBytes.length), ...uint16(0), ...uint16(0), ...uint16(0), ...uint16(0), ...uint32(0),
+      ...uint32(offset),
+    ]);
+    const central = new Uint8Array(centralHeader.length + nameBytes.length);
+    central.set(centralHeader);
+    central.set(nameBytes, centralHeader.length);
+    centrales.push(central);
+    offset += local.length;
+  });
+
+  const centralSize = centrales.reduce((total, item) => total + item.length, 0);
+  const end = new Uint8Array([
+    ...uint32(0x06054b50), ...uint16(0), ...uint16(0), ...uint16(files.length), ...uint16(files.length),
+    ...uint32(centralSize), ...uint32(offset), ...uint16(0),
+  ]);
+  const totalSize = offset + centralSize + end.length;
+  const zip = new Uint8Array(totalSize);
+  let cursor = 0;
+  [...locales, ...centrales, end].forEach((item) => {
+    zip.set(item, cursor);
+    cursor += item.length;
+  });
+  return zip;
+}
+
+function descargarXlsx(nombre: string, sheets: Array<{ name: string; rows: Array<Array<CeldaExcel>>; widths?: number[]; freezeRow?: number; merges?: string[] }>) {
+  const workbookSheets = sheets
+    .map((sheet, index) => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  const rels = sheets
+    .map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`)
+    .join("");
+  const worksheetOverrides = sheets
+    .map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
+    .join("");
+  const files = [
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${worksheetOverrides}</Types>`,
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    },
+    {
+      name: "xl/workbook.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${workbookSheets}</sheets></workbook>`,
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    },
+    {
+      name: "xl/styles.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="16"/><name val="Calibri"/></font><font><b/><color rgb="FF0D2B5E"/><sz val="12"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font><font><color rgb="FF374151"/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="8"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1565C0"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEAF4FF"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF0D2B5E"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F5E9"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF7D6"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFEBEE"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFCBD5E1"/></left><right style="thin"><color rgb="FFCBD5E1"/></right><top style="thin"><color rgb="FFCBD5E1"/></top><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="4" fillId="6" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="7" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf></cellXfs></styleSheet>`,
+    },
+    ...sheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: hojaXml(sheet.rows, sheet.widths, sheet.freezeRow, sheet.merges),
+    })),
+  ];
+  const blob = new Blob([crearZip(files)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nombre;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function AdminCatalogos() {
   const [carreras, setCarreras] = useState<Carrera[]>([]);
   const [convocatorias, setConvocatorias] = useState<Convocatoria[]>([]);
-  const [tiposDocumento, setTiposDocumento] = useState<TipoDocumento[]>([]);
+  const [tiposPractica, setTiposPractica] = useState<TipoPractica[]>([]);
   const [archivo, setArchivo] = useState<File | null>(null);
+  const [tipoCarga, setTipoCarga] = useState<TipoCarga>("alumnos");
   const [resultadoValidacion, setResultadoValidacion] = useState<ResultadoValidacion | null>(null);
+  const [resultadoImportacion, setResultadoImportacion] = useState<ResultadoImportacion | null>(null);
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
@@ -113,7 +474,7 @@ export function AdminCatalogos() {
   const [modoEdicion, setModoEdicion] = useState(false);
   const [carreraForm, setCarreraForm] = useState<Carrera>(carreraInicial);
   const [convocatoriaForm, setConvocatoriaForm] = useState<Convocatoria>(convocatoriaInicial);
-  const [tipoDocumentoForm, setTipoDocumentoForm] = useState<TipoDocumento>(tipoDocumentoInicial);
+  const [tipoPracticaForm, setTipoPracticaForm] = useState<TipoPractica>(tipoPracticaInicial);
 
   useEffect(() => {
     void cargarCatalogos();
@@ -123,14 +484,14 @@ export function AdminCatalogos() {
     try {
       setCargando(true);
       setError("");
-      const [carrerasData, convocatoriasData, tiposData] = await Promise.all([
+      const [carrerasData, convocatoriasData, tiposPracticaData] = await Promise.all([
         obtenerCarreras(),
         obtenerConvocatorias(),
-        obtenerTiposDocumento(),
+        obtenerTiposPractica(),
       ]);
       setCarreras(carrerasData);
       setConvocatorias(convocatoriasData);
-      setTiposDocumento(tiposData);
+      setTiposPractica(tiposPracticaData);
     } catch (err) {
       console.error(err);
       setError("No se pudieron cargar los catalogos.");
@@ -142,7 +503,7 @@ export function AdminCatalogos() {
   function limpiarFormularios() {
     setCarreraForm(carreraInicial);
     setConvocatoriaForm(convocatoriaInicial);
-    setTipoDocumentoForm(tipoDocumentoInicial);
+    setTipoPracticaForm(tipoPracticaInicial);
   }
 
   function abrirCatalogo(tipo: CatalogoActivo) {
@@ -159,9 +520,173 @@ export function AdminCatalogos() {
     limpiarFormularios();
   }
 
-  function iniciarNuevoRegistro() {
-    setModoEdicion(false);
-    limpiarFormularios();
+  function reiniciarCarga(nuevoTipo = tipoCarga) {
+    setTipoCarga(nuevoTipo);
+    setArchivo(null);
+    setResultadoValidacion(null);
+    setResultadoImportacion(null);
+    setMensaje("");
+    setError("");
+  }
+
+  function descargarPlantillaExcel() {
+    if (tipoCarga === "alumnos") {
+      const carrerasPlantilla = carreras.length
+        ? carreras.map((carrera) => [celda(carrera.nombre, 6)])
+        : [[celda("Ingenieria en Software", 6)], [celda("Deben existir previamente en Admin > Carreras.", 5)]];
+      const tiposPracticaPlantilla = tiposPractica.length
+        ? tiposPractica.map((tipo) => [celda(tipo.nombre, 6)])
+        : [["Practicas 1"], ["Practicas 2"], ["Residencia"]].map(([tipo]) => [celda(tipo, 6)]);
+
+      descargarXlsx("plantilla_alumnos.xlsx", [
+        {
+          name: "Plantilla Alumnos",
+          rows: [
+            [celda("PLANTILLA DE CARGA MASIVA DE ALUMNOS", 1)],
+            [],
+            [celda("INSTRUCCIONES RAPIDAS", 2)],
+            [
+              celda("No cambiar nombres de columnas. Llenar una fila por alumno. La carrera debe existir previamente en Admin > Carreras.", 5),
+              "", "", "", "",
+              celda("El periodo no se captura; se asigna automaticamente desde la carrera.", 5),
+            ],
+            [
+              celda("tipo_practica debe coincidir con el catalogo.", 5),
+              "", "", "", "",
+              celda("correo y matricula deben ser unicos. semestre y creditos_aprobados deben ser numericos.", 5),
+            ],
+            [],
+            [],
+            [celda("DATOS A CAPTURAR", 2)],
+            columnasAlumnos.map((columna) => celda(columna, 3)),
+            ...Array.from({ length: 21 }, () => columnasAlumnos.map(() => celda("", 6))),
+            [],
+            [celda("EJEMPLO CORRECTO, NO IMPORTAR", 2)],
+            ejemploAlumnosCarga.map((valor) => celda(valor, 4)),
+            [],
+            [],
+            [celda("Catalogo de tipos de practica", 2), "", "", "", "", celda("Errores comunes", 2)],
+            ...Array.from({ length: 6 }, (_, index) => [
+              tiposPracticaPlantilla[index]?.[0] ?? "",
+              "", "", "",
+              "",
+              [
+                "No cambiar encabezados.",
+                "No escribir carreras inexistentes.",
+                "No escribir tipo_practica inventado.",
+                "No dejar correo vacio.",
+                "No repetir matricula.",
+                "No escribir periodo.",
+              ][index] ? celda([
+                "No cambiar encabezados.",
+                "No escribir carreras inexistentes.",
+                "No escribir tipo_practica inventado.",
+                "No dejar correo vacio.",
+                "No repetir matricula.",
+                "No escribir periodo.",
+              ][index], 7) : "",
+            ]),
+            [],
+            [],
+            [celda("Carreras disponibles", 2)],
+            ...carrerasPlantilla.map((fila) => [fila[0]]),
+          ],
+          widths: [18, 20, 20, 30, 15, 30, 12, 10, 20, 18],
+          freezeRow: 9,
+          merges: [
+            "A1:J1",
+            "A3:J3",
+            "A4:E4",
+            "F4:J4",
+            "A5:E5",
+            "F5:J5",
+            "A8:J8",
+            "A32:J32",
+            "A36:D36",
+            "F36:J36",
+            "A45:J45",
+          ],
+        },
+      ]);
+      return;
+    }
+
+    descargarXlsx("plantilla_personal.xlsx", [
+      {
+        name: "Plantilla Personal",
+        rows: [
+          [celda("PLANTILLA DE CARGA MASIVA DE PERSONAL", 1)],
+          [],
+          [celda("INSTRUCCIONES RAPIDAS", 2)],
+          [
+            celda("No cambiar nombres de columnas. Personal no se liga a empresas. No se usa id_empresa ni id_rol.", 5),
+            "", "", "",
+            celda("El rol se escribe por nombre. correo debe ser unico. telefono es opcional.", 5),
+          ],
+          [
+            celda("No se permite Alumno ni Unidad Receptora.", 5),
+            "", "", "",
+            celda("Unidad Receptora se crea desde el flujo de empresas aceptadas.", 5),
+          ],
+          [],
+          [],
+          [celda("DATOS A CAPTURAR", 2)],
+          columnasPersonal.map((columna) => celda(columna, 3)),
+          ...Array.from({ length: 21 }, () => columnasPersonal.map(() => celda("", 6))),
+          [],
+          [celda("EJEMPLO CORRECTO, NO IMPORTAR", 2)],
+          ejemploPersonalCarga.map((valor) => celda(valor, 4)),
+          [],
+          [celda("Roles permitidos", 2), "", "", "", celda("Errores comunes", 2)],
+          ...rolesPersonalPlantilla.map((rol, index) => [
+            celda(rol, 6),
+            "", "", "",
+            erroresPersonalPlantilla[index] ? celda(erroresPersonalPlantilla[index], 7) : "",
+          ]),
+        ],
+        widths: [18, 20, 20, 30, 34, 22, 18, 16],
+        freezeRow: 9,
+        merges: [
+          "A1:H1",
+          "A3:H3",
+          "A4:D4",
+          "E4:H4",
+          "A5:D5",
+          "E5:H5",
+          "A8:H8",
+          "A32:H32",
+          "A36:D36",
+          "E36:H36",
+        ],
+      },
+    ]);
+  }
+
+  function descargarPlantillaCsv() {
+    if (tipoCarga === "alumnos") {
+      descargarCsvSimple("plantilla_alumnos.csv", columnasAlumnos, ejemploAlumnosCarga);
+      return;
+    }
+
+    descargarCsvSimple("plantilla_personal.csv", columnasPersonal, ejemploPersonalCarga);
+  }
+
+  function descargarErrores() {
+    const errores = resultadoValidacion?.errores ?? resultadoImportacion?.errores ?? [];
+    descargarCsv("errores_importacion.csv", [
+      ["fila", "error"],
+      ...errores.map((item) => [item.fila, item.error]),
+    ]);
+  }
+
+  function descargarCredenciales() {
+    const credenciales = resultadoImportacion?.credenciales ?? [];
+    if (credenciales.length === 0) return;
+    const encabezados = Object.keys(credenciales[0]);
+    descargarCsv("credenciales_temporales.csv", [
+      encabezados,
+      ...credenciales.map((item) => encabezados.map((encabezado) => item[encabezado] ?? "")),
+    ]);
   }
 
   async function handleValidarArchivo() {
@@ -174,9 +699,13 @@ export function AdminCatalogos() {
       setCargando(true);
       setError("");
       setMensaje("");
-      const resultado = await validarAlumnosMasivo(archivo);
+      setResultadoImportacion(null);
+      const resultado =
+        tipoCarga === "alumnos"
+          ? await validarAlumnosMasivo(archivo)
+          : await validarPersonalMasivo(archivo);
       setResultadoValidacion(resultado);
-      setMensaje("Archivo validado. Revisa el resultado antes de importar.");
+      setMensaje("Archivo validado. Revisa la vista previa y los errores antes de importar.");
     } catch (err) {
       console.error(err);
       setError("No se pudo validar el archivo.");
@@ -191,7 +720,12 @@ export function AdminCatalogos() {
       return;
     }
 
-    if (resultadoValidacion?.errores.length) {
+    if (!resultadoValidacion) {
+      setError("Valida el archivo antes de importar.");
+      return;
+    }
+
+    if (resultadoValidacion.errores.length) {
       setError("Corrige los errores antes de importar.");
       return;
     }
@@ -199,8 +733,12 @@ export function AdminCatalogos() {
     try {
       setCargando(true);
       setError("");
-      const resultado = await importarAlumnosMasivo(archivo);
-      setMensaje(`Se importaron ${resultado.importados ?? 0} alumnos correctamente.`);
+      const resultado =
+        tipoCarga === "alumnos"
+          ? await importarAlumnosMasivo(archivo)
+          : await importarPersonalMasivo(archivo);
+      setResultadoImportacion(resultado);
+      setMensaje(`Se importaron ${resultado.importados ?? 0} registros correctamente.`);
       setResultadoValidacion(null);
       setArchivo(null);
       await cargarCatalogos();
@@ -213,8 +751,8 @@ export function AdminCatalogos() {
   }
 
   async function guardarCarrera() {
-    if (!carreraForm.clave.trim() || !carreraForm.nombre.trim()) {
-      setError("La clave y el nombre de carrera son obligatorios.");
+    if (!carreraForm.nombre.trim()) {
+      setError("El nombre de carrera es obligatorio.");
       return;
     }
 
@@ -223,14 +761,16 @@ export function AdminCatalogos() {
       setError("");
       if (modoEdicion) {
         await actualizarCarrera(carreraForm.id_carrera, {
-          clave: carreraForm.clave.trim(),
           nombre: carreraForm.nombre.trim(),
+          tipo_periodo: carreraForm.tipo_periodo,
+          estado: carreraForm.estado,
         });
         setMensaje("Carrera actualizada.");
       } else {
         await crearCarrera({
-          clave: carreraForm.clave.trim(),
           nombre: carreraForm.nombre.trim(),
+          tipo_periodo: carreraForm.tipo_periodo,
+          estado: carreraForm.estado,
         });
         setMensaje("Carrera creada.");
       }
@@ -246,27 +786,55 @@ export function AdminCatalogos() {
   }
 
   async function guardarConvocatoria() {
-    if (
-      !convocatoriaForm.nombre.trim() ||
-      !convocatoriaForm.periodo.trim() ||
-      !convocatoriaForm.fecha_inicio ||
-      !convocatoriaForm.fecha_fin
-    ) {
-      setError("Nombre, periodo, inicio y cierre son obligatorios.");
+    if (!convocatoriaForm.nombre.trim()) {
+      setError("El nombre de la convocatoria es obligatorio.");
       return;
     }
 
-    if (convocatoriaForm.fecha_fin < convocatoriaForm.fecha_inicio) {
-      setError("La fecha de cierre no puede ser anterior al inicio.");
-      return;
+    for (const [etapa, inicioCampo, cierreCampo] of etapasConvocatoria) {
+      const inicio = convocatoriaForm[inicioCampo];
+      const cierre = convocatoriaForm[cierreCampo];
+      if (inicio && cierre && cierre < inicio) {
+        setError(`La fecha de cierre de ${etapa} no puede ser anterior al inicio.`);
+        return;
+      }
+    }
+    let cierreAnterior: string | null = null;
+    let etapaAnterior = "";
+    for (const [etapa, inicioCampo, cierreCampo] of etapasConvocatoria) {
+      const inicio = convocatoriaForm[inicioCampo] as string | null;
+      const cierre = convocatoriaForm[cierreCampo] as string | null;
+      if (inicio && cierreAnterior && inicio < cierreAnterior) {
+        setError(`La fecha de inicio de ${etapa} no puede ser anterior al cierre de ${etapaAnterior}.`);
+        return;
+      }
+      if (cierre) {
+        cierreAnterior = cierre;
+        etapaAnterior = etapa;
+      }
     }
 
     const data = {
       nombre: convocatoriaForm.nombre.trim(),
-      periodo: convocatoriaForm.periodo.trim(),
-      fecha_inicio: convocatoriaForm.fecha_inicio,
-      fecha_fin: convocatoriaForm.fecha_fin,
+      tipo_periodo: convocatoriaForm.tipo_periodo,
       estado: convocatoriaForm.estado,
+      fecha_inicio_general: convocatoriaForm.fecha_inicio_general || null,
+      fecha_cierre_general: convocatoriaForm.fecha_cierre_general || null,
+      fecha_inicio_empresas: convocatoriaForm.fecha_inicio_empresas || null,
+      fecha_cierre_empresas: convocatoriaForm.fecha_cierre_empresas || null,
+      fecha_inicio_documentos: convocatoriaForm.fecha_inicio_documentos || null,
+      fecha_cierre_documentos: convocatoriaForm.fecha_cierre_documentos || null,
+      fecha_inicio_validacion: convocatoriaForm.fecha_inicio_validacion || null,
+      fecha_cierre_validacion: convocatoriaForm.fecha_cierre_validacion || null,
+      fecha_inicio_seleccion: convocatoriaForm.fecha_inicio_seleccion || null,
+      fecha_cierre_seleccion: convocatoriaForm.fecha_cierre_seleccion || null,
+      fecha_inicio_asignacion: convocatoriaForm.fecha_inicio_asignacion || null,
+      fecha_cierre_asignacion: convocatoriaForm.fecha_cierre_asignacion || null,
+      fecha_inicio_practicas: convocatoriaForm.fecha_inicio_practicas || null,
+      fecha_cierre_practicas: convocatoriaForm.fecha_cierre_practicas || null,
+      fecha_inicio_cierre: convocatoriaForm.fecha_inicio_cierre || null,
+      fecha_cierre_cierre: convocatoriaForm.fecha_cierre_cierre || null,
+      observaciones: convocatoriaForm.observaciones?.trim() || null,
     };
 
     try {
@@ -290,43 +858,53 @@ export function AdminCatalogos() {
     }
   }
 
-  async function guardarTipoDocumento() {
-    if (!tipoDocumentoForm.nombre_documento.trim() || !tipoDocumentoForm.etapa.trim()) {
-      setError("Nombre y etapa del documento son obligatorios.");
+  async function guardarTipoPractica() {
+    if (!tipoPracticaForm.nombre.trim()) {
+      setError("El nombre del tipo de practica es obligatorio.");
       return;
     }
 
-    const data = {
-      nombre_documento: tipoDocumentoForm.nombre_documento.trim(),
-      descripcion: tipoDocumentoForm.descripcion?.trim() || undefined,
-      etapa: tipoDocumentoForm.etapa.trim(),
-      obligatorio: tipoDocumentoForm.obligatorio,
-      requiere_formato: tipoDocumentoForm.requiere_formato,
-    };
+    if (
+      (tipoPracticaForm.semestre_requerido ?? 0) < 1 ||
+      (tipoPracticaForm.creditos_minimos ?? 0) < 0 ||
+      (tipoPracticaForm.horas_requeridas ?? 0) < 1 ||
+      (tipoPracticaForm.orden ?? 0) < 1
+    ) {
+      setError("Semestre, horas y orden deben ser mayores a 0; creditos minimos no puede ser negativo.");
+      return;
+    }
 
     try {
       setCargando(true);
       setError("");
-      if (modoEdicion) {
-        await actualizarTipoDocumento(tipoDocumentoForm.id_tipo_documento, data);
-        setMensaje("Tipo de documento actualizado.");
+      const data = {
+        nombre: tipoPracticaForm.nombre.trim(),
+        semestre_requerido: tipoPracticaForm.semestre_requerido ?? 1,
+        creditos_minimos: tipoPracticaForm.creditos_minimos ?? 0,
+        horas_requeridas: tipoPracticaForm.horas_requeridas ?? 480,
+        orden: tipoPracticaForm.orden ?? null,
+        activo: tipoPracticaForm.activo,
+      };
+      if (modoEdicion && tipoPracticaForm.id_tipo_practica) {
+        await actualizarTipoPractica(tipoPracticaForm.id_tipo_practica, data);
+        setMensaje("Tipo de practica actualizado.");
       } else {
-        await crearTipoDocumento(data);
-        setMensaje("Tipo de documento creado.");
+        await crearTipoPractica(data);
+        setMensaje("Tipo de practica creado.");
       }
-      limpiarFormularios();
       setModoEdicion(false);
+      setTipoPracticaForm(tipoPracticaInicial);
       await cargarCatalogos();
     } catch (err) {
       console.error(err);
-      setError("No se pudo guardar el tipo de documento.");
+      setError("No se pudo guardar el tipo de practica.");
     } finally {
       setCargando(false);
     }
   }
 
   async function eliminarItem(tipo: CatalogoActivo, id: number) {
-    const confirmar = window.confirm("Deseas eliminar este registro?");
+    const confirmar = window.confirm("Deseas desactivar o cerrar este registro?");
     if (!confirmar) return;
 
     try {
@@ -334,16 +912,19 @@ export function AdminCatalogos() {
       setError("");
       if (tipo === "carreras") await eliminarCarrera(id);
       if (tipo === "convocatorias") await eliminarConvocatoria(id);
-      if (tipo === "tipos-documento") await eliminarTipoDocumento(id);
-      setMensaje("Registro eliminado.");
+      setMensaje("Registro actualizado.");
       await cargarCatalogos();
     } catch (err) {
       console.error(err);
-      setError("No se pudo eliminar. Puede tener registros relacionados.");
+      setError("No se pudo actualizar el estado del registro.");
     } finally {
       setCargando(false);
     }
   }
+
+  const columnasGuia = tipoCarga === "alumnos" ? columnasAlumnos : columnasPersonal;
+  const errores = resultadoValidacion?.errores ?? resultadoImportacion?.errores ?? [];
+  const puedeImportar = Boolean(resultadoValidacion && resultadoValidacion.errores.length === 0);
 
   const catalogos = useMemo(
     () => [
@@ -362,14 +943,14 @@ export function AdminCatalogos() {
         tipo: "convocatorias" as CatalogoActivo,
       },
       {
-        titulo: "Tipos de Documento",
-        descripcion: "Documentacion requerida para expedientes de alumnos.",
-        registros: tiposDocumento.length,
-        icono: Settings,
-        tipo: "tipos-documento" as CatalogoActivo,
+        titulo: "Tipos de practica",
+        descripcion: "Reglas academicas de semestre y creditos minimos.",
+        registros: tiposPractica.length,
+        icono: CheckCircle2,
+        tipo: "tipos-practica" as CatalogoActivo,
       },
     ],
-    [carreras.length, convocatorias.length, tiposDocumento.length],
+    [carreras.length, convocatorias.length, tiposPractica.length],
   );
 
   return (
@@ -378,7 +959,7 @@ export function AdminCatalogos() {
         <div>
           <h1 className="text-2xl font-bold text-[#0d2b5e]">Catalogos</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Administracion de catalogos base y carga masiva de alumnos al sistema.
+            Administracion de carreras, convocatorias y carga masiva.
           </p>
         </div>
         <button
@@ -407,7 +988,7 @@ export function AdminCatalogos() {
         {([
           ["Carreras registradas", carreras.length, Database, "bg-blue-600"],
           ["Convocatorias", convocatorias.length, CheckCircle2, "bg-green-600"],
-          ["Tipos documento", tiposDocumento.length, AlertTriangle, "bg-orange-500"],
+          ["Carga masiva", resultadoImportacion?.importados ?? 0, FileSpreadsheet, "bg-orange-500"],
         ] satisfies ColoredStatCard[]).map(([titulo, valor, Icon, color]) => (
           <div key={titulo} className={`${color} rounded-2xl p-5 text-white`}>
             <Icon className="w-7 h-7 mb-3 opacity-80" />
@@ -417,25 +998,100 @@ export function AdminCatalogos() {
         ))}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-2">Carga masiva de alumnos</h3>
-          <p className="text-sm text-gray-500 mb-5">
-            Importa alumnos desde Excel o CSV. Primero valida el archivo y despues importa registros validos.
-          </p>
+      <div className="grid lg:grid-cols-[2fr_1fr] gap-6">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-[#0d2b5e]">Carga masiva</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Descarga la plantilla, valida el archivo, revisa la vista previa y confirma la importacion.
+              </p>
+            </div>
+            <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm">
+              {(["alumnos", "personal"] as TipoCarga[]).map((tipo) => (
+                <button
+                  key={tipo}
+                  onClick={() => reiniciarCarga(tipo)}
+                  className={`px-4 py-2 font-semibold ${
+                    tipoCarga === tipo ? "bg-[#1565c0] text-white" : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {tipo === "alumnos" ? "Alumnos" : "Personal"}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <div className="border-2 border-dashed border-blue-200 rounded-2xl p-8 text-center bg-blue-50/40">
-            <FileSpreadsheet className="w-12 h-12 text-[#1565c0] mx-auto mb-3" />
-            <h4 className="font-bold text-[#0d2b5e]">Seleccionar archivo de alumnos</h4>
-            <p className="text-sm text-gray-500 mt-1">Formatos permitidos: .xlsx, .csv</p>
+          <div className="mt-6 grid md:grid-cols-3 gap-3">
+            {[
+              ["1", "Descargar plantilla"],
+              ["2", "Subir y validar"],
+              ["3", "Confirmar importacion"],
+            ].map(([numero, texto]) => (
+              <div key={numero} className="border border-gray-200 rounded-xl p-3 flex items-center gap-3">
+                <span className="w-7 h-7 rounded-full bg-blue-50 text-[#1565c0] flex items-center justify-center text-sm font-bold">
+                  {numero}
+                </span>
+                <span className="text-sm font-semibold text-[#0d2b5e]">{texto}</span>
+              </div>
+            ))}
+          </div>
 
-            <div className="mt-5 flex flex-col md:flex-row items-center justify-center gap-3">
+          <div className="mt-6 border-2 border-dashed border-blue-200 rounded-2xl p-6 bg-blue-50/40">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="w-10 h-10 text-[#1565c0]" />
+                <div>
+                  <h4 className="font-bold text-[#0d2b5e]">
+                    Archivo de {tipoCarga === "alumnos" ? "alumnos" : "personal"}
+                  </h4>
+                  <p className="text-sm text-gray-500">Formatos permitidos: .xlsx, .csv</p>
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  onClick={descargarPlantillaExcel}
+                  className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold inline-flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Descargar plantilla Excel
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid md:grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl bg-white border border-blue-100 p-3 text-[#0d2b5e]">
+                La plantilla Excel incluye instrucciones y ejemplos en una sola hoja para facilitar el llenado.
+              </div>
+              <div className="rounded-xl bg-white border border-blue-100 p-3 text-[#0d2b5e]">
+                El CSV es simple. Usa exactamente el orden de columnas mostrado.
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl bg-white border border-blue-100 p-3 text-sm text-[#0d2b5e]">
+              <span className="font-semibold">Orden de columnas:</span>{" "}
+              {(tipoCarga === "alumnos" ? columnasAlumnos : columnasPersonal).join(", ")}
+            </div>
+
+            <div className="mt-5 flex flex-col md:flex-row items-start md:items-center gap-3">
               <input
                 type="file"
                 accept=".xlsx,.csv"
                 onChange={(event) => {
-                  setArchivo(event.target.files?.[0] ?? null);
+                  const seleccionado = event.target.files?.[0] ?? null;
+                  const extension = seleccionado?.name.split(".").pop()?.toLowerCase();
+                  if (seleccionado && extension !== "xlsx" && extension !== "csv") {
+                    setArchivo(null);
+                    setResultadoValidacion(null);
+                    setResultadoImportacion(null);
+                    setError("Formato no permitido. Sube un archivo .csv o .xlsx.");
+                    event.target.value = "";
+                    return;
+                  }
+                  setArchivo(seleccionado);
                   setResultadoValidacion(null);
+                  setResultadoImportacion(null);
+                  setError("");
                 }}
                 className="block w-full md:w-auto text-sm"
               />
@@ -449,58 +1105,122 @@ export function AdminCatalogos() {
                 Validar archivo
               </button>
 
-              {resultadoValidacion && resultadoValidacion.errores.length === 0 && (
-                <button
-                  onClick={handleImportarArchivo}
-                  disabled={cargando}
-                  className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-semibold disabled:opacity-50"
-                >
-                  Importar alumnos
-                </button>
+              <button
+                onClick={handleImportarArchivo}
+                disabled={cargando || !puedeImportar}
+                className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Confirmar importacion
+              </button>
+            </div>
+          </div>
+
+          {resultadoValidacion && (
+            <div className="mt-6 border rounded-xl p-4 bg-white">
+              <h4 className="font-bold mb-3 text-[#0d2b5e] flex items-center gap-2">
+                <Eye className="w-4 h-4 text-[#1565c0]" />
+                Vista previa y validacion
+              </h4>
+              <div className="grid md:grid-cols-3 gap-3 text-sm">
+                <div>Total: {resultadoValidacion.total}</div>
+                <div>Validos: {resultadoValidacion.validos}</div>
+                <div>Errores: {resultadoValidacion.errores.length}</div>
+              </div>
+
+              {(resultadoValidacion.vista_previa?.length ?? 0) > 0 && (
+                <div className="mt-4 overflow-x-auto border rounded-xl">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {Object.keys(resultadoValidacion.vista_previa?.[0] ?? {}).map((columna) => (
+                          <th key={columna} className="px-3 py-2 text-left font-semibold text-gray-500">
+                            {columna}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {resultadoValidacion.vista_previa?.map((fila, index) => (
+                        <tr key={index} className="border-t">
+                          {Object.values(fila).map((valor, celda) => (
+                            <td key={celda} className="px-3 py-2 text-gray-700">
+                              {String(valor ?? "")}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
+          )}
 
-            {resultadoValidacion && (
-              <div className="mt-6 border rounded-xl p-4 text-left bg-white">
-                <h4 className="font-bold mb-2 text-[#0d2b5e]">Resultado de validacion</h4>
-                <div className="grid md:grid-cols-3 gap-3 text-sm">
-                  <div>Total: {resultadoValidacion.total}</div>
-                  <div>Validos: {resultadoValidacion.validos}</div>
-                  <div>Errores: {resultadoValidacion.errores.length}</div>
-                </div>
-
-                {resultadoValidacion.errores.length > 0 && (
-                  <div className="mt-3 space-y-2 max-h-52 overflow-y-auto">
-                    {resultadoValidacion.errores.map((item) => (
-                      <div key={`${item.fila}-${item.error}`} className="text-sm text-red-600">
-                        Fila {item.fila}: {item.error}
-                      </div>
-                    ))}
-                  </div>
-                )}
+          {errores.length > 0 && (
+            <div className="mt-6 bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="font-bold text-red-700 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  Errores por fila
+                </h4>
+                <button
+                  onClick={descargarErrores}
+                  className="bg-white border border-red-200 text-red-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                >
+                  Descargar errores
+                </button>
               </div>
-            )}
-          </div>
+              <div className="mt-3 space-y-2 max-h-52 overflow-y-auto">
+                {errores.map((item) => (
+                  <div key={`${item.fila}-${item.error}`} className="text-sm text-red-700">
+                    Fila {item.fila}: {item.error}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(resultadoImportacion?.credenciales?.length ?? 0) > 0 && (
+            <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+              <h4 className="font-bold text-yellow-800 flex items-center gap-2">
+                <KeyRound className="w-4 h-4" />
+                Credenciales temporales
+              </h4>
+              <p className="text-sm text-yellow-800 mt-2">
+                Guarda este archivo ahora. Las contraseñas no podrán recuperarse después.
+              </p>
+              <button
+                onClick={descargarCredenciales}
+                className="mt-3 bg-yellow-600 text-white rounded-xl px-4 py-2 text-sm font-semibold inline-flex items-center gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Descargar credenciales
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="font-bold text-[#0d2b5e] mb-4">Campos requeridos</h3>
+          <h3 className="font-bold text-[#0d2b5e] mb-4">Parametros requeridos</h3>
           <div className="space-y-3">
-            {[
-              "Matricula",
-              "Nombre completo",
-              "Correo institucional",
-              "Carrera",
-              "Semestre",
-              "Grupo",
-              "Creditos aprobados",
-            ].map((campo) => (
+            {columnasGuia.map((campo) => (
               <div key={campo} className="flex items-center gap-2 text-sm">
                 <CheckCircle2 className="w-4 h-4 text-green-600" />
                 <span className="text-gray-700">{campo}</span>
               </div>
             ))}
           </div>
+          {tipoCarga === "alumnos" && (
+            <p className="text-xs text-gray-500 mt-4">
+              El periodo no se captura por alumno: se toma automaticamente del tipo de periodo configurado en la carrera. Las contrasenas temporales solo se pueden descargar al finalizar la importacion.
+            </p>
+          )}
+          {tipoCarga === "personal" && (
+            <p className="text-xs text-gray-500 mt-4">
+              Escribe el rol por nombre. No uses Alumno, Unidad Receptora, id_empresa ni id_rol. Las contrasenas temporales solo se pueden descargar al finalizar la importacion.
+            </p>
+          )}
         </div>
       </div>
 
@@ -534,7 +1254,7 @@ export function AdminCatalogos() {
                 <h3 className="font-bold text-xl text-[#0d2b5e]">
                   {catalogoActivo === "carreras" && "Administrar carreras"}
                   {catalogoActivo === "convocatorias" && "Administrar convocatorias"}
-                  {catalogoActivo === "tipos-documento" && "Administrar tipos de documento"}
+                  {catalogoActivo === "tipos-practica" && "Administrar tipos de practica"}
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Los cambios se guardan directamente en la base de datos.
@@ -543,7 +1263,10 @@ export function AdminCatalogos() {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={iniciarNuevoRegistro}
+                  onClick={() => {
+                    setModoEdicion(false);
+                    limpiarFormularios();
+                  }}
                   className="border border-blue-200 text-[#1565c0] rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -557,14 +1280,7 @@ export function AdminCatalogos() {
 
             {catalogoActivo === "carreras" && (
               <div className="space-y-6">
-                <div className="grid md:grid-cols-[1fr_2fr_auto] gap-3">
-                  <input
-                    type="text"
-                    placeholder="Clave"
-                    value={carreraForm.clave}
-                    onChange={(event) => setCarreraForm({ ...carreraForm, clave: event.target.value })}
-                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
+                <div className="grid md:grid-cols-[2fr_1fr_1fr_auto] gap-3">
                   <input
                     type="text"
                     placeholder="Nombre de la carrera"
@@ -572,6 +1288,22 @@ export function AdminCatalogos() {
                     onChange={(event) => setCarreraForm({ ...carreraForm, nombre: event.target.value })}
                     className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
                   />
+                  <select
+                    value={carreraForm.tipo_periodo}
+                    onChange={(event) => setCarreraForm({ ...carreraForm, tipo_periodo: event.target.value as Carrera["tipo_periodo"] })}
+                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+                  >
+                    <option value="Semestral">Semestral</option>
+                    <option value="Cuatrimestral">Cuatrimestral</option>
+                  </select>
+                  <select
+                    value={carreraForm.estado}
+                    onChange={(event) => setCarreraForm({ ...carreraForm, estado: event.target.value as Carrera["estado"] })}
+                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+                  >
+                    <option value="Activa">Activa</option>
+                    <option value="Inactiva">Inactiva</option>
+                  </select>
                   <button onClick={guardarCarrera} disabled={cargando} className="bg-[#0d2b5e] text-white rounded-xl px-5 text-sm font-bold disabled:opacity-50">
                     {modoEdicion ? "Guardar cambios" : "Crear carrera"}
                   </button>
@@ -582,7 +1314,8 @@ export function AdminCatalogos() {
                     <div key={carrera.id_carrera} className="border rounded-xl px-4 py-3 flex items-center justify-between gap-4">
                       <div>
                         <div className="font-semibold text-[#0d2b5e]">{carrera.nombre}</div>
-                        <div className="text-xs text-gray-400">Clave: {carrera.clave}</div>
+                        <div className="text-xs text-[#1565c0] mt-1">{carrera.tipo_periodo}</div>
+                        <div className="text-xs text-gray-500 mt-1">{carrera.estado}</div>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -615,37 +1348,61 @@ export function AdminCatalogos() {
                     onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, nombre: event.target.value })}
                     className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
                   />
-                  <input
-                    type="text"
-                    placeholder="Periodo"
-                    value={convocatoriaForm.periodo}
-                    onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, periodo: event.target.value })}
-                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
-                  <input
-                    type="date"
-                    value={convocatoriaForm.fecha_inicio}
-                    onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, fecha_inicio: event.target.value })}
-                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
-                  <input
-                    type="date"
-                    value={convocatoriaForm.fecha_fin}
-                    onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, fecha_fin: event.target.value })}
-                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
+                  <select
+                    value={convocatoriaForm.tipo_periodo}
+                    onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, tipo_periodo: event.target.value as Convocatoria["tipo_periodo"] })}
+                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+                  >
+                    <option value="Semestral">Semestral</option>
+                    <option value="Cuatrimestral">Cuatrimestral</option>
+                  </select>
                   <select
                     value={convocatoriaForm.estado}
-                    onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, estado: event.target.value })}
+                    onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, estado: event.target.value as Convocatoria["estado"] })}
                     className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
                   >
                     <option value="Activa">Activa</option>
                     <option value="Inactiva">Inactiva</option>
-                    <option value="Finalizada">Finalizada</option>
+                    <option value="Cerrada">Cerrada</option>
                   </select>
-                  <button onClick={guardarConvocatoria} disabled={cargando} className="bg-[#0d2b5e] text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                    {modoEdicion ? "Guardar cambios" : "Crear convocatoria"}
-                  </button>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-3">
+                  {etapasConvocatoria.map(([etapa, inicioCampo, cierreCampo]) => (
+                    <div key={etapa} className="border rounded-xl p-4">
+                      <div className="text-xs font-bold text-[#0d2b5e] uppercase mb-3">{etapa}</div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="date"
+                          value={(convocatoriaForm[inicioCampo] as string | null) ?? ""}
+                          onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, [inicioCampo]: event.target.value || null })}
+                          className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                        />
+                        <input
+                          type="date"
+                          value={(convocatoriaForm[cierreCampo] as string | null) ?? ""}
+                          onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, [cierreCampo]: event.target.value || null })}
+                          className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <textarea
+                  value={convocatoriaForm.observaciones ?? ""}
+                  onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, observaciones: event.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  placeholder="Observaciones"
+                  rows={3}
+                />
+
+                <button onClick={guardarConvocatoria} disabled={cargando} className="w-full bg-[#0d2b5e] text-white rounded-xl py-3 text-sm font-bold disabled:opacity-50">
+                  {modoEdicion ? "Guardar cambios" : "Crear convocatoria"}
+                </button>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-[#0d2b5e]">
+                  Cada convocatoria aplica a un solo tipo de periodo. Si necesitas ambos procesos, crea una convocatoria Semestral y otra Cuatrimestral.
                 </div>
 
                 <div className="space-y-3">
@@ -654,9 +1411,17 @@ export function AdminCatalogos() {
                       <div>
                         <div className="font-semibold text-[#0d2b5e]">{convocatoria.nombre}</div>
                         <div className="text-xs text-gray-400">
-                          {convocatoria.periodo} | {fechaTexto(convocatoria.fecha_inicio)} - {fechaTexto(convocatoria.fecha_fin)}
+                          General: {fechaTexto(convocatoria.fecha_inicio_general)} - {fechaTexto(convocatoria.fecha_cierre_general)}
                         </div>
-                        <div className="text-xs text-green-600 mt-1">{convocatoria.estado}</div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="text-xs text-green-600">{convocatoria.estado}</span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-blue-50 text-[#1565c0] font-semibold">
+                            {convocatoria.tipo_periodo}
+                          </span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 font-semibold">
+                            {convocatoria.fase_actual}
+                          </span>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <button
@@ -679,77 +1444,105 @@ export function AdminCatalogos() {
               </div>
             )}
 
-            {catalogoActivo === "tipos-documento" && (
+            {catalogoActivo === "tipos-practica" && (
               <div className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    placeholder="Nombre documento"
-                    value={tipoDocumentoForm.nombre_documento}
-                    onChange={(event) => setTipoDocumentoForm({ ...tipoDocumentoForm, nombre_documento: event.target.value })}
-                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Etapa"
-                    value={tipoDocumentoForm.etapa}
-                    onChange={(event) => setTipoDocumentoForm({ ...tipoDocumentoForm, etapa: event.target.value })}
-                    className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
-                  <textarea
-                    placeholder="Descripcion"
-                    value={tipoDocumentoForm.descripcion ?? ""}
-                    onChange={(event) => setTipoDocumentoForm({ ...tipoDocumentoForm, descripcion: event.target.value })}
-                    className="md:col-span-2 px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                  />
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={tipoDocumentoForm.obligatorio}
-                      onChange={(event) => setTipoDocumentoForm({ ...tipoDocumentoForm, obligatorio: event.target.checked })}
-                    />
-                    Obligatorio
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={tipoDocumentoForm.requiere_formato}
-                      onChange={(event) => setTipoDocumentoForm({ ...tipoDocumentoForm, requiere_formato: event.target.checked })}
-                    />
-                    Tiene formato descargable
-                  </label>
-                  <button onClick={guardarTipoDocumento} disabled={cargando} className="bg-[#0d2b5e] text-white rounded-xl text-sm font-bold disabled:opacity-50">
-                    {modoEdicion ? "Guardar cambios" : "Crear tipo"}
-                  </button>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-[#0d2b5e]">
+                  Los tipos de practica definen el semestre y creditos minimos que un alumno debe cumplir para iniciar su proceso.
                 </div>
 
-                <div className="space-y-3">
-                  {tiposDocumento.map((tipo) => (
-                    <div key={tipo.id_tipo_documento} className="border rounded-xl px-4 py-3 flex items-center justify-between gap-4">
-                      <div>
-                        <div className="font-semibold text-[#0d2b5e]">{tipo.nombre_documento}</div>
-                        <div className="text-xs text-gray-400">{tipo.descripcion ?? "Sin descripcion"}</div>
-                        <div className="text-xs text-blue-600 mt-1">
-                          {tipo.etapa} | {tipo.obligatorio ? "Obligatorio" : "Opcional"} | {tipo.requiere_formato ? "Con formato" : "Sin formato"}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setModoEdicion(true);
-                            setTipoDocumentoForm({ ...tipo, descripcion: tipo.descripcion ?? "" });
-                          }}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          title="Editar"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => eliminarItem("tipos-documento", tipo.id_tipo_documento)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Eliminar">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="grid md:grid-cols-6 gap-3 border rounded-xl p-4">
+                    <input
+                      type="text"
+                      value={tipoPracticaForm.nombre}
+                      onChange={(event) => setTipoPracticaForm({ ...tipoPracticaForm, nombre: event.target.value })}
+                      className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                      placeholder="Nombre"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={tipoPracticaForm.semestre_requerido ?? ""}
+                      onChange={(event) => setTipoPracticaForm({ ...tipoPracticaForm, semestre_requerido: Number(event.target.value) || null })}
+                      className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                      placeholder="Semestre requerido"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={tipoPracticaForm.creditos_minimos ?? ""}
+                      onChange={(event) => setTipoPracticaForm({ ...tipoPracticaForm, creditos_minimos: Number(event.target.value) || 0 })}
+                      className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                      placeholder="Creditos minimos"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={tipoPracticaForm.horas_requeridas ?? ""}
+                      onChange={(event) => setTipoPracticaForm({ ...tipoPracticaForm, horas_requeridas: Number(event.target.value) || null })}
+                      className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                      placeholder="Horas requeridas"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={tipoPracticaForm.orden ?? ""}
+                      onChange={(event) => setTipoPracticaForm({ ...tipoPracticaForm, orden: Number(event.target.value) || null })}
+                      className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                      placeholder="Orden"
+                    />
+                    <select
+                      value={tipoPracticaForm.activo ? "1" : "0"}
+                      onChange={(event) => setTipoPracticaForm({ ...tipoPracticaForm, activo: event.target.value === "1" })}
+                      className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm bg-white"
+                    >
+                      <option value="1">Activo</option>
+                      <option value="0">Inactivo</option>
+                    </select>
+                    <button onClick={guardarTipoPractica} disabled={cargando} className="md:col-span-6 bg-[#0d2b5e] text-white rounded-xl py-3 text-sm font-bold disabled:opacity-50">
+                      {modoEdicion ? "Guardar tipo de practica" : "Crear tipo de practica"}
+                    </button>
+                  </div>
+
+                <div className="overflow-x-auto border rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {["Tipo de practica", "Semestre requerido", "Creditos minimos", "Horas", "Orden", "Estado", "Acciones"].map((titulo) => (
+                          <th key={titulo} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">
+                            {titulo}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {tiposPractica.map((tipo) => (
+                        <tr key={tipo.id_tipo_practica}>
+                          <td className="px-4 py-3 font-semibold text-[#0d2b5e]">{tipo.nombre}</td>
+                          <td className="px-4 py-3">{tipo.semestre_requerido ?? "Sin definir"}</td>
+                          <td className="px-4 py-3">{tipo.creditos_minimos ?? 0}</td>
+                          <td className="px-4 py-3">{tipo.horas_requeridas ?? 0}</td>
+                          <td className="px-4 py-3">{tipo.orden ?? "Sin definir"}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-1 rounded-full font-semibold ${tipo.activo ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                              {tipo.activo ? "Activo" : "Inactivo"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => {
+                                setModoEdicion(true);
+                                setTipoPracticaForm(tipo);
+                              }}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                              title="Editar"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

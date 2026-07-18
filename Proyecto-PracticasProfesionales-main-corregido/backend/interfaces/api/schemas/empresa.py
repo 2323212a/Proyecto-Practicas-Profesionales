@@ -1,5 +1,11 @@
 from __future__ import annotations
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, EmailStr
+
+
+TipoTramite = Literal["Convenio", "Vinculacion"]
+EstadoEmpresa = Literal["Solicitante", "Pendiente", "Rechazada", "Activa", "Suspendida", "Inactiva"]
 
 
 class EmpresaCreate(BaseModel):
@@ -9,9 +15,8 @@ class EmpresaCreate(BaseModel):
     domicilio: str | None = None
     telefono: str | None = None
     correo_contacto: EmailStr | None = None
-    estado_empresa: str = "Pendiente"
-    tipo_tramite: str | None = None
-    periodo_participacion: str | None = None
+    tipo_tramite: TipoTramite
+    estado_empresa: EstadoEmpresa = "Pendiente"
 
 
 class EmpresaUpdate(BaseModel):
@@ -21,9 +26,8 @@ class EmpresaUpdate(BaseModel):
     domicilio: str | None = None
     telefono: str | None = None
     correo_contacto: EmailStr | None = None
-    estado_empresa: str | None = None
-    tipo_tramite: str | None = None
-    periodo_participacion: str | None = None
+    tipo_tramite: TipoTramite | None = None
+    estado_empresa: EstadoEmpresa | None = None
 
 
 class EmpresaResponse(BaseModel):
@@ -36,6 +40,5 @@ class EmpresaResponse(BaseModel):
     correo_contacto: str | None = None
     estado_empresa: str
     tipo_tramite: str | None = None
-    periodo_participacion: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import { gestionConfirmacionAsignacionesUseCase } from "../../dependencies";
-import type { AlumnoConfirmacion } from "../../../domain/coordinador/ConfirmacionAsignacion";
+import type { AlumnoConfirmacion, AsesorInterno } from "../../../domain/coordinador/ConfirmacionAsignacion";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 import type { StatCard } from "../../../shared/types/ui";
@@ -20,10 +20,12 @@ type EstadoFiltro = "pendientes" | "asignados" | "todos" | "sin_opciones";
 
 export function CoordinadorAsignaciones() {
   const [alumnos, setAlumnos] = useState<AlumnoConfirmacion[]>([]);
+  const [asesores, setAsesores] = useState<AsesorInterno[]>([]);
   const [convocatoria, setConvocatoria] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltro>("pendientes");
   const [selecciones, setSelecciones] = useState<Record<number, string>>({});
+  const [asesoresSeleccionados, setAsesoresSeleccionados] = useState<Record<number, string>>({});
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState<number | null>(null);
   const [rechazando, setRechazando] = useState<number | null>(null);
@@ -39,6 +41,7 @@ export function CoordinadorAsignaciones() {
       setError("");
       const data = await gestionConfirmacionAsignacionesUseCase.listar();
       setAlumnos(data.alumnos);
+      setAsesores(data.asesores);
       setConvocatoria(data.convocatoria);
       setSelecciones(crearSeleccionesIniciales(data.alumnos));
     } catch (err) {
@@ -90,6 +93,7 @@ export function CoordinadorAsignaciones() {
         alumno.nombre.toLowerCase().includes(q) ||
         alumno.matricula.toLowerCase().includes(q) ||
         alumno.carrera.toLowerCase().includes(q) ||
+        alumno.periodo_practica.toLowerCase().includes(q) ||
         alumno.preferencias.some((preferencia) =>
           preferencia.empresa.toLowerCase().includes(q)
         );
@@ -131,6 +135,9 @@ export function CoordinadorAsignaciones() {
         id_alumno: alumno.id_alumno,
         id_empresa: idEmpresa,
         id_vacante: idVacante,
+        id_asesor: asesoresSeleccionados[alumno.id_alumno]
+          ? Number(asesoresSeleccionados[alumno.id_alumno])
+          : null,
         tipo_asignacion: tieneOpciones(alumno) ? "Normal" : "Rezagado",
       });
       await cargarDatos();
@@ -188,8 +195,7 @@ export function CoordinadorAsignaciones() {
               {convocatoria ?? "Convocatoria sin seleccionar"}
             </h2>
             <p className="text-blue-200 text-sm mt-1">
-              Al confirmar se crea la asignacion formal, se descuenta el cupo y
-              el alumno queda listo para asignarle asesor.
+              Al confirmar se crea la asignacion formal y se ocupa un cupo de la vacante.
             </p>
           </div>
 
@@ -239,7 +245,7 @@ export function CoordinadorAsignaciones() {
               value={busqueda}
               onChange={(event) => setBusqueda(event.target.value)}
               className="outline-none text-sm w-full"
-              placeholder="Buscar alumno, matricula, carrera o empresa..."
+              placeholder="Buscar alumno, matricula, carrera, periodo o empresa..."
             />
           </label>
 
@@ -296,6 +302,7 @@ export function CoordinadorAsignaciones() {
                     {alumno.matricula}
                   </div>
                   <div className="text-sm text-gray-500">{alumno.carrera}</div>
+                  <div className="text-sm text-gray-500">Periodo: {alumno.periodo_practica}</div>
                   <div className="text-xs mt-3 text-gray-400">
                     Estado: {alumno.estado_alumno}
                   </div>
@@ -398,10 +405,28 @@ export function CoordinadorAsignaciones() {
                               value={`${preferencia.id_empresa}:${vacante.id_vacante}`}
                             >
                               {preferencia.prioridad}. {preferencia.empresa} -{" "}
-                              {vacante.titulo} ({vacante.cupo_disponible})
+                              {vacante.titulo} ({vacante.cupos_disponibles} de {vacante.cupos})
                             </option>
                           ))
                         )}
+                      </select>
+
+                      <select
+                        value={asesoresSeleccionados[alumno.id_alumno] ?? ""}
+                        onChange={(event) =>
+                          setAsesoresSeleccionados((actuales) => ({
+                            ...actuales,
+                            [alumno.id_alumno]: event.target.value,
+                          }))
+                        }
+                        className="border rounded-xl px-3 py-2 text-sm outline-none"
+                      >
+                        <option value="">Sin asesor asignado</option>
+                        {asesores.map((asesor) => (
+                          <option key={asesor.id_asesor} value={asesor.id_asesor}>
+                            {asesor.nombre}
+                          </option>
+                        ))}
                       </select>
 
                       <button

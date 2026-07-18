@@ -6,13 +6,18 @@ export interface VacantePadron {
   domicilio: string | null;
   correo_contacto: string | null;
   telefono: string | null;
+  id_convocatoria: number;
+  convocatoria: string | null;
+  id_tipo_practica: number;
+  tipo_practica: string | null;
   titulo: string;
   descripcion: string | null;
-  modalidad: string;
-  horario: string | null;
-  cupo_disponible: number;
-  cupo_total: number;
-  carrera: string;
+  actividades: string | null;
+  requisitos: string | null;
+  cupos: number;
+  cupos_usados: number;
+  periodo: string;
+  estado_vacante: string;
 }
 
 export interface EmpresaPadronDisponible {
@@ -27,6 +32,7 @@ export interface EmpresaPadronDisponible {
 export interface SeleccionEmpresaAlumno {
   id_seleccion: number;
   id_empresa: number;
+  id_convocatoria: number;
   id_vacante: number | null;
   prioridad: number;
   estado_seleccion: "Pendiente" | "Aprobada" | "Rechazada";
@@ -34,22 +40,40 @@ export interface SeleccionEmpresaAlumno {
   fecha_revision: string | null;
 }
 
-export interface PreferenciaEmpresaRequest {
-  id_empresa: number;
+export interface PreferenciaVacanteRequest {
+  id_vacante: number;
   prioridad: number;
 }
 
 export interface EmpresaAsignadaAlumno extends EmpresaPadronDisponible {
   vacante: string | null;
-  modalidad: string | null;
-  horario: string | null;
+  convocatoria: string | null;
+  tipo_practica: string | null;
+  periodo: string | null;
   fecha_asignacion: string;
 }
 
 export interface PadronAlumnoResponse {
+  elegible?: boolean;
   puede_seleccionar: boolean;
   motivo_bloqueo: string | null;
   estado_alumno: string;
+  alumno?: {
+    semestre: number | null;
+    creditos_aprobados: number;
+  };
+  tipo_practica?: {
+    id_tipo_practica?: number;
+    nombre: string;
+    semestre_requerido: number | null;
+    creditos_minimos: number | null;
+    orden: number | null;
+  } | null;
+  convocatoria: {
+    id_convocatoria: number;
+    nombre: string;
+    tipo_periodo: string;
+  } | null;
   empresa_asignada: EmpresaAsignadaAlumno | null;
   empresas: EmpresaPadronDisponible[];
   vacantes: VacantePadron[];

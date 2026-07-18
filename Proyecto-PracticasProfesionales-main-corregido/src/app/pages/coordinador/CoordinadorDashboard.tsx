@@ -161,7 +161,7 @@ export function CoordinadorDashboard() {
           {[
             { title: "Alumnos", subtitle: "Fases y estados", icon: Users, path: "/coordinador/alumnos", style: "bg-[#0d2b5e] text-white" },
             { title: "Documentos", subtitle: "Revision inicial", icon: FileCheck, path: "/coordinador/documentos", style: "bg-white text-[#0d2b5e] border-2 border-[#0d2b5e]" },
-            { title: "Asignaciones", subtitle: "Empresa y docente", icon: ClipboardList, path: "/coordinador/asignaciones", style: "bg-blue-50 text-[#1565c0] border border-blue-200" },
+            { title: "Asignaciones", subtitle: "Empresa y asesor", icon: ClipboardList, path: "/coordinador/asignaciones", style: "bg-blue-50 text-[#1565c0] border border-blue-200" },
             { title: "Seguimiento", subtitle: "Reportes y horas", icon: Clock, path: "/coordinador/seguimiento", style: "bg-purple-50 text-purple-700 border border-purple-200" },
             { title: "Liberacion", subtitle: "Cierre de expediente", icon: Award, path: "/coordinador/liberacion", style: "bg-green-50 text-green-700 border border-green-200" },
             { title: "Notificaciones", subtitle: "Avisos criticos", icon: Bell, path: "/coordinador/notificaciones", style: "bg-orange-50 text-orange-700 border border-orange-200" },

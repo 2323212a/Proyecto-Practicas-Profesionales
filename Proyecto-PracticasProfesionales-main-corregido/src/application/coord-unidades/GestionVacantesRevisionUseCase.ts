@@ -16,7 +16,7 @@ export class GestionVacantesRevisionUseCase {
     return this.repository.cambiarEstado(idVacante, estado, observaciones);
   }
 
-  liberarPrepadron(): Promise<void> {
-    return this.repository.liberarPrepadron();
+  liberarPrepadron(idConvocatoria?: number): Promise<void> {
+    return this.repository.liberarPrepadron(idConvocatoria);
   }
 }

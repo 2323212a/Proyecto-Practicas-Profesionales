@@ -16,6 +16,9 @@ export interface LoginResponse {
   apellido_materno?: string | null;
   nombre_completo: string;
   correo: string;
+  debe_cambiar_password?: boolean;
+  tipo_perfil?: string;
+  id_perfil?: number | null;
   perfil_tipo: string | null;
   perfil: Record<string, unknown> | null;
 }
@@ -30,3 +33,12 @@ export const login = async (
 
   return response.data;
 };
+
+export async function cambiarPasswordInicial(data: {
+  password_actual: string;
+  password_nueva: string;
+  confirmar_password: string;
+}) {
+  const response = await apiClient.post("/auth/cambiar-password-inicial", data);
+  return response.data;
+}

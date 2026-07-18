@@ -25,11 +25,14 @@ class AsignacionService:
     def crear(self, asignacion):
         alumno = self._validar_alumno(asignacion.id_alumno)
         self._validar_convocatoria(asignacion.id_convocatoria)
-        self._validar_docente(asignacion.id_docente)
+        self._validar_asesor(asignacion.id_asesor)
         self._validar_empresa_activa(asignacion.id_empresa)
-        vacante = self._obtener_vacante_disponible(
+        self._obtener_vacante_disponible(
             asignacion.id_vacante,
-            asignacion.id_empresa
+            asignacion.id_empresa,
+            asignacion.id_convocatoria,
+            asignacion.id_tipo_practica,
+            alumno.periodo_practica,
         )
 
         existente = self.repository.obtener_por_alumno_convocatoria(
@@ -44,10 +47,6 @@ class AsignacionService:
 
         nueva_asignacion = self.repository.nuevo(asignacion.model_dump())
 
-        if nueva_asignacion.estado_asignacion == "Activa":
-            vacante.cupo_disponible -= 1
-            self._actualizar_estado_vacante(vacante)
-
         alumno.estado_alumno = "Asignado"
         return self.repository.crear(nueva_asignacion)
 
@@ -57,8 +56,8 @@ class AsignacionService:
             return None
 
         cambios = datos.model_dump(exclude_unset=True)
-        if "id_docente" in cambios:
-            self._validar_docente(cambios["id_docente"])
+        if "id_asesor" in cambios:
+            self._validar_asesor(cambios["id_asesor"])
 
         estado_anterior = asignacion.estado_asignacion
         estado_nuevo = cambios.get("estado_asignacion", estado_anterior)
@@ -100,21 +99,27 @@ class AsignacionService:
         if estado_anterior == "Activa" and estado_nuevo == "Cancelada":
             self._restaurar_cupo(asignacion)
         elif estado_anterior == "Cancelada" and estado_nuevo == "Activa":
-            vacante = self._obtener_vacante_disponible(
+            self._obtener_vacante_disponible(
                 asignacion.id_vacante,
-                asignacion.id_empresa
+                asignacion.id_empresa,
+                asignacion.id_convocatoria,
+                asignacion.id_tipo_practica,
+                asignacion.alumno.periodo_practica if getattr(asignacion, "alumno", None) else None,
             )
-            vacante.cupo_disponible -= 1
-            self._actualizar_estado_vacante(vacante)
 
     def _restaurar_cupo(self, asignacion):
         vacante = self.repository.obtener_vacante(asignacion.id_vacante)
-        if vacante and vacante.cupo_disponible < vacante.cupo_total:
-            vacante.cupo_disponible += 1
-            if vacante.cupo_disponible > 0:
-                vacante.estado_vacante = "Activa"
+        if vacante and vacante.estado_vacante == "Cerrada":
+            vacante.estado_vacante = "Activa"
 
-    def _obtener_vacante_disponible(self, id_vacante: int, id_empresa: int):
+    def _obtener_vacante_disponible(
+        self,
+        id_vacante: int,
+        id_empresa: int,
+        id_convocatoria: int,
+        id_tipo_practica: int,
+        periodo_practica: str | None,
+    ):
         vacante = self.repository.obtener_vacante(id_vacante)
         if vacante is None:
             raise HTTPException(status_code=404, detail="Vacante no encontrada")
@@ -123,14 +128,24 @@ class AsignacionService:
                 validar_vacante_pertenece_a_empresa(vacante.id_empresa, id_empresa)
             except BusinessRuleError as exc:
                 raise HTTPException(status_code=400, detail=exc.message) from exc
+        if vacante.id_convocatoria != id_convocatoria:
+            raise HTTPException(status_code=400, detail="La vacante no pertenece a la convocatoria indicada")
+        if vacante.id_tipo_practica != id_tipo_practica:
+            raise HTTPException(status_code=400, detail="La vacante no corresponde al tipo de practica del alumno")
+        if periodo_practica is not None and vacante.periodo != periodo_practica:
+            raise HTTPException(status_code=400, detail="La vacante no corresponde al periodo del alumno")
         try:
-            validar_vacante_disponible(self._vacante_to_domain(vacante))
+            asignaciones_activas = self.repository.contar_asignaciones_activas_vacante(id_vacante)
+            validar_vacante_disponible(self._vacante_to_domain(vacante), asignaciones_activas)
         except BusinessRuleError as exc:
             raise HTTPException(status_code=400, detail=exc.message) from exc
         return vacante
 
     def _actualizar_estado_vacante(self, vacante):
-        if vacante.cupo_disponible <= 0:
+        asignaciones_activas = len(
+            [item for item in getattr(vacante, "asignaciones", []) if item.estado_asignacion == "Activa"]
+        )
+        if asignaciones_activas >= vacante.cupos:
             vacante.estado_vacante = "Cerrada"
 
     def _validar_alumno(self, id_alumno: int):
@@ -146,12 +161,12 @@ class AsignacionService:
         if convocatoria.estado != "Activa":
             raise HTTPException(status_code=400, detail="La convocatoria no está activa")
 
-    def _validar_docente(self, id_docente: int | None):
-        if id_docente is None:
+    def _validar_asesor(self, id_asesor: int | None):
+        if id_asesor is None:
             return
-        docente = self.repository.obtener_docente(id_docente)
-        if docente is None:
-            raise HTTPException(status_code=404, detail="Docente no encontrado")
+        asesor = self.repository.obtener_asesor(id_asesor)
+        if asesor is None:
+            raise HTTPException(status_code=404, detail="Asesor no encontrado")
 
     def _validar_empresa_activa(self, id_empresa: int):
         empresa = self.repository.obtener_empresa(id_empresa)
@@ -174,14 +189,16 @@ class AsignacionService:
         return Vacante(
             id_vacante=vacante.id_vacante,
             id_empresa=vacante.id_empresa,
-            id_carrera=vacante.id_carrera,
+            id_convocatoria=vacante.id_convocatoria,
+            id_tipo_practica=vacante.id_tipo_practica,
             titulo=vacante.titulo,
-            modalidad=vacante.modalidad,
-            cupo_total=vacante.cupo_total,
-            cupo_disponible=vacante.cupo_disponible,
+            cupos=vacante.cupos,
+            periodo=vacante.periodo,
             estado_vacante=vacante.estado_vacante,
             descripcion=vacante.descripcion,
-            horario=vacante.horario,
+            actividades=vacante.actividades,
+            requisitos=vacante.requisitos,
+            observaciones=vacante.observaciones,
         )
 
     def _asignacion_to_domain(self, asignacion):
@@ -191,7 +208,8 @@ class AsignacionService:
             id_empresa=asignacion.id_empresa,
             id_vacante=asignacion.id_vacante,
             id_convocatoria=asignacion.id_convocatoria,
-            id_docente=asignacion.id_docente,
+            id_tipo_practica=asignacion.id_tipo_practica,
+            id_asesor=asignacion.id_asesor,
             fecha_asignacion=asignacion.fecha_asignacion,
             estado_asignacion=asignacion.estado_asignacion,
             tipo_asignacion=asignacion.tipo_asignacion,

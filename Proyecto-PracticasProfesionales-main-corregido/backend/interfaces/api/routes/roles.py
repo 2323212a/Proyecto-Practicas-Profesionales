@@ -5,6 +5,7 @@ from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
 from interfaces.api.schemas.rol import RolCreate, RolResponse, RolUpdate
 from interfaces.api.service_factory import RolService
+from infrastructure.persistence.models.usuario import UsuarioModel
 
 
 router = APIRouter(
@@ -53,6 +54,17 @@ def actualizar_rol(
 
 @router.delete("/{id_rol}")
 def eliminar_rol(id_rol: int, db: Session = Depends(obtener_db)):
+    usuarios_asociados = (
+        db.query(UsuarioModel)
+        .filter(UsuarioModel.id_rol == id_rol)
+        .count()
+    )
+    if usuarios_asociados > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede eliminar este rol porque tiene usuarios asociados.",
+        )
+
     rol = RolService(db).eliminar(id_rol)
 
     if rol is None:

@@ -3,10 +3,10 @@ import {
   AlertTriangle,
   Briefcase,
   Building2,
+  CalendarDays,
   CheckCircle2,
   Clock,
   Filter,
-  MapPin,
   RotateCcw,
   Search,
   Users,
@@ -32,7 +32,7 @@ export function GestionVacantes() {
   const navigate = useNavigate();
   const [vacantes, setVacantes] = useState<VacanteRevision[]>([]);
   const [busqueda, setBusqueda] = useState("");
-  const [modalidad, setModalidad] = useState("Todas");
+  const [convocatoria, setConvocatoria] = useState("Todas");
   const [estado, setEstado] = useState("Todos");
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState<number | null>(null);
@@ -62,12 +62,26 @@ export function GestionVacantes() {
       const coincideBusqueda =
         vacante.empresa.toLowerCase().includes(q) ||
         vacante.titulo.toLowerCase().includes(q) ||
-        vacante.carrera.toLowerCase().includes(q);
-      const coincideModalidad = modalidad === "Todas" || vacante.modalidad === modalidad;
+        (vacante.convocatoria ?? "").toLowerCase().includes(q) ||
+        (vacante.tipo_practica ?? "").toLowerCase().includes(q);
+      const coincideConvocatoria = convocatoria === "Todas" || String(vacante.id_convocatoria) === convocatoria;
       const coincideEstado = estado === "Todos" || vacante.estado_vacante === estado;
-      return coincideBusqueda && coincideModalidad && coincideEstado;
+      return coincideBusqueda && coincideConvocatoria && coincideEstado;
     });
-  }, [vacantes, busqueda, modalidad, estado]);
+  }, [vacantes, busqueda, convocatoria, estado]);
+
+  const convocatorias = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          vacantes.map((vacante) => [
+            vacante.id_convocatoria,
+            vacante.convocatoria ?? `Convocatoria ${vacante.id_convocatoria}`,
+          ]),
+        ),
+      ),
+    [vacantes],
+  );
 
   const resumen = {
     total: vacantes.length,
@@ -81,7 +95,7 @@ export function GestionVacantes() {
 
   function limpiarFiltros() {
     setBusqueda("");
-    setModalidad("Todas");
+    setConvocatoria("Todas");
     setEstado("Todos");
   }
 
@@ -156,15 +170,17 @@ export function GestionVacantes() {
               value={busqueda}
               onChange={(event) => setBusqueda(event.target.value)}
               className="outline-none text-sm w-full"
-              placeholder="Buscar empresa, vacante o carrera..."
+              placeholder="Buscar empresa, vacante, convocatoria o tipo..."
             />
           </label>
 
-          <select value={modalidad} onChange={(event) => setModalidad(event.target.value)} className="border rounded-xl px-3 py-2 text-sm bg-white">
-            <option>Todas</option>
-            <option>Presencial</option>
-            <option>Hibrida</option>
-            <option>Virtual</option>
+          <select value={convocatoria} onChange={(event) => setConvocatoria(event.target.value)} className="border rounded-xl px-3 py-2 text-sm bg-white">
+            <option value="Todas">Todas las convocatorias</option>
+            {convocatorias.map(([id, nombre]) => (
+              <option key={id} value={String(id)}>
+                {nombre}
+              </option>
+            ))}
           </select>
 
           <select value={estado} onChange={(event) => setEstado(event.target.value)} className="border rounded-xl px-3 py-2 text-sm bg-white">
@@ -195,7 +211,7 @@ export function GestionVacantes() {
                 <div>
                   <h3 className="font-bold text-[#0d2b5e]">{vacante.empresa}</h3>
                   <p className="text-sm text-gray-500 mt-1">{vacante.titulo}</p>
-                  <p className="text-xs text-gray-400 mt-1">{vacante.carrera}</p>
+                  <p className="text-xs text-gray-400 mt-1">{vacante.convocatoria ?? "Sin convocatoria"}</p>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold ${estadoColor[vacante.estado_vacante] ?? "bg-gray-100 text-gray-600"}`}>
                   {vacante.estado_vacante}
@@ -209,7 +225,7 @@ export function GestionVacantes() {
                     Cupo
                   </div>
                   <p className="font-bold text-[#0d2b5e] mt-1">
-                    {vacante.cupo_disponible}/{vacante.cupo_total}
+                    {vacante.cupos}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {vacante.cupo_ocupado} ocupado(s) por alumnos
@@ -217,10 +233,10 @@ export function GestionVacantes() {
                 </div>
                 <div className="border rounded-xl p-3">
                   <div className="flex items-center gap-2 text-xs text-gray-500">
-                    <MapPin className="w-4 h-4" />
-                    Modalidad
+                    <CalendarDays className="w-4 h-4" />
+                    Convocatoria
                   </div>
-                  <p className="font-bold text-[#0d2b5e] mt-1">{vacante.modalidad}</p>
+                  <p className="font-bold text-[#0d2b5e] mt-1">{vacante.convocatoria ?? "Sin convocatoria"}</p>
                 </div>
                 <div className="border rounded-xl p-3">
                   <div className="text-xs text-gray-500">Periodo</div>
@@ -250,6 +266,23 @@ export function GestionVacantes() {
               {vacante.descripcion && (
                 <div className="mt-4 bg-gray-50 rounded-xl p-4 text-sm text-gray-600">
                   {vacante.descripcion}
+                </div>
+              )}
+
+              {(vacante.actividades || vacante.requisitos) && (
+                <div className="grid md:grid-cols-2 gap-3 mt-4">
+                  {vacante.actividades && (
+                    <div className="border rounded-xl p-4 text-sm text-gray-600">
+                      <div className="text-xs font-semibold text-gray-500 mb-1">Actividades</div>
+                      {vacante.actividades}
+                    </div>
+                  )}
+                  {vacante.requisitos && (
+                    <div className="border rounded-xl p-4 text-sm text-gray-600">
+                      <div className="text-xs font-semibold text-gray-500 mb-1">Requisitos</div>
+                      {vacante.requisitos}
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -260,7 +260,6 @@ export function ValidacionEmpresas() {
                     <td className="text-gray-600">{empresa.giro ?? "Sin giro"}</td>
                     <td className="text-gray-600">
                       {empresa.tipo_tramite ?? "Sin tramite"}
-                      <div className="text-xs text-gray-400">{empresa.periodo_participacion ?? "Sin periodo"}</div>
                     </td>
                     <td className="text-gray-600">{empresa.vacantes_activas}/{empresa.vacantes} activas</td>
 
@@ -367,7 +366,6 @@ export function ValidacionEmpresas() {
               <p><b>Giro:</b> {solicitudDetalle.empresa.giro ?? "Sin giro"}</p>
               <p><b>Telefono:</b> {solicitudDetalle.empresa.telefono ?? "Sin telefono"}</p>
               <p><b>Tramite:</b> {solicitudDetalle.solicitud.tipo_tramite ?? "Sin tramite"}</p>
-              <p><b>Periodo:</b> {solicitudDetalle.solicitud.periodo_participacion ?? "Sin periodo"}</p>
               <p><b>Estado solicitud:</b> {solicitudDetalle.solicitud.estado_solicitud ?? "Sin solicitud"}</p>
               <p><b>Cuenta creada:</b> {solicitudDetalle.cuenta_creada ? solicitudDetalle.correo_usuario : "No"}</p>
             </div>

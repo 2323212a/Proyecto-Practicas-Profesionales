@@ -1,10 +1,10 @@
-import type { PadronAlumnoResponse, PreferenciaEmpresaRequest } from "./Padron";
+import type { PadronAlumnoResponse, PreferenciaVacanteRequest } from "./Padron";
 
 export interface PadronRepository {
   obtener(idAlumno: number): Promise<PadronAlumnoResponse>;
   guardarPreferencias(
     idAlumno: number,
-    preferencias: PreferenciaEmpresaRequest[],
-    idEmpresaPrioritaria: number | null
+    preferencias: PreferenciaVacanteRequest[],
+    idVacantePrioritaria: number | null
   ): Promise<void>;
 }

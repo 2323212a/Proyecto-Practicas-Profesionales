@@ -41,4 +41,8 @@ export class GestionUsuariosUseCase {
   eliminar(id: number): Promise<void> {
     return this.repository.eliminar(id);
   }
+
+  eliminarDefinitivamente(id: number): Promise<void> {
+    return this.repository.eliminarDefinitivamente(id);
+  }
 }

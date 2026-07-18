@@ -17,7 +17,7 @@ interface EstadisticasAdmin {
   usuarios_activos: number;
   usuarios_inactivos: number;
   roles: number;
-  catalogos_total: number;
+  carreras: number;
   alumnos: number;
   expedientes: number;
   documentos: number;
@@ -62,11 +62,11 @@ export function AdminDashboard() {
       t: "Roles registrados",
     },
     {
-      l: "Catalogos",
-      v: estadisticas?.catalogos_total ?? 0,
+      l: "Carreras",
+      v: estadisticas?.carreras ?? 0,
       I: ClipboardList,
       c: "bg-green-50 text-green-600",
-      t: "Carreras, convocatorias y documentos",
+      t: "Carreras registradas",
     },
     {
       l: "Alumnos",
@@ -95,7 +95,7 @@ export function AdminDashboard() {
     {
       I: ClipboardList,
       l: "Catalogos",
-      d: "Gestionar carreras, convocatorias y tipos de documento",
+      d: "Gestionar carreras, convocatorias y carga masiva",
       p: "/admin/catalogos",
       g: "from-green-600 to-green-500",
     },
@@ -145,12 +145,6 @@ export function AdminDashboard() {
       s: `${estadisticas?.convocatorias ?? 0}`,
       c: "text-orange-600",
       d: "bg-orange-500",
-    },
-    {
-      l: "Tipos de documento",
-      s: `${estadisticas?.tipos_documento ?? 0}`,
-      c: "text-green-600",
-      d: "bg-green-500",
     },
     {
       l: "Reportes registrados",

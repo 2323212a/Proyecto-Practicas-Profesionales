@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Enum, Integer, String, Text
+from sqlalchemy import Column, DateTime, Enum, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -13,18 +13,21 @@ class EmpresaModel(Base):
     domicilio = Column(Text, nullable=True)
     telefono = Column(String(15), nullable=True)
     correo_contacto = Column(String(100), nullable=True)
+    tipo_tramite = Column(Enum("Convenio", "Vinculacion"), nullable=False)
     estado_empresa = Column(
         Enum("Solicitante", "Pendiente", "Rechazada", "Activa", "Suspendida", "Inactiva"),
         nullable=False,
-        default="Pendiente",
-        server_default="Pendiente"
+        default="Solicitante",
+        server_default="Solicitante"
     )
-    tipo_tramite = Column(Enum("Convenio", "Vinculacion"), nullable=True)
-    periodo_participacion = Column(Enum("Semestral", "Cuatrimestral", "Ambos"), nullable=True)
+    fecha_registro = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     responsables = relationship("ResponsableEmpresaModel", back_populates="empresa")
     solicitudes = relationship("SolicitudEmpresaModel", back_populates="empresa")
     convenios = relationship("ConvenioModel", back_populates="empresa")
+    vinculaciones = relationship("VinculacionEmpresaModel", back_populates="empresa")
+    participaciones = relationship("ParticipacionEmpresaConvocatoriaModel", back_populates="empresa")
     vacantes = relationship("VacanteModel", back_populates="empresa")
-    selecciones = relationship("SeleccionEmpresaModel", back_populates="empresa")
     asignaciones = relationship("AsignacionModel", back_populates="empresa", overlaps="asignaciones,vacante")

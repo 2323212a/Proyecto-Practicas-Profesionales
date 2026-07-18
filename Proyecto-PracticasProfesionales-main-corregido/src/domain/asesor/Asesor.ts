@@ -61,14 +61,14 @@ export interface ReportesAsesorResponse {
   reportes: ReporteAsesor[];
 }
 
-export interface EvaluacionDocente {
+export interface EvaluacionAsesor {
   id_evaluacion: number;
   calificacion: number;
   comentarios: string | null;
   fecha_evaluacion: string;
 }
 
-export interface AlumnoEvaluacionDocente {
+export interface AlumnoEvaluacionAsesor {
   id_asignacion: number;
   id_alumno: number | null;
   alumno: string;
@@ -80,22 +80,22 @@ export interface AlumnoEvaluacionDocente {
   reportes_rechazados: number;
   puede_evaluar: boolean;
   motivo_bloqueo: string | null;
-  evaluacion: EvaluacionDocente | null;
+  evaluacion: EvaluacionAsesor | null;
 }
 
-export interface ResumenEvaluacionesDocente {
+export interface ResumenEvaluacionesAsesor {
   total: number;
   evaluados: number;
   pendientes: number;
   bloqueados: number;
 }
 
-export interface EvaluacionesDocenteResponse {
-  resumen: ResumenEvaluacionesDocente;
-  alumnos: AlumnoEvaluacionDocente[];
+export interface EvaluacionesAsesorResponse {
+  resumen: ResumenEvaluacionesAsesor;
+  alumnos: AlumnoEvaluacionAsesor[];
 }
 
-export interface GuardarEvaluacionDocenteInput {
+export interface GuardarEvaluacionAsesorInput {
   id_asignacion: number;
   calificacion: number;
   comentarios?: string;

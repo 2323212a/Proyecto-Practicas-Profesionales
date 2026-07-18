@@ -173,9 +173,8 @@ export function UnidadDashboard() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="font-semibold text-sm text-gray-800">{vacante.titulo}</div>
-                    <div className="text-xs text-gray-500 mt-1">{vacante.carrera}</div>
                     <div className="text-xs text-gray-400 mt-1">
-                      Cupo: {vacante.cupo_disponible}/{vacante.cupo_total}
+                      {vacante.tipo_practica ?? "Sin tipo de practica"} · {vacante.periodo ?? "Sin periodo"} · {vacante.cupos} cupo(s)
                     </div>
                   </div>
                   <span className={`text-xs px-3 py-1 rounded-full font-semibold ${vacante.estado_vacante === "Activa" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>

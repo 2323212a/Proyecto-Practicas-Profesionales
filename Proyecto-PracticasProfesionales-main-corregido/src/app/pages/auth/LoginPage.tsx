@@ -11,6 +11,8 @@ import logoInstitucional from "../../../assets/Logo1.png";
 import { loginUseCase } from "../../dependencies";
 import type { Rol } from "../../../domain/rol/Rol";
 import { obtenerRoles } from "../../../infrastructure/roles/rolesApi";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
+import { obtenerRutaInicioPorRol, obtenerRutaInicioSesionGuardada } from "../../routes/authSession";
 
 const ROLES_RESPALDO: Rol[] = [
   { id_rol: 1, nombre: "Alumno" },
@@ -21,20 +23,6 @@ const ROLES_RESPALDO: Rol[] = [
   { id_rol: 6, nombre: "Asesor Interno" },
   { id_rol: 7, nombre: "Direccion" },
 ];
-
-function rutaPorRol(nombre: string | null, idRol: number) {
-  const rol = (nombre ?? "").toLowerCase();
-
-  if (rol.includes("alumno") || idRol === 1) return "/alumno";
-  if (rol.includes("admin") || idRol === 2) return "/admin";
-  if (rol.includes("coordinador de unidades") || idRol === 4) return "/coord-unidades";
-  if (rol.includes("coordinador") || idRol === 3) return "/coordinador";
-  if (rol.includes("unidad") || rol.includes("empresa") || idRol === 5) return "/unidad";
-  if (rol.includes("asesor") || rol.includes("docente") || idRol === 6) return "/asesor";
-  if (rol.includes("direccion") || idRol === 7) return "/direccion";
-
-  return null;
-}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -50,6 +38,12 @@ export function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const rutaSesion = obtenerRutaInicioSesionGuardada();
+    if (rutaSesion) {
+      navigate(rutaSesion, { replace: true });
+      return;
+    }
+
     obtenerRoles()
       .then((data: Rol[]) => {
         if (data.length > 0) {
@@ -58,7 +52,7 @@ export function LoginPage() {
         }
       })
       .catch((err) => console.error(err));
-  }, []);
+  }, [navigate]);
 
   const rolSeleccionado = useMemo(
     () => roles.find((item) => String(item.id_rol) === idRolSeleccionado),
@@ -83,15 +77,16 @@ export function LoginPage() {
       localStorage.setItem("token", response.access_token);
       localStorage.setItem("usuario", JSON.stringify(response));
 
-      const ruta = rutaPorRol(response.rol, response.id_rol);
-      if (!ruta) {
-        setError("Rol no reconocido");
+      if (response.rol === "Alumno" && response.debe_cambiar_password === true) {
+        navigate("/cambiar-password-inicial", { replace: true });
         return;
       }
 
-      navigate(ruta);
+      const ruta = obtenerRutaInicioPorRol(response.rol, response.id_rol);
+
+      navigate(ruta, { replace: true });
     } catch (err) {
-      setError("Correo o contrasena incorrectos");
+      setError(getApiErrorMessage(err, "Correo o contrasena incorrectos"));
       console.error(err);
     } finally {
       setLoading(false);
@@ -102,7 +97,10 @@ export function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-[#0d2b5e] via-[#1565c0] to-[#1976d2] flex flex-col">
       <div className="px-6 py-5 flex items-center justify-between">
         <button
-          onClick={() => navigate("/")}
+          onClick={() => {
+            const rutaSesion = obtenerRutaInicioSesionGuardada();
+            navigate(rutaSesion ?? "/", { replace: Boolean(rutaSesion) });
+          }}
           className="flex items-center gap-2 text-white/80 hover:text-white transition-colors text-sm"
         >
           <ArrowLeft className="w-4 h-4" />

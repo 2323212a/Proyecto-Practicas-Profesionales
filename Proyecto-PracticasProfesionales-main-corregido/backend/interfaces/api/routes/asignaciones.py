@@ -3,13 +3,13 @@ from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
-from infrastructure.persistence.models.docente_asesor import DocenteAsesorModel
 from infrastructure.persistence.models.notificacion import NotificacionModel
+from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from interfaces.api.schemas.asignacion import (
     AsignacionCreate,
     AsignacionResponse,
     AsignacionUpdate,
-    AsignarDocenteRequest,
+    AsignarAsesorRequest,
 )
 from interfaces.api.service_factory import AsignacionService
 
@@ -50,25 +50,25 @@ def actualizar_asignacion(
     return asignacion
 
 
-@router.patch("/{id_asignacion}/docente", response_model=AsignacionResponse)
-def asignar_docente(
+@router.patch("/{id_asignacion}/asesor", response_model=AsignacionResponse)
+def asignar_asesor(
     id_asignacion: int,
-    datos: AsignarDocenteRequest,
+    datos: AsignarAsesorRequest,
     db: Session = Depends(obtener_db)
 ):
     asignacion = AsignacionService(db).actualizar(
         id_asignacion,
-        AsignacionUpdate(id_docente=datos.id_docente),
+        AsignacionUpdate(id_asesor=datos.id_asesor),
     )
     if asignacion is None:
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
 
-    docente = db.query(DocenteAsesorModel).filter(
-        DocenteAsesorModel.id_docente == datos.id_docente
+    asesor = db.query(PersonalInternoModel).filter(
+        PersonalInternoModel.id_personal == datos.id_asesor
     ).first()
-    if docente is not None:
+    if asesor is not None:
         db.add(NotificacionModel(
-            id_usuario=docente.id_usuario,
+            id_usuario=asesor.id_usuario,
             titulo="Nuevo alumno asignado",
             mensaje=(
                 "Se te asignó un nuevo alumno para seguimiento académico. "

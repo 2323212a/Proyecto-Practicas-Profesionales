@@ -4,9 +4,7 @@ from domain.exceptions import BusinessRuleError
 
 PERFILES_POR_ROL = {
     "alumno": "Alumno",
-    "asesor interno": "Docente",
-    "docente": "Docente",
-    "docente asesor": "Docente",
+    "asesor interno": "PersonalInterno",
     "coordinador": "Coordinador",
     "coordinador de practicas": "Coordinador",
     "coordinador de prácticas": "Coordinador",

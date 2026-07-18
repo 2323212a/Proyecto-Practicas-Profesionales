@@ -166,11 +166,6 @@ def ensure_runtime_schema(engine: Engine) -> None:
             "ALTER TABLE empresa ADD COLUMN tipo_tramite ENUM('Convenio','Vinculacion') NULL",
         ),
         (
-            "empresa",
-            "periodo_participacion",
-            "ALTER TABLE empresa ADD COLUMN periodo_participacion ENUM('Semestral','Cuatrimestral','Ambos') NULL",
-        ),
-        (
             "vacante",
             "periodo",
             "ALTER TABLE vacante ADD COLUMN periodo ENUM('Semestral','Cuatrimestral') NULL",
@@ -217,23 +212,8 @@ def ensure_runtime_schema(engine: Engine) -> None:
         ),
         (
             "convenio",
-            "id_documento_empresa",
-            "ALTER TABLE convenio ADD COLUMN id_documento_empresa INT NULL",
-        ),
-        (
-            "convenio",
-            "version",
-            "ALTER TABLE convenio ADD COLUMN version INT NOT NULL DEFAULT 1",
-        ),
-        (
-            "convenio",
             "es_actual",
             "ALTER TABLE convenio ADD COLUMN es_actual TINYINT(1) NOT NULL DEFAULT 1",
-        ),
-        (
-            "convenio",
-            "renovacion_solicitada",
-            "ALTER TABLE convenio ADD COLUMN renovacion_solicitada TINYINT(1) NOT NULL DEFAULT 0",
         ),
     ]
 
@@ -322,7 +302,7 @@ def ensure_runtime_schema(engine: Engine) -> None:
             text(
                 """
                 UPDATE convenio
-                SET estado_convenio = 'Vencido', renovacion_solicitada = 0
+                SET estado_convenio = 'Vencido'
                 WHERE es_actual = 0
                   AND estado_convenio = 'Vigente'
                 """
@@ -447,13 +427,6 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 "referenced_table": "usuario",
                 "referenced_column": "id_usuario",
                 "constraint_name": "fk_seleccion_empresa_revisor",
-            },
-            {
-                "table_name": "convenio",
-                "column_name": "id_documento_empresa",
-                "referenced_table": "documento_empresa",
-                "referenced_column": "id_documento_empresa",
-                "constraint_name": "fk_convenio_documento_empresa",
             },
         ]
         for foreign_key in foreign_keys:

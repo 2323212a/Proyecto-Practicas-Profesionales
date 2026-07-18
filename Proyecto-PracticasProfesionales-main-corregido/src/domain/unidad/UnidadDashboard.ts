@@ -10,7 +10,6 @@ export interface EmpresaUnidadBasica {
   correo_contacto: string | null;
   estado_empresa: string;
   tipo_tramite: string | null;
-  periodo_participacion: string | null;
 }
 
 export interface ResumenUnidadDashboard {
@@ -24,10 +23,10 @@ export interface ResumenUnidadDashboard {
 export interface VacanteUnidadResumen {
   id_vacante: number;
   titulo: string;
-  carrera: string;
   estado_vacante: string;
-  cupo_total: number;
-  cupo_disponible: number;
+  cupos: number;
+  periodo: string | null;
+  tipo_practica?: string | null;
 }
 
 export interface ConvenioUnidadResumen {
@@ -35,9 +34,8 @@ export interface ConvenioUnidadResumen {
   fecha_inicio: string;
   fecha_fin: string;
   estado_convenio: string;
-  documento_convenio: string | null;
   es_actual: boolean;
-  version: number;
+  observaciones: string | null;
 }
 
 export interface UnidadDashboardResponse {
@@ -69,9 +67,10 @@ export interface PerfilUnidadResponse {
     id_vacante: number;
     titulo: string;
     descripcion: string | null;
-    modalidad: string;
-    cupo_total: number;
-    cupo_disponible: number;
+    actividades: string | null;
+    requisitos: string | null;
+    cupos: number;
+    periodo: string | null;
     estado_vacante: string;
   }>;
   convenios: ConvenioUnidadResumen[];

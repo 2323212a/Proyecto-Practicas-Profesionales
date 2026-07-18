@@ -12,20 +12,26 @@ from app.services.convenio_empresa_service import (
     obtener_convenio_actual,
     obtener_convenio_vigente,
 )
+from app.services.empresa_reglas_service import (
+    convocatoria_activa_para_empresas,
+    validar_habilitacion_empresa_para_vacantes,
+    validar_participacion_aceptada,
+)
 from app.services.notificacion_service import crear_notificacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, requerir_empresa_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.convenio import ConvenioModel
-from infrastructure.persistence.models.carrera import CarreraModel
-from infrastructure.persistence.models.docente_asesor import DocenteAsesorModel
+from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.evaluacion_empresa_alumno import EvaluacionEmpresaAlumnoModel
 from infrastructure.persistence.models.horas import HorasModel
+from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
+from infrastructure.persistence.models.participacion_empresa_convocatoria import ParticipacionEmpresaConvocatoriaModel
 from infrastructure.persistence.models.vacante import VacanteModel
 
 
@@ -79,17 +85,21 @@ def _estado_vacantes_empresa(db: Session, empresa: EmpresaModel) -> dict:
     documentacion_ok = _documentacion_legal_aprobada(db, empresa.id_empresa)
     convenio_vigente = _tiene_convenio_vigente(db, empresa.id_empresa)
     convenio_estado = _estado_convenio_empresa(db, empresa.id_empresa)
-    # Un convenio vigente aprobado tiene prioridad sobre un tipo_tramite
-    # heredado o capturado incorrectamente. La aprobacion del convenio tambien
-    # corrige empresa.tipo_tramite a "Convenio".
-    puede_capturar = documentacion_ok and convenio_vigente
+    vinculacion_ok = False
+    try:
+        validar_habilitacion_empresa_para_vacantes(db, empresa)
+        tramite_ok = True
+        vinculacion_ok = empresa.tipo_tramite == "Vinculacion"
+    except HTTPException:
+        tramite_ok = False
+    puede_capturar = documentacion_ok and tramite_ok
 
     if puede_capturar:
         motivo = None
     elif not documentacion_ok:
         motivo = "Necesitas aprobar toda la documentacion legal obligatoria antes de capturar vacantes."
-    elif not convenio_vigente and empresa.tipo_tramite != "Convenio":
-        motivo = "La empresa no tiene un tramite de convenio ni un convenio vigente aprobado."
+    elif empresa.tipo_tramite == "Vinculacion":
+        motivo = "Necesitas una vinculacion aprobada y vigente antes de capturar vacantes."
     else:
         motivo = "Necesitas un convenio aprobado y vigente antes de capturar vacantes."
 
@@ -97,20 +107,25 @@ def _estado_vacantes_empresa(db: Session, empresa: EmpresaModel) -> dict:
         "documentacion_legal_aprobada": documentacion_ok,
         "convenio_vigente": convenio_vigente,
         "convenio_estado": convenio_estado,
+        "vinculacion_aprobada": vinculacion_ok,
         "puede_capturar_vacantes": puede_capturar,
         "motivo_bloqueo": motivo,
     }
 
 
 class CrearVacanteUnidadRequest(BaseModel):
-    id_carrera: int
+    id_convocatoria: int
+    id_tipo_practica: int
     titulo: str
     descripcion: str | None = None
-    modalidad: str
-    horario: str | None = None
-    cupo_total: int
-    periodo: str
-    id_tipo_practica: int
+    actividades: str | None = None
+    requisitos: str | None = None
+    cupos: int
+
+
+class SolicitarParticipacionRequest(BaseModel):
+    id_convocatoria: int
+    observaciones: str | None = None
 
 
 def _nombre_usuario(usuario) -> str:
@@ -159,7 +174,6 @@ def _empresa_basica_response(empresa: EmpresaModel) -> dict:
         "correo_contacto": empresa.correo_contacto,
         "estado_empresa": empresa.estado_empresa,
         "tipo_tramite": empresa.tipo_tramite,
-        "periodo_participacion": empresa.periodo_participacion,
     }
 
 
@@ -170,7 +184,7 @@ def _alumnos_unidad_items(id_empresa: int, db: Session) -> list[dict]:
             joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.usuario),
             joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.carrera),
             joinedload(AsignacionModel.vacante),
-            joinedload(AsignacionModel.docente).joinedload(DocenteAsesorModel.usuario),
+            joinedload(AsignacionModel.asesor).joinedload(PersonalInternoModel.usuario),
             joinedload(AsignacionModel.horas),
         )
         .filter(
@@ -215,8 +229,8 @@ def _alumnos_unidad_items(id_empresa: int, db: Session) -> list[dict]:
                 "avance": avance,
                 "estado": estado,
                 "asesor": (
-                    _nombre_usuario(asignacion.docente.usuario)
-                    if asignacion.docente and asignacion.docente.usuario
+                    _nombre_usuario(asignacion.asesor.usuario)
+                    if asignacion.asesor and asignacion.asesor.usuario
                     else "Sin asesor asignado"
                 ),
                 "fecha_inicio": asignacion.fecha_asignacion.isoformat(),
@@ -240,7 +254,6 @@ def obtener_dashboard_mi_unidad(
     asignacion_ids = [alumno["id_asignacion"] for alumno in alumnos]
     vacantes = (
         db.query(VacanteModel)
-        .options(joinedload(VacanteModel.carrera))
         .filter(VacanteModel.id_empresa == id_empresa)
         .order_by(VacanteModel.id_vacante.desc())
         .limit(5)
@@ -285,6 +298,8 @@ def obtener_dashboard_mi_unidad(
                 for convenio in convenios
                 if convenio.es_actual
                 and convenio.estado_convenio == "Vigente"
+                and convenio.fecha_inicio is not None
+                and convenio.fecha_fin is not None
                 and convenio.fecha_inicio <= date.today() <= convenio.fecha_fin
             ),
             "horas_registradas": _decimal_to_float(horas_aprobadas),
@@ -295,22 +310,20 @@ def obtener_dashboard_mi_unidad(
             {
                 "id_vacante": vacante.id_vacante,
                 "titulo": vacante.titulo,
-                "carrera": vacante.carrera.nombre if vacante.carrera else "Sin carrera",
                 "estado_vacante": vacante.estado_vacante,
-                "cupo_total": vacante.cupo_total,
-                "cupo_disponible": vacante.cupo_disponible,
+                "cupos": vacante.cupos,
+                "periodo": vacante.periodo,
             }
             for vacante in vacantes
         ],
         "convenios": [
             {
                 "id_convenio": convenio.id_convenio,
-                "fecha_inicio": convenio.fecha_inicio.isoformat(),
-                "fecha_fin": convenio.fecha_fin.isoformat(),
+                "fecha_inicio": convenio.fecha_inicio.isoformat() if convenio.fecha_inicio else None,
+                "fecha_fin": convenio.fecha_fin.isoformat() if convenio.fecha_fin else None,
                 "estado_convenio": convenio.estado_convenio,
-                "documento_convenio": convenio.documento_convenio,
                 "es_actual": convenio.es_actual,
-                "version": convenio.version,
+                "observaciones": convenio.observaciones,
             }
             for convenio in convenios
         ],
@@ -354,6 +367,8 @@ def obtener_perfil_mi_unidad(
                 for convenio in convenios
                 if convenio.es_actual
                 and convenio.estado_convenio == "Vigente"
+                and convenio.fecha_inicio is not None
+                and convenio.fecha_fin is not None
                 and convenio.fecha_inicio <= date.today() <= convenio.fecha_fin
             ),
             "planes_disponibles": sum(1 for vacante in vacantes if vacante.estado_vacante == "Activa"),
@@ -373,9 +388,10 @@ def obtener_perfil_mi_unidad(
                 "id_vacante": vacante.id_vacante,
                 "titulo": vacante.titulo,
                 "descripcion": vacante.descripcion,
-                "modalidad": vacante.modalidad,
-                "cupo_total": vacante.cupo_total,
-                "cupo_disponible": vacante.cupo_disponible,
+                "actividades": vacante.actividades,
+                "requisitos": vacante.requisitos,
+                "cupos": vacante.cupos,
+                "periodo": vacante.periodo,
                 "estado_vacante": vacante.estado_vacante,
             }
             for vacante in vacantes
@@ -383,12 +399,11 @@ def obtener_perfil_mi_unidad(
         "convenios": [
             {
                 "id_convenio": convenio.id_convenio,
-                "fecha_inicio": convenio.fecha_inicio.isoformat(),
-                "fecha_fin": convenio.fecha_fin.isoformat(),
+                "fecha_inicio": convenio.fecha_inicio.isoformat() if convenio.fecha_inicio else None,
+                "fecha_fin": convenio.fecha_fin.isoformat() if convenio.fecha_fin else None,
                 "estado_convenio": convenio.estado_convenio,
-                "documento_convenio": convenio.documento_convenio,
                 "es_actual": convenio.es_actual,
-                "version": convenio.version,
+                "observaciones": convenio.observaciones,
             }
             for convenio in convenios
         ],
@@ -407,7 +422,7 @@ def listar_alumnos_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
             joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.usuario),
             joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.carrera),
             joinedload(AsignacionModel.vacante),
-            joinedload(AsignacionModel.docente).joinedload(DocenteAsesorModel.usuario),
+            joinedload(AsignacionModel.asesor).joinedload(PersonalInternoModel.usuario),
             joinedload(AsignacionModel.horas),
         )
         .filter(
@@ -452,8 +467,8 @@ def listar_alumnos_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
                 "avance": avance,
                 "estado": estado,
                 "asesor": (
-                    _nombre_usuario(asignacion.docente.usuario)
-                    if asignacion.docente and asignacion.docente.usuario
+                    _nombre_usuario(asignacion.asesor.usuario)
+                    if asignacion.asesor and asignacion.asesor.usuario
                     else "Sin asesor asignado"
                 ),
                 "fecha_inicio": asignacion.fecha_asignacion.isoformat(),
@@ -600,7 +615,6 @@ def listar_vacantes_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
 
     vacantes = (
         db.query(VacanteModel)
-        .options(joinedload(VacanteModel.carrera))
         .filter(VacanteModel.id_empresa == id_empresa)
         .order_by(VacanteModel.id_vacante.desc())
         .all()
@@ -623,14 +637,11 @@ def listar_vacantes_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
             {
                 "id_vacante": vacante.id_vacante,
                 "id_empresa": vacante.id_empresa,
-                "id_carrera": vacante.id_carrera,
-                "carrera": vacante.carrera.nombre if vacante.carrera else "Sin carrera",
                 "titulo": vacante.titulo,
                 "descripcion": vacante.descripcion,
-                "modalidad": vacante.modalidad,
-                "horario": vacante.horario,
-                "cupo_total": vacante.cupo_total,
-                "cupo_disponible": vacante.cupo_disponible,
+                "actividades": vacante.actividades,
+                "requisitos": vacante.requisitos,
+                "cupos": vacante.cupos,
                 "estado_vacante": vacante.estado_vacante,
                 "periodo": vacante.periodo,
                 "id_tipo_practica": vacante.id_tipo_practica,
@@ -638,7 +649,6 @@ def listar_vacantes_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
                 "visible_padron": (
                     puede_capturar
                     and vacante.estado_vacante == "Activa"
-                    and vacante.cupo_disponible > 0
                 ),
             }
             for vacante in vacantes
@@ -652,6 +662,44 @@ def listar_mis_vacantes_unidad(
     db: Session = Depends(obtener_db),
 ):
     return listar_vacantes_unidad(id_empresa, db)
+
+
+@router.post("/me/participaciones")
+def solicitar_mi_participacion_convocatoria(
+    datos: SolicitarParticipacionRequest,
+    id_empresa: int = Depends(obtener_id_empresa_actual),
+    db: Session = Depends(obtener_db),
+):
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if empresa.estado_empresa not in {"Pendiente", "Activa"}:
+        raise HTTPException(status_code=400, detail="La empresa debe estar aceptada para solicitar participacion.")
+    convocatoria_activa_para_empresas(db, datos.id_convocatoria)
+    existente = (
+        db.query(ParticipacionEmpresaConvocatoriaModel)
+        .filter(
+            ParticipacionEmpresaConvocatoriaModel.id_empresa == id_empresa,
+            ParticipacionEmpresaConvocatoriaModel.id_convocatoria == datos.id_convocatoria,
+        )
+        .first()
+    )
+    if existente is not None:
+        raise HTTPException(status_code=400, detail="Ya existe una participacion para esta convocatoria.")
+    participacion = ParticipacionEmpresaConvocatoriaModel(
+        id_empresa=id_empresa,
+        id_convocatoria=datos.id_convocatoria,
+        estado="Pendiente",
+        observaciones=datos.observaciones,
+    )
+    db.add(participacion)
+    db.commit()
+    db.refresh(participacion)
+    return {
+        "id_participacion": participacion.id_participacion,
+        "estado": participacion.estado,
+        "id_convocatoria": participacion.id_convocatoria,
+    }
 
 
 @router.post("/{id_empresa:int}/vacantes")
@@ -671,17 +719,25 @@ def crear_vacante_unidad(
     if not _estado_vacantes_empresa(db, empresa)["puede_capturar_vacantes"]:
         raise HTTPException(
             status_code=400,
-            detail="Necesitas documentacion legal aprobada y convenio vigente antes de capturar vacantes.",
+            detail="Necesitas documentacion legal aprobada y tramite vigente antes de capturar vacantes.",
         )
-    if datos.cupo_total <= 0:
-        raise HTTPException(status_code=400, detail="El cupo total debe ser mayor a cero")
-    if datos.modalidad not in {"Presencial", "Virtual", "Hibrida"}:
-        raise HTTPException(status_code=400, detail="Modalidad no valida")
-    carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == datos.id_carrera).first()
-    if carrera is None:
-        raise HTTPException(status_code=404, detail="Carrera no encontrada")
-    if datos.periodo not in {"Semestral", "Cuatrimestral"}:
-        raise HTTPException(status_code=400, detail="Periodo no valido")
+    if datos.cupos <= 0:
+        raise HTTPException(status_code=400, detail="Los cupos deben ser mayores a cero")
+    convocatoria = (
+        db.query(ConvocatoriaModel)
+        .filter(ConvocatoriaModel.id_convocatoria == datos.id_convocatoria, ConvocatoriaModel.estado == "Activa")
+        .first()
+    )
+    if convocatoria is None:
+        raise HTTPException(status_code=404, detail="Convocatoria activa no encontrada")
+    validar_participacion_aceptada(db, id_empresa, datos.id_convocatoria)
+    existente = (
+        db.query(VacanteModel)
+        .filter(VacanteModel.id_empresa == id_empresa, VacanteModel.id_convocatoria == datos.id_convocatoria)
+        .first()
+    )
+    if existente is not None:
+        raise HTTPException(status_code=400, detail="La empresa ya tiene una vacante registrada para esta convocatoria.")
     tipo_practica = db.execute(
         text(
             """
@@ -697,16 +753,15 @@ def crear_vacante_unidad(
 
     vacante = VacanteModel(
         id_empresa=id_empresa,
-        id_carrera=datos.id_carrera,
+        id_convocatoria=datos.id_convocatoria,
+        id_tipo_practica=datos.id_tipo_practica,
         titulo=datos.titulo.strip(),
         descripcion=datos.descripcion,
-        modalidad=datos.modalidad,
-        horario=datos.horario,
-        cupo_total=datos.cupo_total,
-        cupo_disponible=datos.cupo_total,
+        actividades=datos.actividades,
+        requisitos=datos.requisitos,
+        cupos=datos.cupos,
+        periodo=convocatoria.tipo_periodo,
         estado_vacante="Pendiente",
-        periodo=datos.periodo,
-        id_tipo_practica=datos.id_tipo_practica,
     )
     db.add(vacante)
     db.commit()
@@ -714,16 +769,15 @@ def crear_vacante_unidad(
     return {
         "id_vacante": vacante.id_vacante,
         "id_empresa": vacante.id_empresa,
-        "id_carrera": vacante.id_carrera,
+        "id_convocatoria": vacante.id_convocatoria,
+        "id_tipo_practica": vacante.id_tipo_practica,
         "titulo": vacante.titulo,
         "descripcion": vacante.descripcion,
-        "modalidad": vacante.modalidad,
-        "horario": vacante.horario,
-        "cupo_total": vacante.cupo_total,
-        "cupo_disponible": vacante.cupo_disponible,
+        "actividades": vacante.actividades,
+        "requisitos": vacante.requisitos,
+        "cupos": vacante.cupos,
         "estado_vacante": vacante.estado_vacante,
         "periodo": vacante.periodo,
-        "id_tipo_practica": vacante.id_tipo_practica,
     }
 
 

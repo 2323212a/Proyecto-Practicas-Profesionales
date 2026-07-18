@@ -8,7 +8,6 @@ export interface EmpresaRevision {
   correo_contacto: string | null;
   estado_empresa: string;
   tipo_tramite: string | null;
-  periodo_participacion: string | null;
   estado_solicitud: string | null;
   motivo_rechazo: string | null;
   cuenta_creada: boolean;
@@ -22,7 +21,6 @@ export interface SolicitudEmpresaDetalle {
   empresa: EmpresaRevision;
   solicitud: {
     tipo_tramite: string | null;
-    periodo_participacion: string | null;
     estado_solicitud: string | null;
     motivo_rechazo: string | null;
     observaciones: string | null;

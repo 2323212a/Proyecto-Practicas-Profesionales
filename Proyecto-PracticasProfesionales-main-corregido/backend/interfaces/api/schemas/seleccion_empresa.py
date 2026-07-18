@@ -6,26 +6,29 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SeleccionEmpresaCreate(BaseModel):
     id_alumno: int
-    id_empresa: int
-    prioridad: int = Field(ge=1, le=10)
+    id_convocatoria: int
+    id_vacante: int
+    prioridad: int = Field(ge=1, le=3)
+    observaciones: str | None = None
 
 
 class SeleccionEmpresaUpdate(BaseModel):
-    prioridad: int | None = Field(default=None, ge=1, le=10)
-    estado_seleccion: str | None = None
+    prioridad: int | None = Field(default=None, ge=1, le=3)
+    estado: str | None = None
     observaciones: str | None = None
 
 
 class SeleccionEmpresaResponse(BaseModel):
     id_seleccion: int
     id_alumno: int
-    id_empresa: int
-    id_vacante: int | None = None
+    id_empresa: int | None = None
+    id_convocatoria: int
+    id_vacante: int
     prioridad: int
-    estado_seleccion: str
+    estado: str
     observaciones: str | None = None
     fecha_seleccion: datetime
     fecha_revision: datetime | None = None
-    id_usuario_revisor: int | None = None
+    revisado_por: int | None = None
 
     model_config = ConfigDict(from_attributes=True)

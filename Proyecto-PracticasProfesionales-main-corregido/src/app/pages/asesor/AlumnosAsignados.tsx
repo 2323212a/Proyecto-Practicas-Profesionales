@@ -33,14 +33,14 @@ const RESUMEN_INICIAL: ResumenAsesor = {
   cierre: 0,
 };
 
-function obtenerIdDocenteSesion() {
+function obtenerIdAsesorSesion() {
   const usuario = localStorage.getItem("usuario");
   if (!usuario) return null;
 
   try {
     const sesion = JSON.parse(usuario);
-    const idDocente = sesion?.perfil?.id_docente;
-    return typeof idDocente === "number" ? idDocente : null;
+    const idAsesor = sesion?.perfil?.id_personal;
+    return typeof idAsesor === "number" ? idAsesor : null;
   } catch {
     return null;
   }
@@ -64,8 +64,8 @@ export function AlumnosAsignados() {
   }, []);
 
   async function cargarAlumnos() {
-    const idDocente = obtenerIdDocenteSesion();
-    if (!idDocente) {
+    const idAsesor = obtenerIdAsesorSesion();
+    if (!idAsesor) {
       setError("No se encontró el perfil de asesor en la sesión actual.");
       setCargando(false);
       return;
@@ -74,7 +74,7 @@ export function AlumnosAsignados() {
     try {
       setCargando(true);
       setError("");
-      const data = await gestionAsesorUseCase.listarAlumnos(idDocente);
+      const data = await gestionAsesorUseCase.listarAlumnos(idAsesor);
       setAlumnos(data.alumnos);
       setResumen(data.resumen);
     } catch (err) {
@@ -128,7 +128,7 @@ export function AlumnosAsignados() {
       <div>
         <h1 className="text-2xl font-bold text-[#0d2b5e]">Alumnos Asignados</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Seguimiento académico de alumnos asignados al docente asesor.
+          Seguimiento académico de alumnos asignados al asesor interno.
         </p>
       </div>
 
