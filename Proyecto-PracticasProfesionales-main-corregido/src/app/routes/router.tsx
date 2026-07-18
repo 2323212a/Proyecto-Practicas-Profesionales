@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useEffect, useState } from "react";
 import { createBrowserRouter, Navigate, Outlet, useNavigate } from "react-router";
 
@@ -63,6 +64,7 @@ import { AsesorDashboard } from "../pages/asesor/AsesorDashboard";
 import { AlumnosAsignados } from "../pages/asesor/AlumnosAsignados";
 import { AsesorReportes } from "../pages/asesor/AsesorReportes";
 import { AsesorObservaciones } from "../pages/asesor/AsesorObservaciones";
+import { AsesorNotificaciones } from "../pages/asesor/AsesorNotificaciones";
 
 // Dirección
 import { DireccionDashboard } from "../pages/direccion/DireccionDashboard";
@@ -351,6 +353,7 @@ export const router = createBrowserRouter([
         { path: "alumnos", element: <AlumnosAsignados /> },
         { path: "reportes", element: <AsesorReportes /> },
         { path: "observaciones", element: <AsesorObservaciones /> },
+        { path: "notificaciones", element: <AsesorNotificaciones /> },
       ],
     },
   ],

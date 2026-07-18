@@ -180,16 +180,73 @@ def eliminar_convocatoria(
     db: Session = Depends(obtener_db),
     usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
-    convocatoria = ConvocatoriaService(db).obtener_por_id(id_convocatoria)
+    service = ConvocatoriaService(db)
+    convocatoria = service.obtener_por_id(id_convocatoria)
 
     if convocatoria is None:
         raise HTTPException(
             status_code=404,
             detail="Convocatoria no encontrada"
         )
-    convocatoria.estado = "Cerrada"
-    db.commit()
-    db.refresh(convocatoria)
+    nombre = convocatoria.nombre
+    service.eliminar(id_convocatoria)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Eliminar convocatoria",
+        "convocatorias",
+        f"Admin elimino la convocatoria {nombre}",
+        "convocatoria",
+        id_convocatoria,
+    )
+
+    return {"mensaje": "Convocatoria eliminada correctamente"}
+
+
+@router.patch(
+    "/{id_convocatoria}/desactivar",
+    response_model=ConvocatoriaResponse,
+    dependencies=[Depends(requerir_roles(["Administrador"]))],
+)
+def desactivar_convocatoria(
+    id_convocatoria: int,
+    db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+):
+    convocatoria = ConvocatoriaService(db).cambiar_estado(id_convocatoria, "Inactiva")
+    if convocatoria is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Convocatoria no encontrada"
+        )
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Desactivar convocatoria",
+        "convocatorias",
+        f"Admin desactivo la convocatoria {convocatoria.nombre}",
+        "convocatoria",
+        id_convocatoria,
+    )
+    return serializar_convocatoria(convocatoria)
+
+
+@router.patch(
+    "/{id_convocatoria}/cerrar",
+    response_model=ConvocatoriaResponse,
+    dependencies=[Depends(requerir_roles(["Administrador"]))],
+)
+def cerrar_convocatoria(
+    id_convocatoria: int,
+    db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+):
+    convocatoria = ConvocatoriaService(db).cambiar_estado(id_convocatoria, "Cerrada")
+    if convocatoria is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Convocatoria no encontrada"
+        )
     registrar_bitacora(
         db,
         usuario_actual.id_usuario,
@@ -199,5 +256,4 @@ def eliminar_convocatoria(
         "convocatoria",
         id_convocatoria,
     )
-
-    return {"mensaje": "Convocatoria cerrada correctamente"}
+    return serializar_convocatoria(convocatoria)

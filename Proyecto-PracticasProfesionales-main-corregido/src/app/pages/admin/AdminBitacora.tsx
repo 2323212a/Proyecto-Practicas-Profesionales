@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, Search, ShieldCheck } from "lucide-react";
 import type {
   BitacoraAuditoriaFiltros,
@@ -46,7 +46,7 @@ export function AdminBitacora() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
-  async function cargar(filtrosAplicados = filtros) {
+  const cargar = useCallback(async (filtrosAplicados: BitacoraAuditoriaFiltros = filtros) => {
     try {
       setCargando(true);
       setError("");
@@ -58,14 +58,18 @@ export function AdminBitacora() {
     } finally {
       setCargando(false);
     }
-  }
+  }, [filtros]);
 
   useEffect(() => {
     void cargar(filtrosIniciales);
-  }, []);
+  }, [cargar]);
 
   function actualizarFiltro(clave: keyof BitacoraAuditoriaFiltros, valor: string | number) {
-    setFiltros((actual) => ({ ...actual, [clave]: valor, pagina: clave === "pagina" ? valor : 1 }));
+    setFiltros((actual) => {
+      const siguiente: BitacoraAuditoriaFiltros = { ...actual, [clave]: valor };
+      siguiente.pagina = clave === "pagina" ? Number(valor) || 1 : 1;
+      return siguiente;
+    });
   }
 
   function limpiarFiltros() {

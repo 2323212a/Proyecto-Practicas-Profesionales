@@ -3,14 +3,16 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.convocatoria_rules_service import validar_etapa_actual
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from infrastructure.persistence.models.rol import RolModel
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
@@ -19,6 +21,7 @@ from infrastructure.persistence.models.vacante import VacanteModel
 from infrastructure.security.auth_dependencies import requerir_roles
 from interfaces.api.schemas.asignacion import AsignacionCreate, AsignacionResponse
 from interfaces.api.service_factory import AsignacionService
+from interfaces.api.routes.configuracion_sistema import obtener_o_crear_configuracion
 
 
 router = APIRouter(
@@ -88,8 +91,17 @@ class AsesorInternoResponse(BaseModel):
 class ConfirmacionAsignacionesResponse(BaseModel):
     convocatoria_id: int | None
     convocatoria: str | None
+    secretaria_academica: str
     asesores: list[AsesorInternoResponse]
     alumnos: list[AlumnoConfirmacionResponse]
+
+
+class SecretariaAcademicaRequest(BaseModel):
+    nombre: str = Field(min_length=3, max_length=150)
+
+
+class SecretariaAcademicaResponse(BaseModel):
+    secretaria_academica: str
 
 
 class ConfirmarAsignacionRequest(BaseModel):
@@ -207,6 +219,7 @@ def _listar_asesores(db: Session) -> list[AsesorInternoResponse]:
 @router.get("/", response_model=ConfirmacionAsignacionesResponse)
 def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
     convocatoria = _convocatoria_vigente(db)
+    configuracion: ConfiguracionSistemaModel = obtener_o_crear_configuracion(db)
 
     alumnos = (
         db.query(AlumnoModel)
@@ -296,9 +309,26 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
     return ConfirmacionAsignacionesResponse(
         convocatoria_id=convocatoria.id_convocatoria if convocatoria else None,
         convocatoria=convocatoria.nombre if convocatoria else None,
+        secretaria_academica=configuracion.secretaria_academica or "Paola Lopez",
         asesores=_listar_asesores(db),
         alumnos=respuesta,
     )
+
+
+@router.put("/secretaria-academica", response_model=SecretariaAcademicaResponse)
+def actualizar_secretaria_academica(
+    datos: SecretariaAcademicaRequest,
+    db: Session = Depends(obtener_db),
+):
+    nombre = " ".join(datos.nombre.split())
+    if len(nombre) < 3:
+        raise HTTPException(status_code=422, detail="Ingresa un nombre valido")
+
+    configuracion: ConfiguracionSistemaModel = obtener_o_crear_configuracion(db)
+    configuracion.secretaria_academica = nombre
+    db.commit()
+    db.refresh(configuracion)
+    return SecretariaAcademicaResponse(secretaria_academica=nombre)
 
 
 @router.post("/", response_model=AsignacionResponse)
@@ -310,8 +340,7 @@ def confirmar_asignacion(
     convocatoria = _convocatoria_vigente(db)
     if convocatoria is None:
         raise HTTPException(status_code=400, detail="No hay convocatoria registrada")
-    if convocatoria.estado != "Activa":
-        raise HTTPException(status_code=400, detail="La convocatoria no esta activa")
+    validar_etapa_actual(convocatoria, "asignacion")
 
     vacante = (
         db.query(VacanteModel)
@@ -408,6 +437,7 @@ def rechazar_seleccion(
     )
     if seleccion is None:
         raise HTTPException(status_code=404, detail="Seleccion no encontrada")
+    validar_etapa_actual(seleccion.convocatoria, "asignacion")
     if seleccion.estado != "Registrada":
         raise HTTPException(status_code=400, detail="La seleccion ya fue revisada")
 

@@ -43,6 +43,9 @@ backend/generated/
 generated/
 *.log
 
+# Reportes exportados
+reporte_*.pdf
+
 # =========================
 # IDE y editores
 # =========================

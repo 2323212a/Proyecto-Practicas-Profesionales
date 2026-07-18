@@ -47,6 +47,9 @@ export interface ReporteAsesor {
   url: string | null;
   fecha_entrega: string;
   estado: EstadoReporteAsesor;
+  calificacion: number | null;
+  observacion_asesor: string | null;
+  fecha_revision: string | null;
 }
 
 export interface ResumenReportesAsesor {

@@ -304,9 +304,22 @@ def _tabla_convocatorias(db: Session, tipo_periodo: str, estado_convocatoria: st
     where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
     tipo_col = "`tipo_periodo`" if _columna_existe(db, "convocatoria", "tipo_periodo") else "'Ambos'"
     periodo_col = "`periodo`" if _columna_existe(db, "convocatoria", "periodo") else "NULL"
-    inicio_col = "`fecha_inicio`" if _columna_existe(db, "convocatoria", "fecha_inicio") else "NULL"
-    fin_col = "`fecha_fin`" if _columna_existe(db, "convocatoria", "fecha_fin") else "NULL"
+    inicio_col = (
+        "`fecha_inicio_general`"
+        if _columna_existe(db, "convocatoria", "fecha_inicio_general")
+        else "`fecha_inicio`"
+        if _columna_existe(db, "convocatoria", "fecha_inicio")
+        else "NULL"
+    )
+    fin_col = (
+        "`fecha_cierre_general`"
+        if _columna_existe(db, "convocatoria", "fecha_cierre_general")
+        else "`fecha_fin`"
+        if _columna_existe(db, "convocatoria", "fecha_fin")
+        else "NULL"
+    )
     estado_col = "`estado`" if _columna_existe(db, "convocatoria", "estado") else "'Sin dato'"
+    order_col = "fecha_inicio_general" if _columna_existe(db, "convocatoria", "fecha_inicio_general") else "id_convocatoria"
     rows = _safe_rows(
         db,
         f"""
@@ -319,7 +332,7 @@ def _tabla_convocatorias(db: Session, tipo_periodo: str, estado_convocatoria: st
             {estado_col} AS estado
         FROM convocatoria
         {where}
-        ORDER BY fecha_inicio DESC
+        ORDER BY {order_col} DESC
         LIMIT 25
         """,
         params,
@@ -347,6 +360,7 @@ def _tabla_carreras(db: Session, tipo_periodo: str):
         params["tipo_periodo"] = tipo_periodo
     where = f"WHERE {' AND '.join(filtros)}" if filtros else ""
     tipo_col = "c.`tipo_periodo`" if _columna_existe(db, "carrera", "tipo_periodo") else "'Sin dato'"
+    clave_col = "c.`clave`" if _columna_existe(db, "carrera", "clave") else "NULL"
     join_alumno = (
         "LEFT JOIN alumno a ON a.id_carrera = c.id_carrera"
         if _columna_existe(db, "alumno", "id_carrera")
@@ -357,14 +371,14 @@ def _tabla_carreras(db: Session, tipo_periodo: str):
         db,
         f"""
         SELECT
-            c.clave,
+            {clave_col} AS clave,
             c.nombre,
             {tipo_col} AS tipo_periodo,
             {alumnos_col} AS alumnos
         FROM carrera c
         {join_alumno}
         {where}
-        GROUP BY c.id_carrera, c.clave, c.nombre, tipo_periodo
+        GROUP BY c.id_carrera, clave, c.nombre, tipo_periodo
         ORDER BY c.nombre ASC
         """,
         params,
@@ -775,12 +789,6 @@ def _reportes_catalogo(db: Session):
             default=0,
         )
         if _columna_existe(db, "liberacion_practica", "estado_liberacion")
-        else _safe_scalar(
-            db,
-            "SELECT COUNT(*) FROM liberacion WHERE estado_liberacion = 'Emitida'",
-            default=0,
-        )
-        if _columna_existe(db, "liberacion", "estado_liberacion")
         else 0
     )
 
@@ -1007,8 +1015,6 @@ def obtener_reportes_admin(
     documentos_pendientes = (
         _safe_scalar(db, "SELECT COUNT(*) FROM documento_alumno WHERE estado_documento = 'Pendiente'", default=0)
         if _columna_existe(db, "documento_alumno", "estado_documento")
-        else _safe_scalar(db, "SELECT COUNT(*) FROM documento WHERE estado_documento = 'Pendiente'", default=0)
-        if _columna_existe(db, "documento", "estado_documento")
         else 0
     )
     documentos_empresa_pendientes = (
@@ -1126,17 +1132,13 @@ def obtener_reportes_admin(
             "reportes": _conteo_tablas_posibles(db, "reporte_practica", "reporte"),
             "horas": _conteo_tablas_posibles(db, "horas_practica", "horas"),
             "incidencias_abiertas": incidencias_abiertas,
-            "liberaciones_emitidas": _safe_scalar(
-                db,
-                "SELECT COUNT(*) FROM liberacion_practica WHERE estado_liberacion = 'Emitida'",
-                default=0,
-            ) if _columna_existe(db, "liberacion_practica", "estado_liberacion") else (
+            "liberaciones_emitidas": (
                 _safe_scalar(
                     db,
-                    "SELECT COUNT(*) FROM liberacion WHERE estado_liberacion = 'Emitida'",
+                    "SELECT COUNT(*) FROM liberacion_practica WHERE estado_liberacion = 'Emitida'",
                     default=0,
                 )
-                if _columna_existe(db, "liberacion", "estado_liberacion")
+                if _columna_existe(db, "liberacion_practica", "estado_liberacion")
                 else 0
             ),
             "acciones_auditoria": _conteo_query_id(bitacora_query, BitacoraAuditoriaModel.id_bitacora),
@@ -1238,11 +1240,17 @@ def obtener_reportes_admin(
             "convocatoria_activa": (
                 _safe_scalar(
                     db,
-                    "SELECT nombre FROM convocatoria WHERE estado = 'Activa' ORDER BY fecha_inicio DESC LIMIT 1",
+                    "SELECT nombre FROM convocatoria WHERE estado = 'Activa' ORDER BY fecha_inicio_general DESC, id_convocatoria DESC LIMIT 1",
                     default=None,
                 )
                 if _columna_existe(db, "convocatoria", "estado")
-                and _columna_existe(db, "convocatoria", "fecha_inicio")
+                and _columna_existe(db, "convocatoria", "fecha_inicio_general")
+                else _safe_scalar(
+                    db,
+                    "SELECT nombre FROM convocatoria WHERE estado = 'Activa' ORDER BY id_convocatoria DESC LIMIT 1",
+                    default=None,
+                )
+                if _columna_existe(db, "convocatoria", "estado")
                 else None
             ),
             "expedientes": _conteo_tablas_posibles(db, "expediente_alumno", "expediente"),

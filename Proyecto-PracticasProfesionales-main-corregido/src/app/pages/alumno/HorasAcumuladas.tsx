@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, Clock, Plus, TrendingUp } from "lucide-react";
+import { Calendar, Clock, Lock, Plus, TrendingUp } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -136,10 +136,10 @@ export function HorasAcumuladas() {
           { v: `${resumen.progreso}%`, l: "Progreso", I: Calendar, bg: "bg-green-50", tc: "text-green-600", vc: "text-green-600" },
         ].map((item) => (
           <div key={item.l} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 text-center">
-            <div className={`w-12 h-12 ${item.bg} rounded-xl flex items-center justify-center mx-auto mb-3`}>
-              <item.I className={`w-6 h-6 ${item.tc}`} />
+            <div className="w-12 h-12 rounded-xl border border-gray-200 bg-white flex items-center justify-center mx-auto mb-3">
+              <item.I className="w-6 h-6 text-gray-600" />
             </div>
-            <div className={`text-3xl font-bold ${item.vc}`}>
+            <div className="text-3xl font-bold text-[#0d2b5e]">
               {cargando ? "..." : item.v}
             </div>
             <div className="text-gray-500 text-sm mt-1">{item.l}</div>
@@ -164,14 +164,19 @@ export function HorasAcumuladas() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-        <h3 className="font-bold text-[#0d2b5e] mb-4">Registrar actividad</h3>
+      <div className={`rounded-2xl border shadow-sm p-6 ${data?.asignacion ? "bg-white border-gray-200" : "bg-amber-50 border-amber-300 border-l-4"}`}>
+        <h3 className="font-bold text-[#0d2b5e] mb-1">Registrar actividad</h3>
+        {!data?.asignacion && (
+          <p className="mb-4 flex items-center gap-2 text-sm font-medium text-amber-800">
+            <Lock className="h-4 w-4" /> Esta seccion se habilitara cuando tengas una empresa asignada.
+          </p>
+        )}
         <div className="grid md:grid-cols-[160px_120px_1fr_auto] gap-3">
           <input
             type="date"
             value={fecha}
             onChange={(event) => setFecha(event.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm outline-none"
+            className="border rounded-xl px-3 py-2 text-sm outline-none disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70 disabled:text-amber-800"
             disabled={!data?.asignacion}
           />
           <input
@@ -180,20 +185,20 @@ export function HorasAcumuladas() {
             step="0.5"
             value={horas}
             onChange={(event) => setHoras(event.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm outline-none"
+            className="border rounded-xl px-3 py-2 text-sm outline-none disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70 disabled:text-amber-800"
             disabled={!data?.asignacion}
           />
           <input
             value={actividad}
             onChange={(event) => setActividad(event.target.value)}
-            className="border rounded-xl px-3 py-2 text-sm outline-none"
+            className="border rounded-xl px-3 py-2 text-sm outline-none disabled:cursor-not-allowed disabled:border-amber-200 disabled:bg-amber-100/70 disabled:text-amber-800"
             placeholder="Actividad realizada..."
             disabled={!data?.asignacion}
           />
           <button
             onClick={registrarHoras}
             disabled={guardando || !data?.asignacion}
-            className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:bg-gray-300"
+            className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:bg-amber-200 disabled:text-amber-800"
           >
             <Plus className="w-4 h-4" />
             {guardando ? "Guardando..." : "Registrar"}

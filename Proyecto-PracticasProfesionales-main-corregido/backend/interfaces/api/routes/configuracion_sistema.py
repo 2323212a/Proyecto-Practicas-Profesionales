@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 import re
 
 from app.services.auditoria_service import registrar_bitacora
@@ -8,11 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
+from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 from infrastructure.security.auth_dependencies import obtener_usuario_actual
 from infrastructure.security.auth_dependencies import requerir_roles
-from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
-from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from interfaces.api.schemas.configuracion_sistema import (
     ConfiguracionSistemaResponse,
     ConfiguracionSistemaUpdate,
@@ -29,6 +28,8 @@ VALORES_DEFAULT = {
     "nombre_sistema": "Sistema Integral de Practicas Profesionales",
     "escuela_facultad": "ETDA C-I",
     "correo_institucional": "practicas@unach.mx",
+    "secretaria_academica": "Paola Lopez",
+    "coordinadora_practicas": "Guadalupe Velazquez",
     "estado_sistema": "Activo",
     "inscripcion_empresas_estado": "Abierta",
     "ciclo_escolar": "Ciclo Escolar 2026-2027",
@@ -37,9 +38,6 @@ VALORES_DEFAULT = {
         "Plataforma institucional para la gestion, seguimiento y control "
         "de las practicas profesionales."
     ),
-    "convocatoria_nombre": "Verano 2026",
-    "convocatoria_inicio": date(2026, 6, 1),
-    "convocatoria_cierre": date(2026, 7, 11),
     "soporte_telefono": "(961) 619-1200",
 }
 
@@ -71,7 +69,7 @@ def validar_telefono(valor: str | None):
     return telefono
 
 
-def obtener_convocatoria_principal(db: Session, id_convocatoria: int | None):
+def obtener_convocatoria_principal(db: Session, id_convocatoria: int | None = None):
     if id_convocatoria is not None:
         convocatoria = (
             db.query(ConvocatoriaModel)
@@ -84,10 +82,10 @@ def obtener_convocatoria_principal(db: Session, id_convocatoria: int | None):
     return (
         db.query(ConvocatoriaModel)
         .filter(ConvocatoriaModel.estado == "Activa")
-        .order_by(ConvocatoriaModel.fecha_inicio.desc())
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ConvocatoriaModel.id_convocatoria.desc())
         .first()
         or db.query(ConvocatoriaModel)
-        .order_by(ConvocatoriaModel.fecha_inicio.desc())
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ConvocatoriaModel.id_convocatoria.desc())
         .first()
     )
 
@@ -99,66 +97,35 @@ def obtener_o_crear_configuracion(db: Session):
         .first()
     )
     if configuracion is not None:
-        convocatoria = obtener_convocatoria_principal(
-            db,
-            configuracion.id_convocatoria_principal,
-        )
-        if convocatoria is not None and configuracion.id_convocatoria_principal is None:
-            configuracion.id_convocatoria_principal = convocatoria.id_convocatoria
-            db.commit()
-            db.refresh(configuracion)
         return configuracion
 
-    convocatoria = obtener_convocatoria_principal(db, None)
-    datos = dict(VALORES_DEFAULT)
-    if convocatoria is not None:
-        datos.update(
-            {
-                "id_convocatoria_principal": convocatoria.id_convocatoria,
-                "convocatoria_nombre": convocatoria.nombre,
-                "convocatoria_inicio": convocatoria.fecha_inicio,
-                "convocatoria_cierre": convocatoria.fecha_fin,
-            }
-        )
-
-    configuracion = ConfiguracionSistemaModel(**datos)
+    configuracion = ConfiguracionSistemaModel(**VALORES_DEFAULT)
     db.add(configuracion)
     db.commit()
     db.refresh(configuracion)
     return configuracion
 
 
-def serializar_configuracion(configuracion: ConfiguracionSistemaModel, db: Session):
-    convocatoria = obtener_convocatoria_principal(
-        db,
-        configuracion.id_convocatoria_principal,
-    )
+def serializar_configuracion(configuracion: ConfiguracionSistemaModel, db: Session, id_convocatoria: int | None = None):
+    convocatoria = obtener_convocatoria_principal(db, id_convocatoria)
 
     return {
         "id_configuracion": configuracion.id_configuracion,
-        "nombre_sistema": configuracion.nombre_sistema,
-        "escuela_facultad": configuracion.escuela_facultad,
-        "correo_institucional": configuracion.correo_institucional,
-        "estado_sistema": configuracion.estado_sistema,
-        "inscripcion_empresas_estado": configuracion.inscripcion_empresas_estado,
-        "ciclo_escolar": configuracion.ciclo_escolar,
-        "hero_titulo": configuracion.hero_titulo,
-        "hero_subtitulo": configuracion.hero_subtitulo,
-        "id_convocatoria_principal": (
-            convocatoria.id_convocatoria if convocatoria is not None else None
-        ),
-        "convocatoria_nombre": (
-            convocatoria.nombre if convocatoria is not None else configuracion.convocatoria_nombre
-        ),
-        "convocatoria_inicio": (
-            convocatoria.fecha_inicio if convocatoria is not None else configuracion.convocatoria_inicio
-        ),
-        "convocatoria_cierre": (
-            convocatoria.fecha_fin if convocatoria is not None else configuracion.convocatoria_cierre
-        ),
-        "convocatoria_periodo": convocatoria.periodo if convocatoria is not None else None,
+        "nombre_sistema": configuracion.nombre_sistema or VALORES_DEFAULT["nombre_sistema"],
+        "escuela_facultad": configuracion.escuela_facultad or VALORES_DEFAULT["escuela_facultad"],
+        "correo_institucional": configuracion.correo_institucional or VALORES_DEFAULT["correo_institucional"],
+        "estado_sistema": configuracion.estado_sistema or VALORES_DEFAULT["estado_sistema"],
+        "inscripcion_empresas_estado": configuracion.inscripcion_empresas_estado or VALORES_DEFAULT["inscripcion_empresas_estado"],
+        "ciclo_escolar": configuracion.ciclo_escolar or VALORES_DEFAULT["ciclo_escolar"],
+        "hero_titulo": configuracion.hero_titulo or VALORES_DEFAULT["hero_titulo"],
+        "hero_subtitulo": configuracion.hero_subtitulo or VALORES_DEFAULT["hero_subtitulo"],
+        "id_convocatoria_principal": convocatoria.id_convocatoria if convocatoria is not None else None,
+        "convocatoria_nombre": convocatoria.nombre if convocatoria is not None else "Sin convocatoria principal",
+        "convocatoria_inicio": convocatoria.fecha_inicio_general if convocatoria is not None else None,
+        "convocatoria_cierre": convocatoria.fecha_cierre_general if convocatoria is not None else None,
+        "convocatoria_periodo": convocatoria.tipo_periodo if convocatoria is not None else None,
         "convocatoria_estado": convocatoria.estado if convocatoria is not None else None,
-        "soporte_telefono": configuracion.soporte_telefono,
+        "soporte_telefono": configuracion.soporte_telefono or VALORES_DEFAULT["soporte_telefono"],
         "ultima_actualizacion": configuracion.ultima_actualizacion,
     }
 
@@ -183,6 +150,8 @@ def actualizar_configuracion_sistema(
     estado_anterior = configuracion.estado_sistema
     inscripcion_anterior = configuracion.inscripcion_empresas_estado
     datos_actualizar = datos.model_dump()
+
+    id_convocatoria = datos_actualizar.pop("id_convocatoria_principal", None)
 
     datos_actualizar["nombre_sistema"] = validar_texto_requerido(
         datos_actualizar.get("nombre_sistema"),
@@ -227,21 +196,12 @@ def actualizar_configuracion_sistema(
         datos_actualizar.get("soporte_telefono")
     )
 
-    id_convocatoria = datos_actualizar.get("id_convocatoria_principal")
-    if id_convocatoria is not None:
-        convocatoria = (
-            db.query(ConvocatoriaModel)
-            .filter(ConvocatoriaModel.id_convocatoria == id_convocatoria)
-            .first()
-        )
-        if convocatoria is None:
-            raise HTTPException(
-                status_code=404,
-                detail="La convocatoria seleccionada no existe",
-            )
+    if id_convocatoria is not None and obtener_convocatoria_principal(db, id_convocatoria) is None:
+        raise HTTPException(status_code=404, detail="La convocatoria seleccionada no existe")
 
     for campo, valor in datos_actualizar.items():
-        setattr(configuracion, campo, valor)
+        if hasattr(configuracion, campo):
+            setattr(configuracion, campo, valor)
 
     db.commit()
     db.refresh(configuracion)
@@ -279,4 +239,4 @@ def actualizar_configuracion_sistema(
             "configuracion_sistema",
             configuracion.id_configuracion,
         )
-    return serializar_configuracion(configuracion, db)
+    return serializar_configuracion(configuracion, db, id_convocatoria)

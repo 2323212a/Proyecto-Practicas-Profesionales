@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.services.notificacion_service import crear_notificacion, notificar_roles
+from app.services.convocatoria_rules_service import validar_etapa_actual
 from app.services.documentacion_flujo_service import habilitar_documentacion_asignacion, listar_alumnos_revision, serializar_documentacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
@@ -500,7 +501,7 @@ def _actualizar_estado_expediente(
     """
 
     alumno = expediente.alumno
-    era_elegible = alumno.estado_alumno == "Elegible"
+    era_elegible = expediente.estado_expediente == "Aprobado"
 
     tipos_habilitantes = [
         tipo
@@ -517,7 +518,7 @@ def _actualizar_estado_expediente(
     if not tipos_habilitantes:
         expediente.estado_expediente = "En Revision"
 
-        if alumno.estado_alumno not in {"Asignado", "Liberado"}:
+        if alumno.estado_alumno not in {"Activo", "Inactivo", "Egresado", "Baja"}:
             alumno.estado_alumno = "Activo"
 
         return False
@@ -553,25 +554,22 @@ def _actualizar_estado_expediente(
     if existe_rechazado:
         expediente.estado_expediente = "Rechazado"
 
-        if alumno.estado_alumno not in {"Asignado", "Liberado"}:
+        if alumno.estado_alumno not in {"Activo", "Inactivo", "Egresado", "Baja"}:
             alumno.estado_alumno = "Activo"
 
     elif todos_aprobados:
         expediente.estado_expediente = "Aprobado"
 
-        if alumno.estado_alumno not in {"Asignado", "Liberado"}:
-            alumno.estado_alumno = "Elegible"
+        if alumno.estado_alumno not in {"Activo", "Inactivo", "Egresado", "Baja"}:
+            alumno.estado_alumno = "Activo"
 
     else:
         expediente.estado_expediente = "En Revision"
 
-        if alumno.estado_alumno not in {"Asignado", "Liberado"}:
+        if alumno.estado_alumno not in {"Activo", "Inactivo", "Egresado", "Baja"}:
             alumno.estado_alumno = "Activo"
 
-    se_habilito = (
-        not era_elegible
-        and alumno.estado_alumno == "Elegible"
-    )
+    se_habilito = (not era_elegible and expediente.estado_expediente == "Aprobado")
 
     return se_habilito
 ####################################################################################
@@ -685,6 +683,7 @@ def cambiar_estado_documento(
     ).first()
     if documento is None:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    validar_etapa_actual(documento.expediente.convocatoria, "validacion")
 
     documento.estado_documento = datos.estado
     if datos.comentario:
@@ -741,7 +740,18 @@ def cambiar_estado_documento(
     dependencies=[Depends(requerir_roles(["Coordinador de Practicas", "Administrador"]))],
 )
 def listar_alumnos_revision_flujo(db: Session = Depends(obtener_db)):
-    return listar_alumnos_revision(db)
+    try:
+        return listar_alumnos_revision(db)
+    except HTTPException as exc:
+        detalles_vacios = {
+            "No hay convocatoria registrada",
+            "No hay convocatoria activa",
+            "No hay alumnos registrados",
+            "No hay expedientes registrados",
+        }
+        if exc.status_code == 400 and exc.detail in detalles_vacios:
+            return []
+        raise
 
 
 @router.get(
@@ -766,7 +776,7 @@ def habilitar_seleccion_empresa_flujo(id_alumno: int, db: Session = Depends(obte
     detalle = serializar_documentacion(db, alumno)
     if not detalle["expediente"]["expediente_inicial_aprobado"]:
         raise HTTPException(status_code=400, detail="Primero deben aprobarse los 7 documentos iniciales")
-    alumno.estado_alumno = "Elegible"
+    alumno.estado_alumno = "Activo"
     db.commit()
     return serializar_documentacion(db, alumno)
 

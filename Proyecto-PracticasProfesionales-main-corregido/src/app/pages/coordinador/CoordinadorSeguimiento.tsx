@@ -75,9 +75,9 @@ export function CoordinadorSeguimiento() {
           ["Abiertas", datos?.resumen.abiertas ?? 0, AlertTriangle, "bg-red-50 text-red-600"],
           ["Seguimiento", datos?.resumen.seguimiento ?? 0, Clock, "bg-yellow-50 text-yellow-600"],
           ["Resueltas", datos?.resumen.resueltas ?? 0, CheckCircle2, "bg-green-50 text-green-600"],
-        ] satisfies ColoredStatCard[]).map(([label, value, Icon, color]) => (
+        ] satisfies ColoredStatCard[]).map(([label, value, Icon]) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center mb-3`}><Icon className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-xl border border-gray-200 bg-white flex items-center justify-center mb-3"><Icon className="w-5 h-5 text-gray-600" /></div>
             <div className="text-2xl font-bold text-[#0d2b5e]">{value}</div>
             <div className="text-gray-500 text-sm mt-0.5">{label}</div>
           </div>

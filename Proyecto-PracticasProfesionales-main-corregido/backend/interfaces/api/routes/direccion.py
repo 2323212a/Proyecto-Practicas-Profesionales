@@ -82,7 +82,7 @@ def _filtros_alumno(filtros: dict[str, Any]):
         where.append("a.grupo LIKE :grupo")
         params["grupo"] = _like(str(filtros["grupo"]))
     if _limpio(filtros.get("convocatoria")):
-        where.append("(cv.nombre = :convocatoria OR cv.periodo = :convocatoria)")
+        where.append("(cv.nombre = :convocatoria OR cv.tipo_periodo = :convocatoria)")
         params["convocatoria"] = filtros["convocatoria"]
     return where, params
 
@@ -96,9 +96,6 @@ def _filtros_empresa(filtros: dict[str, Any]):
     if _limpio(filtros.get("tipo_tramite")):
         where.append("e.tipo_tramite = :tipo_tramite")
         params["tipo_tramite"] = filtros["tipo_tramite"]
-    if _limpio(filtros.get("periodo_participacion")):
-        where.append("e.periodo_participacion = :periodo_participacion")
-        params["periodo_participacion"] = filtros["periodo_participacion"]
     return where, params
 
 
@@ -114,11 +111,8 @@ def _filtros_vacante(filtros: dict[str, Any]):
     if _limpio(filtros.get("periodo_practica")):
         where.append("v.periodo = :periodo_practica_v")
         params["periodo_practica_v"] = filtros["periodo_practica"]
-    if _limpio(filtros.get("carrera")):
-        where.append("c.nombre = :carrera_v")
-        params["carrera_v"] = filtros["carrera"]
     if _limpio(filtros.get("convocatoria")):
-        where.append("(cv.nombre = :convocatoria_v OR cv.periodo = :convocatoria_v)")
+        where.append("(cv.nombre = :convocatoria_v OR cv.tipo_periodo = :convocatoria_v)")
         params["convocatoria_v"] = filtros["convocatoria"]
     return where, params
 
@@ -163,7 +157,6 @@ def _base_vacante_sql(select_sql: str, where_extra: list[str], filtros: dict[str
         f"""
         SELECT {select_sql}
         FROM vacante v
-        LEFT JOIN carrera c ON c.id_carrera = v.id_carrera
         LEFT JOIN tipo_practica tp ON tp.id_tipo_practica = v.id_tipo_practica
         LEFT JOIN convocatoria cv ON cv.id_convocatoria = v.id_convocatoria
         {_where(where)}
@@ -231,7 +224,7 @@ def _horas_por_mes(db: Session, filtros: dict[str, Any]):
         db,
         f"""
         SELECT DATE_FORMAT(h.fecha, '%Y-%m') AS mes, COALESCE(SUM(h.horas_realizadas), 0) AS horas
-        FROM horas h
+        FROM horas_practica h
         LEFT JOIN asignacion asg ON asg.id_asignacion = h.id_asignacion
         LEFT JOIN alumno a ON a.id_alumno = asg.id_alumno
         LEFT JOIN carrera c ON c.id_carrera = a.id_carrera
@@ -250,7 +243,7 @@ def _convocatorias(db: Session, filtros: dict[str, Any]):
     where: list[str] = []
     params: dict[str, Any] = {}
     if _limpio(filtros.get("convocatoria")):
-        where.append("(cv.nombre = :convocatoria OR cv.periodo = :convocatoria)")
+        where.append("(cv.nombre = :convocatoria OR cv.tipo_periodo = :convocatoria)")
         params["convocatoria"] = filtros["convocatoria"]
     if _limpio(filtros.get("tipo_periodo")):
         where.append("cv.tipo_periodo = :tipo_periodo")
@@ -261,7 +254,7 @@ def _convocatorias(db: Session, filtros: dict[str, Any]):
         SELECT
             cv.id_convocatoria,
             cv.nombre AS convocatoria,
-            cv.periodo,
+            cv.tipo_periodo AS periodo,
             cv.tipo_periodo,
             cv.estado,
             COUNT(DISTINCT asg.id_alumno) AS alumnos,
@@ -273,10 +266,10 @@ def _convocatorias(db: Session, filtros: dict[str, Any]):
         LEFT JOIN asignacion asg ON asg.id_convocatoria = cv.id_convocatoria
         LEFT JOIN convenio co ON co.id_empresa = asg.id_empresa
         LEFT JOIN incidencia_practica i ON i.id_asignacion = asg.id_asignacion
-        LEFT JOIN liberacion l ON l.id_asignacion = asg.id_asignacion
+        LEFT JOIN liberacion_practica l ON l.id_asignacion = asg.id_asignacion
         {_where(where)}
-        GROUP BY cv.id_convocatoria, cv.nombre, cv.periodo, cv.tipo_periodo, cv.estado
-        ORDER BY cv.fecha_inicio DESC, cv.id_convocatoria DESC
+        GROUP BY cv.id_convocatoria, cv.nombre, cv.tipo_periodo, cv.estado
+        ORDER BY cv.fecha_inicio_general DESC, cv.id_convocatoria DESC
         """,
         params,
     )
@@ -322,7 +315,6 @@ def _catalogos_filtros(db: Session):
         "estados_vacante": valores("vacante", "estado_vacante"),
         "estados_convenio": valores("convenio", "estado_convenio"),
         "tipos_tramite": valores("empresa", "tipo_tramite"),
-        "periodos_participacion": valores("empresa", "periodo_participacion"),
         "tipos_periodo": valores("convocatoria", "tipo_periodo"),
     }
 
@@ -391,7 +383,7 @@ def _obtener_indicadores(db: Session, filtros: dict[str, Any]):
         SELECT nombre
         FROM convocatoria
         WHERE estado = 'Activa'
-        ORDER BY fecha_inicio DESC
+        ORDER BY fecha_inicio_general DESC
         LIMIT 1
         """,
     )
@@ -490,7 +482,7 @@ def _obtener_indicadores(db: Session, filtros: dict[str, Any]):
             "vacantes_prepadron": int(_safe_scalar(db, vacantes_prepadron_sql, vacantes_prepadron_params)),
             "convocatorias": _conteo_tabla(db, "convocatoria"),
             "incidencias_abiertas": int(_safe_scalar(db, "SELECT COUNT(*) FROM incidencia_practica WHERE estado IN ('Abierta', 'En seguimiento')")),
-            "horas_registradas": float(_safe_scalar(db, "SELECT COALESCE(SUM(horas_realizadas), 0) FROM horas", default=0)),
+            "horas_registradas": float(_safe_scalar(db, "SELECT COALESCE(SUM(horas_realizadas), 0) FROM horas_practica", default=0)),
         },
         "alumnos_por_carrera": _distribucion_alumnos(db, "c.nombre", "Sin carrera", filtros),
         "alumnos_por_semestre": _distribucion_alumnos(db, "a.semestre", "Sin semestre", filtros),
@@ -498,7 +490,7 @@ def _obtener_indicadores(db: Session, filtros: dict[str, Any]):
         "alumnos_por_estado": _distribucion_alumnos(db, "a.estado_alumno", "Sin estado", filtros),
         "empresas_por_estado": _distribucion_empresas(db, "estado_empresa", filtros),
         "empresas_por_tipo_tramite": _distribucion_empresas(db, "tipo_tramite", filtros),
-        "empresas_por_periodo": _distribucion_empresas(db, "periodo_participacion", filtros),
+        "empresas_por_periodo": _distribucion_vacantes(db, "v.periodo", filtros),
         "convenios_por_estado": _distribucion_convenios(db, filtros),
         "vacantes_por_estado": _distribucion_vacantes(db, "v.estado_vacante", filtros),
         "vacantes_por_tipo_practica": _distribucion_vacantes(db, "tp.nombre", filtros),
@@ -527,7 +519,6 @@ def _query_filtros(
     estado_vacante: str = "todos",
     estado_convenio: str = "todos",
     tipo_tramite: str = "todos",
-    periodo_participacion: str = "todos",
     tipo_periodo: str = "todos",
 ):
     return {
@@ -541,7 +532,6 @@ def _query_filtros(
         "estado_vacante": estado_vacante,
         "estado_convenio": estado_convenio,
         "tipo_tramite": tipo_tramite,
-        "periodo_participacion": periodo_participacion,
         "tipo_periodo": tipo_periodo,
     }
 

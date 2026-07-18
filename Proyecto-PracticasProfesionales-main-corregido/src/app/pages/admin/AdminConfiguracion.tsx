@@ -29,9 +29,9 @@ type EstadisticasAdmin = {
 type ConvocatoriaCatalogo = {
   id_convocatoria: number;
   nombre: string;
-  periodo: string;
-  fecha_inicio: string;
-  fecha_fin: string;
+  tipo_periodo: string;
+  fecha_inicio_general: string | null;
+  fecha_cierre_general: string | null;
   estado: string;
 };
 
@@ -122,9 +122,9 @@ export function AdminConfiguracion() {
       ...actual,
       id_convocatoria_principal: Number.isFinite(id) ? id : null,
       convocatoria_nombre: convocatoria?.nombre ?? actual.convocatoria_nombre,
-      convocatoria_inicio: convocatoria?.fecha_inicio ?? actual.convocatoria_inicio,
-      convocatoria_cierre: convocatoria?.fecha_fin ?? actual.convocatoria_cierre,
-      convocatoria_periodo: convocatoria?.periodo ?? actual.convocatoria_periodo,
+      convocatoria_inicio: convocatoria?.fecha_inicio_general ?? actual.convocatoria_inicio,
+      convocatoria_cierre: convocatoria?.fecha_cierre_general ?? actual.convocatoria_cierre,
+      convocatoria_periodo: convocatoria?.tipo_periodo ?? actual.convocatoria_periodo,
       convocatoria_estado: convocatoria?.estado ?? actual.convocatoria_estado,
     }));
   }
@@ -500,7 +500,7 @@ export function AdminConfiguracion() {
                 </option>
                 {convocatorias.map((convocatoria) => (
                   <option key={convocatoria.id_convocatoria} value={convocatoria.id_convocatoria}>
-                    {convocatoria.nombre} - {convocatoria.periodo}
+                    {convocatoria.nombre} - {convocatoria.tipo_periodo}
                   </option>
                 ))}
               </select>
@@ -510,14 +510,14 @@ export function AdminConfiguracion() {
               <div className="rounded-xl border border-gray-200 p-4">
                 <div className="text-xs text-gray-500">Inicio</div>
                 <div className="font-semibold text-[#0d2b5e]">
-                  {formatearFecha(convocatoriaSeleccionada?.fecha_inicio ?? configuracion.convocatoria_inicio)}
+                  {formatearFecha(convocatoriaSeleccionada?.fecha_inicio_general ?? configuracion.convocatoria_inicio)}
                 </div>
               </div>
 
               <div className="rounded-xl border border-gray-200 p-4">
                 <div className="text-xs text-gray-500">Cierre</div>
                 <div className="font-semibold text-[#0d2b5e]">
-                  {formatearFecha(convocatoriaSeleccionada?.fecha_fin ?? configuracion.convocatoria_cierre)}
+                  {formatearFecha(convocatoriaSeleccionada?.fecha_cierre_general ?? configuracion.convocatoria_cierre)}
                 </div>
               </div>
 

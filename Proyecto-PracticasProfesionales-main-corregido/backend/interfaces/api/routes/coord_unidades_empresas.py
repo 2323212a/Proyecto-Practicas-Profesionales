@@ -8,6 +8,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.convocatoria_rules_service import validar_etapa_actual
 from app.services.empresa_reglas_service import (
     obtener_convenio_vigente_actual,
     obtener_vinculacion_aprobada_actual,
@@ -653,6 +654,7 @@ def cambiar_estado_vacante(
         raise HTTPException(status_code=400, detail="Transicion de vacante no permitida")
 
     if datos.estado_vacante == "PrePadron":
+        validar_etapa_actual(vacante.convocatoria, "empresas")
         validar_participacion_aceptada(db, vacante.id_empresa, vacante.id_convocatoria)
         validar_habilitacion_empresa_para_vacantes(db, vacante.empresa)
     if datos.estado_vacante == "Activa":
@@ -685,6 +687,7 @@ def liberar_prepadron(
         ):
             try:
                 validar_participacion_aceptada(db, vacante.id_empresa, vacante.id_convocatoria)
+                validar_etapa_actual(vacante.convocatoria, "empresas")
                 validar_habilitacion_empresa_para_vacantes(db, vacante.empresa)
                 vacante.estado_vacante = "Activa"
                 liberadas += 1

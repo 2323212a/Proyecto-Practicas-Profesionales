@@ -212,6 +212,16 @@ export async function eliminarConvocatoria(id: number) {
   return response.data;
 }
 
+export async function desactivarConvocatoria(id: number) {
+  const response = await apiClient.patch(`/convocatorias/${id}/desactivar`);
+  return response.data;
+}
+
+export async function cerrarConvocatoria(id: number) {
+  const response = await apiClient.patch(`/convocatorias/${id}/cerrar`);
+  return response.data;
+}
+
 export async function crearTipoDocumento(data: {
   nombre_documento: string;
   descripcion?: string;

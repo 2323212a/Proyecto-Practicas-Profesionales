@@ -1,4 +1,5 @@
 import type {
+  ConvocatoriasDisponiblesAlumnoResponse,
   DocumentacionAlumnoResponse,
   DocumentosAlumnoResponse,
   SubirDocumentoAlumnoRequest,
@@ -22,6 +23,14 @@ export class GestionDocumentosAlumnoUseCase {
 
   obtenerDocumentacion(): Promise<DocumentacionAlumnoResponse> {
     return this.repository.obtenerDocumentacion();
+  }
+
+  listarConvocatoriasDisponibles(): Promise<ConvocatoriasDisponiblesAlumnoResponse> {
+    return this.repository.listarConvocatoriasDisponibles();
+  }
+
+  inscribirseConvocatoria(idConvocatoria: number): Promise<DocumentacionAlumnoResponse> {
+    return this.repository.inscribirseConvocatoria(idConvocatoria);
   }
 
   subirArchivo(idDocumento: number, archivo: File): Promise<DocumentacionAlumnoResponse> {

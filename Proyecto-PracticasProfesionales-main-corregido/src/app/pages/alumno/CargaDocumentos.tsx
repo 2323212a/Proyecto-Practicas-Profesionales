@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle, Clock, Download, Eye, FileText, Lock, RefreshCw, Upload } from "lucide-react";
+import { AlertCircle, CalendarDays, CheckCircle, Clock, Download, Eye, FileText, Lock, RefreshCw, Upload } from "lucide-react";
 
 import { gestionDocumentosAlumnoUseCase } from "../../dependencies";
-import type { DocumentacionAlumnoResponse, DocumentoFlujoAlumno } from "../../../domain/alumno/DocumentoAlumno";
+import type { ConvocatoriaDisponibleAlumno, DocumentacionAlumnoResponse, DocumentoFlujoAlumno } from "../../../domain/alumno/DocumentoAlumno";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 const estadoConfig = (doc: DocumentoFlujoAlumno) => {
@@ -23,6 +23,9 @@ export function CargaDocumentos() {
   const [data, setData] = useState<DocumentacionAlumnoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<number | null>(null);
+  const [downloading, setDownloading] = useState<number | null>(null);
+  const [convocatorias, setConvocatorias] = useState<ConvocatoriaDisponibleAlumno[]>([]);
+  const [inscribiendo, setInscribiendo] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   const cargar = async () => {
@@ -32,13 +35,38 @@ export function CargaDocumentos() {
       setData(await gestionDocumentosAlumnoUseCase.obtenerDocumentacion());
     } catch (err) {
       console.error(err);
-      setError("No se pudo cargar tu expediente documental.");
+      setError(getApiErrorMessage(err, "No se pudo cargar tu expediente documental."));
+      await cargarConvocatoriasDisponibles();
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { cargar(); }, []);
+
+  const cargarConvocatoriasDisponibles = async () => {
+    try {
+      const respuesta = await gestionDocumentosAlumnoUseCase.listarConvocatoriasDisponibles();
+      setConvocatorias(respuesta.convocatorias);
+      if (respuesta.mensaje) setError(respuesta.mensaje);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const inscribirse = async (idConvocatoria: number) => {
+    try {
+      setInscribiendo(idConvocatoria);
+      setError("");
+      setData(await gestionDocumentosAlumnoUseCase.inscribirseConvocatoria(idConvocatoria));
+      setConvocatorias([]);
+    } catch (err) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo realizar la inscripcion."));
+    } finally {
+      setInscribiendo(null);
+    }
+  };
 
   const porEtapa = useMemo(() => {
     const docs = data?.documentos ?? [];
@@ -77,13 +105,15 @@ export function CargaDocumentos() {
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error(err);
-      setError("No se pudo abrir el PDF.");
+      setError(getApiErrorMessage(err, "No se pudo abrir el PDF."));
     }
   };
 
   const descargarGenerado = async (doc: DocumentoFlujoAlumno) => {
     if (!doc.codigo_generacion) return;
     try {
+      setDownloading(doc.id_documento);
+      setError("");
       const blob = await gestionDocumentosAlumnoUseCase.descargarGenerado(doc.codigo_generacion);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -97,11 +127,56 @@ export function CargaDocumentos() {
     } catch (err: unknown) {
       console.error(err);
       setError(getApiErrorMessage(err, "No se pudo descargar el documento oficial."));
+    } finally {
+      setDownloading(null);
     }
   };
 
   if (loading) return <div className="text-[11px] text-gray-500">Cargando expediente documental...</div>;
-  if (!data) return <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-[11px]">{error}</div>;
+  if (!data) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-xl font-bold text-[#0d2b5e]">Carga de Documentos</h1>
+          <p className="text-gray-500 text-[11px] mt-0.5">Primero inscribete a una convocatoria disponible.</p>
+        </div>
+        {error && <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-[11px]">{error}</div>}
+        <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex gap-3">
+            <CalendarDays className="w-4 h-4 text-[#1565c0]" />
+            <div>
+              <h2 className="font-bold text-base text-[#0d2b5e]">Convocatorias disponibles</h2>
+              <p className="text-[11px] text-gray-500 mt-0.5">La documentacion se habilita cuando confirmes tu inscripcion.</p>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {convocatorias.map((convocatoria) => (
+              <div key={convocatoria.id_convocatoria} className="p-4 flex flex-col md:flex-row md:items-center gap-3 justify-between">
+                <div>
+                  <div className="font-semibold text-sm text-[#0d2b5e]">{convocatoria.nombre}</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    {convocatoria.tipo_periodo} - Documentos: {fecha(convocatoria.fecha_inicio_documentos)} a {fecha(convocatoria.fecha_cierre_documentos)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void inscribirse(convocatoria.id_convocatoria)}
+                  disabled={inscribiendo !== null}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0d2b5e] px-3 py-2 text-[11px] font-bold text-white hover:bg-[#1565c0] disabled:opacity-50"
+                >
+                  {inscribiendo === convocatoria.id_convocatoria ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                  Inscribirme
+                </button>
+              </div>
+            ))}
+            {convocatorias.length === 0 && (
+              <div className="p-4 text-[11px] text-gray-500">No hay convocatorias disponibles para inscripcion en este momento.</div>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -110,26 +185,47 @@ export function CargaDocumentos() {
         <p className="text-gray-500 text-[11px] mt-0.5">Carga tu expediente en PDF siguiendo el flujo por bloques.</p>
       </div>
 
+      {data.convocatoria && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-[11px] text-blue-800">
+          Convocatoria actual: <span className="font-bold">{data.convocatoria.nombre}</span> - {data.convocatoria.tipo_periodo}. Documentos: {fecha(data.convocatoria.fecha_inicio_documentos)} a {fecha(data.convocatoria.fecha_cierre_documentos)}.
+        </div>
+      )}
+
       {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-[11px]">{error}</div>}
 
+      {data.documentos.length === 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-[11px] text-amber-800">
+          No hay tipos de documento configurados para tu expediente.
+        </div>
+      )}
+
       <Bloque titulo="Bloque 1: Elegibilidad academica" descripcion="Primer filtro: historial academico y vigencia de derechos. Si no se aprueba este bloque, el alumno no puede continuar." validado={porEtapa.elegibilidad.every((d) => d.estado === "Aprobado")}>
-        {porEtapa.elegibilidad.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}
+        {porEtapa.elegibilidad.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}
       </Bloque>
 
       <Bloque titulo="Bloque 2: Expediente inicial" descripcion="Documentos personales del alumno. Se habilita unicamente cuando el alumno pasa el filtro academico." validado={porEtapa.expediente.length > 0 && porEtapa.expediente.every((d) => d.estado === "Aprobado")}>
-        {porEtapa.expediente.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}
+        {porEtapa.expediente.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}
       </Bloque>
 
-      <div className={`rounded-xl border shadow-sm p-3 ${data.expediente.expediente_inicial_aprobado ? "bg-green-50 border-green-200" : "bg-gray-50 border-gray-200"}`}>
-        <h3 className={`font-bold text-base ${data.expediente.expediente_inicial_aprobado ? "text-green-700" : "text-gray-500"}`}>Habilitar seleccion de empresa</h3>
-        <p className={`text-[11px] mt-1 ${data.expediente.expediente_inicial_aprobado ? "text-green-600" : "text-gray-400"}`}>
-          {data.expediente.expediente_inicial_aprobado ? "Tu expediente inicial fue validado. Ya puedes consultar el padron de empresas y elegir tus opciones." : "Primero deben aprobarse los 7 documentos iniciales."}
-        </p>
+      <div className={`rounded-xl border shadow-sm p-4 transition-colors ${data.expediente.expediente_inicial_aprobado ? "bg-green-50 border-green-200" : "border-l-4 border-amber-400 bg-amber-50"}`}>
+        <div className="flex items-start gap-3">
+          {data.expediente.expediente_inicial_aprobado ? (
+            <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-600" />
+          ) : (
+            <Lock className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
+          )}
+          <div>
+            <h3 className={`font-bold text-base ${data.expediente.expediente_inicial_aprobado ? "text-green-700" : "text-amber-900"}`}>Habilitar seleccion de empresa</h3>
+            <p className={`text-[11px] mt-1 ${data.expediente.expediente_inicial_aprobado ? "text-green-600" : "text-amber-800"}`}>
+              {data.expediente.expediente_inicial_aprobado ? "Tu expediente inicial fue validado. Ya puedes consultar el padron de empresas y elegir tus opciones." : "No disponible: primero deben aprobarse los 7 documentos iniciales."}
+            </p>
+          </div>
+        </div>
       </div>
 
       {data.expediente.seleccion_habilitada && (
         <Bloque titulo="Bloque 3: Seleccion de empresa" descripcion="El alumno selecciona opciones del padron. El sistema genera la Carta de Exposicion de Motivos y el alumno la sube firmada." validado={porEtapa.seleccion.every((d) => d.estado === "Aprobado")}>
-          {porEtapa.seleccion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}
+          {porEtapa.seleccion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}
         </Bloque>
       )}
 
@@ -142,19 +238,19 @@ export function CargaDocumentos() {
               <p className="text-[11px] text-green-600 mt-0.5">Todos tus documentos iniciales fueron validados. Ya puedes consultar la documentacion enviada por coordinacion.</p>
             </div>
           </div>
-          <div className="divide-y divide-gray-100">{porEtapa.asignacion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}</div>
+          <div className="divide-y divide-gray-100">{porEtapa.asignacion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}</div>
           <div className="border-t border-blue-100 bg-[#e3f0ff] px-4 py-3">
             <h3 className="font-bold text-[#0d2b5e] text-base">Subir Documentos Firmados</h3>
             <p className="text-[11px] text-blue-700 mt-0.5">Descarga los documentos enviados por coordinacion, llenalos y subelos nuevamente en formato PDF.</p>
           </div>
-          <div className="divide-y divide-gray-100">{porEtapa.firmados.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}</div>
+          <div className="divide-y divide-gray-100">{porEtapa.firmados.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}</div>
         </section>
       ) : (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex gap-3">
-          <Clock className="w-3.5 h-3.5 text-gray-400" />
+        <div className="flex gap-3 rounded-xl border border-l-4 border-amber-400 bg-amber-50 p-4 shadow-sm">
+          <Lock className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-700" />
           <div>
-            <div className="font-semibold text-gray-700 text-[11px]">Documentacion de asignacion aun no disponible</div>
-            <div className="text-gray-500 text-[11px] mt-0.5">La carta de colaboracion, carta de presentacion y carta de asignacion estaran disponibles cuando coordinacion habilite la asignacion.</div>
+            <div className="font-semibold text-amber-900 text-[11px]">Documentacion de asignacion aun no disponible</div>
+            <div className="text-amber-800 text-[11px] mt-0.5">Bloqueado: la carta de colaboracion, carta de presentacion y carta de asignacion estaran disponibles cuando coordinacion habilite la asignacion.</div>
           </div>
         </div>
       )}
@@ -177,15 +273,18 @@ function Bloque({ titulo, descripcion, validado, children }: { titulo: string; d
   );
 }
 
-function DocumentoAlumno({ doc, uploading, onUpload, onOpen, onDownloadGenerated }: { doc: DocumentoFlujoAlumno; uploading: number | null; onUpload: (doc: DocumentoFlujoAlumno, file?: File) => void; onOpen: (doc: DocumentoFlujoAlumno) => void; onDownloadGenerated: (doc: DocumentoFlujoAlumno) => void }) {
+function DocumentoAlumno({ doc, uploading, downloading, onUpload, onOpen, onDownloadGenerated }: { doc: DocumentoFlujoAlumno; uploading: number | null; downloading: number | null; onUpload: (doc: DocumentoFlujoAlumno, file?: File) => void; onOpen: (doc: DocumentoFlujoAlumno) => void; onDownloadGenerated: (doc: DocumentoFlujoAlumno) => void }) {
   const cfg = estadoConfig(doc);
   const Icon = cfg.icon;
   const puedeSubir = doc.habilitado && !doc.generado_por_sistema && doc.estado !== "Aprobado";
+  const descargando = downloading === doc.id_documento;
 
   return (
-    <div className={`px-4 py-4 flex flex-col lg:flex-row lg:items-center gap-3 ${doc.habilitado ? "" : "opacity-55"}`}>
+    <div className={`px-4 py-4 flex flex-col lg:flex-row lg:items-center gap-3 transition-colors ${doc.habilitado ? "bg-white" : "border-l-4 border-amber-400 bg-amber-50/80"}`}>
       <div className="flex items-start gap-3 flex-1">
-        <div className="w-9 h-9 bg-[#e3f0ff] rounded-xl flex items-center justify-center flex-shrink-0"><FileText className="w-3.5 h-3.5 text-[#1565c0]" /></div>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${doc.habilitado ? "bg-[#e3f0ff]" : "bg-amber-100"}`}>
+          {doc.habilitado ? <FileText className="w-3.5 h-3.5 text-[#1565c0]" /> : <Lock className="w-3.5 h-3.5 text-amber-700" />}
+        </div>
         <div>
           <div className="font-semibold text-gray-800 text-sm">{doc.nombre}</div>
           <div className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{doc.descripcion}</div>
@@ -208,7 +307,12 @@ function DocumentoAlumno({ doc, uploading, onUpload, onOpen, onDownloadGenerated
               </div>
             </div>
           )}
-          {!doc.habilitado && <div className="text-[11px] text-red-600 mt-1 font-medium">Este bloque aun no esta habilitado.</div>}
+          {!doc.habilitado && (
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-100 px-2.5 py-1.5 text-[11px] font-semibold text-amber-800">
+              <Lock className="h-3.5 w-3.5" />
+              No disponible: completa y espera la aprobacion del bloque anterior.
+            </div>
+          )}
           {doc.estado === "Aprobado" && !doc.generado_por_sistema && <div className="text-[11px] text-green-700 mt-1 font-medium">Documento aprobado. Puedes verlo, pero ya no reemplazarlo.</div>}
         </div>
       </div>
@@ -218,11 +322,11 @@ function DocumentoAlumno({ doc, uploading, onUpload, onOpen, onDownloadGenerated
           <button
             type="button"
             onClick={() => onDownloadGenerated(doc)}
-            disabled={!doc.puede_descargar_generado}
+            disabled={!doc.puede_descargar_generado || descargando}
             className="inline-flex min-w-[190px] items-center justify-center gap-2 rounded-xl bg-[#0d2b5e] px-3 py-2 text-[11px] font-bold text-white shadow-sm ring-1 ring-[#0d2b5e]/20 hover:bg-[#1565c0] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
           >
-            <Download className="h-3.5 w-3.5" />
-            Descargar documento oficial
+            {descargando ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            {descargando ? "Descargando..." : "Descargar documento oficial"}
           </button>
         )}
         {doc.nombre_archivo && (

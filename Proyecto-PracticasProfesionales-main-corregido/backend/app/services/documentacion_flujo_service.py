@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import re
 import shutil
+import unicodedata
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.services.convocatoria_rules_service import (
+    obtener_convocatorias_disponibles_para_alumno,
+    validar_etapa_actual,
+)
 from app.services.documentacion_generada_service import codigo_generacion_por_nombre
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.carrera import CarreraModel
@@ -20,38 +26,97 @@ from infrastructure.persistence.models.usuario import UsuarioModel
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "expedientes"
 
 DOCUMENTOS_FLUJO = [
-    {"nombre": "Comprobante con materias", "descripcion": "Documento de elegibilidad academica solicitado en SYSWEB.", "instrucciones": "Solicitar en SYSWEB Comprobante con materias. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "elegibilidad", "obligatorio": True, "sistema": False},
-    {"nombre": "Vigencia de Derechos", "descripcion": "Documento que acredita que el alumno cuenta con vigencia de derechos para continuar el tramite.", "instrucciones": "Descargar en el portal del IMSS. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "elegibilidad", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta Compromiso", "descripcion": "Documento oficial generado por el sistema. Descargalo, imprime, firma y sube el PDF firmado.", "instrucciones": "Descarga el documento oficial, imprime, completa los espacios pendientes, firma y vuelve a subirlo en formato PDF.", "etapa": "expediente", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta de Exoneracion", "descripcion": "Documento oficial generado por el sistema. Descargalo, completa los datos manuales, firma y sube el PDF firmado.", "instrucciones": "Completa a mano los datos de contacto de emergencia y tutor antes de firmar. Sube el documento firmado en formato PDF.", "etapa": "expediente", "obligatorio": True, "sistema": False},
-    {"nombre": "Solicitud FO-136", "descripcion": "Solicitud oficial de inscripcion. Descargala, imprime, completa los campos manuales, firma y sube el PDF firmado.", "instrucciones": "La fotografia, datos personales pendientes y firmas deben completarse despues de imprimir. Sube el documento firmado en formato PDF.", "etapa": "expediente", "obligatorio": True, "sistema": False},
-    {"nombre": "Credencial del Alumno", "descripcion": "Copia digital de la credencial vigente del alumno.", "instrucciones": "Sube la credencial vigente del alumno en formato PDF. Debe verse completa, clara y sin recortes importantes.", "etapa": "expediente", "obligatorio": True, "sistema": False},
-    {"nombre": "Credencial del Tutor", "descripcion": "Copia digital de la credencial del padre, madre o tutor.", "instrucciones": "Sube la credencial del tutor en formato PDF. Debe ser clara, legible y corresponder al tutor firmante.", "etapa": "expediente", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta de Exposicion de Motivos", "descripcion": "Documento generado despues de que el alumno selecciona sus opciones de empresa.", "instrucciones": "El alumno debe descargarlo, firmarlo, escanearlo y subirlo nuevamente.", "etapa": "seleccion_empresa", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta de Colaboracion", "descripcion": "Documento emitido por coordinacion para formalizar la colaboracion entre la institucion y la unidad receptora.", "instrucciones": "Documento enviado por coordinacion cuando el expediente y seleccion estan validados.", "etapa": "asignacion", "obligatorio": True, "sistema": True},
-    {"nombre": "Carta de Presentacion", "descripcion": "Documento oficial emitido por la institucion para presentar al alumno ante la unidad receptora.", "instrucciones": "Documento enviado por coordinacion despues de aprobar la seleccion de empresa.", "etapa": "asignacion", "obligatorio": True, "sistema": True},
-    {"nombre": "Carta de Asignacion", "descripcion": "Documento que confirma la asignacion del alumno a una unidad receptora.", "instrucciones": "Documento enviado por coordinacion una vez autorizada la asignacion.", "etapa": "asignacion", "obligatorio": True, "sistema": True},
-    {"nombre": "Carta de Colaboracion Firmada", "descripcion": "Sube la carta de colaboracion ya firmada y completamente llenada.", "instrucciones": "Formato permitido: PDF. El documento debe ser claro, legible y estar completo.", "etapa": "asignacion_firmada", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta de Presentacion Firmada", "descripcion": "Sube la carta de presentacion ya firmada por las partes correspondientes.", "instrucciones": "Formato permitido: PDF. El documento debe ser claro, legible y estar completo.", "etapa": "asignacion_firmada", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta de Asignacion Firmada", "descripcion": "Sube la carta de asignacion ya firmada para continuar con el proceso.", "instrucciones": "Formato permitido: PDF. El documento debe ser claro, legible y estar completo.", "etapa": "asignacion_firmada", "obligatorio": True, "sistema": False},
+    {"nombre": "Comprobante con materias", "descripcion": "Documento de elegibilidad academica solicitado en SYSWEB.", "instrucciones": "Solicitar en SYSWEB Comprobante con materias. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
+    {"nombre": "Vigencia de Derechos", "descripcion": "Documento que acredita que el alumno cuenta con vigencia de derechos para continuar el tramite.", "instrucciones": "Descargar en el portal del IMSS. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta Compromiso", "descripcion": "Documento oficial generado por el sistema. Descargalo, imprime, firma y sube el PDF firmado.", "instrucciones": "Descarga el documento oficial, imprime, completa los espacios pendientes, firma y vuelve a subirlo en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta de Exoneracion", "descripcion": "Documento oficial generado por el sistema. Descargalo, completa los datos manuales, firma y sube el PDF firmado.", "instrucciones": "Completa a mano los datos de contacto de emergencia y tutor antes de firmar. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
+    {"nombre": "Solicitud FO-136", "descripcion": "Solicitud oficial de inscripcion. Descargala, imprime, completa los campos manuales, firma y sube el PDF firmado.", "instrucciones": "La fotografia, datos personales pendientes y firmas deben completarse despues de imprimir. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
+    {"nombre": "Credencial del Alumno", "descripcion": "Copia digital de la credencial vigente del alumno.", "instrucciones": "Sube la credencial vigente del alumno en formato PDF. Debe verse completa, clara y sin recortes importantes.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
+    {"nombre": "Credencial del Tutor", "descripcion": "Copia digital de la credencial del padre, madre o tutor.", "instrucciones": "Sube la credencial del tutor en formato PDF. Debe ser clara, legible y corresponder al tutor firmante.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta de Exposicion de Motivos", "descripcion": "Documento generado despues de que el alumno selecciona sus opciones de empresa.", "instrucciones": "El alumno debe descargarlo, firmarlo, escanearlo y subirlo nuevamente.", "etapa": "SeleccionEmpresa", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta de Colaboracion", "descripcion": "Documento emitido por coordinacion para formalizar la colaboracion entre la institucion y la unidad receptora.", "instrucciones": "Documento enviado por coordinacion cuando el expediente y seleccion estan validados.", "etapa": "Asignacion", "obligatorio": True, "sistema": True},
+    {"nombre": "Carta de Presentacion", "descripcion": "Documento oficial emitido por la institucion para presentar al alumno ante la unidad receptora.", "instrucciones": "Documento enviado por coordinacion despues de aprobar la seleccion de empresa.", "etapa": "Asignacion", "obligatorio": True, "sistema": True},
+    {"nombre": "Carta de Asignacion", "descripcion": "Documento que confirma la asignacion del alumno a una unidad receptora.", "instrucciones": "Documento enviado por coordinacion una vez autorizada la asignacion.", "etapa": "Asignacion", "obligatorio": True, "sistema": True},
+    {"nombre": "Carta de Colaboracion Firmada", "descripcion": "Sube la carta de colaboracion ya firmada y completamente llenada.", "instrucciones": "Formato permitido: PDF. El documento debe ser claro, legible y estar completo.", "etapa": "AsignacionFirmada", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta de Presentacion Firmada", "descripcion": "Sube la carta de presentacion ya firmada por las partes correspondientes.", "instrucciones": "Formato permitido: PDF. El documento debe ser claro, legible y estar completo.", "etapa": "AsignacionFirmada", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta de Asignacion Firmada", "descripcion": "Sube la carta de asignacion ya firmada para continuar con el proceso.", "instrucciones": "Formato permitido: PDF. El documento debe ser claro, legible y estar completo.", "etapa": "AsignacionFirmada", "obligatorio": True, "sistema": False},
 ]
 
 ORDEN_DOCUMENTOS = {doc["nombre"]: index for index, doc in enumerate(DOCUMENTOS_FLUJO)}
+ETAPAS_DB = {
+    "elegibilidad": "Elegibilidad",
+    "expediente": "Expediente",
+    "seleccion_empresa": "SeleccionEmpresa",
+    "asignacion": "Asignacion",
+    "asignacion_firmada": "AsignacionFirmada",
+    "liberacion": "Liberacion",
+    "Elegibilidad": "Elegibilidad",
+    "Expediente": "Expediente",
+    "SeleccionEmpresa": "SeleccionEmpresa",
+    "Asignacion": "Asignacion",
+    "AsignacionFirmada": "AsignacionFirmada",
+    "Liberacion": "Liberacion",
+}
+ETAPAS_UI = {
+    "Elegibilidad": "elegibilidad",
+    "Expediente": "expediente",
+    "SeleccionEmpresa": "seleccion_empresa",
+    "Asignacion": "asignacion",
+    "AsignacionFirmada": "asignacion_firmada",
+    "Liberacion": "liberacion",
+}
 
 
-def _convocatoria_vigente(db: Session) -> ConvocatoriaModel:
-    convocatoria = (
-        db.query(ConvocatoriaModel)
-        .filter(ConvocatoriaModel.estado == "Activa")
-        .order_by(ConvocatoriaModel.fecha_inicio.desc())
+def _etapa_db(etapa: str) -> str:
+    return ETAPAS_DB.get(etapa, etapa)
+
+
+def _etapa_ui(etapa: str) -> str:
+    return ETAPAS_UI.get(etapa, etapa)
+
+
+def _convocatorias_disponibles(db: Session, alumno: AlumnoModel) -> list[ConvocatoriaModel]:
+    return obtener_convocatorias_disponibles_para_alumno(db, alumno)
+
+
+def listar_convocatorias_disponibles_alumno(db: Session, alumno: AlumnoModel) -> list[dict]:
+    return [_convocatoria_response(convocatoria) for convocatoria in _convocatorias_disponibles(db, alumno)]
+
+
+def _convocatoria_response(convocatoria: ConvocatoriaModel) -> dict:
+    return {
+        "id_convocatoria": convocatoria.id_convocatoria,
+        "nombre": convocatoria.nombre,
+        "tipo_periodo": convocatoria.tipo_periodo,
+        "estado": convocatoria.estado,
+        "fecha_inicio_documentos": convocatoria.fecha_inicio_documentos.isoformat() if convocatoria.fecha_inicio_documentos else None,
+        "fecha_cierre_documentos": convocatoria.fecha_cierre_documentos.isoformat() if convocatoria.fecha_cierre_documentos else None,
+        "fecha_inicio_validacion": convocatoria.fecha_inicio_validacion.isoformat() if convocatoria.fecha_inicio_validacion else None,
+        "fecha_cierre_validacion": convocatoria.fecha_cierre_validacion.isoformat() if convocatoria.fecha_cierre_validacion else None,
+        "fecha_inicio_seleccion": convocatoria.fecha_inicio_seleccion.isoformat() if convocatoria.fecha_inicio_seleccion else None,
+        "fecha_cierre_seleccion": convocatoria.fecha_cierre_seleccion.isoformat() if convocatoria.fecha_cierre_seleccion else None,
+        "fecha_inicio_asignacion": convocatoria.fecha_inicio_asignacion.isoformat() if convocatoria.fecha_inicio_asignacion else None,
+        "fecha_cierre_asignacion": convocatoria.fecha_cierre_asignacion.isoformat() if convocatoria.fecha_cierre_asignacion else None,
+        "fecha_inicio_practicas": convocatoria.fecha_inicio_practicas.isoformat() if convocatoria.fecha_inicio_practicas else None,
+        "fecha_cierre_practicas": convocatoria.fecha_cierre_practicas.isoformat() if convocatoria.fecha_cierre_practicas else None,
+        "fecha_inicio_cierre": convocatoria.fecha_inicio_cierre.isoformat() if convocatoria.fecha_inicio_cierre else None,
+        "fecha_cierre_cierre": convocatoria.fecha_cierre_cierre.isoformat() if convocatoria.fecha_cierre_cierre else None,
+    }
+
+
+def _expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel | None:
+    return (
+        db.query(ExpedienteModel)
+        .join(ConvocatoriaModel, ConvocatoriaModel.id_convocatoria == ExpedienteModel.id_convocatoria)
+        .filter(
+            ExpedienteModel.id_alumno == alumno.id_alumno,
+            ConvocatoriaModel.estado == "Activa",
+            ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
+            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revision", "Aprobado"]),
+        )
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ExpedienteModel.fecha_creacion.desc())
         .first()
     )
-    if convocatoria:
-        return convocatoria
-    convocatoria = db.query(ConvocatoriaModel).order_by(ConvocatoriaModel.fecha_inicio.desc()).first()
-    if convocatoria is None:
-        raise HTTPException(status_code=400, detail="No hay convocatoria registrada")
-    return convocatoria
 
 
 def generar_nomenclatura(nombre_documento: str, matricula: str) -> str:
@@ -70,48 +135,25 @@ def obtener_o_crear_tipo(db: Session, definicion: dict) -> TipoDocumentoModel:
         db.query(TipoDocumentoModel)
         .filter(
             TipoDocumentoModel.nombre_documento == definicion["nombre"],
-            TipoDocumentoModel.etapa == definicion["etapa"],
+            TipoDocumentoModel.etapa == _etapa_db(definicion["etapa"]),
         )
         .first()
     )
     if tipo is None:
         tipo = TipoDocumentoModel(
             nombre_documento=definicion["nombre"],
-            etapa=definicion["etapa"],
+            etapa=_etapa_db(definicion["etapa"]),
             obligatorio=definicion["obligatorio"],
         )
         db.add(tipo)
         db.flush()
     tipo.descripcion = definicion["descripcion"]
-    tipo.etapa = definicion["etapa"]
+    tipo.etapa = _etapa_db(definicion["etapa"])
     tipo.obligatorio = definicion["obligatorio"]
     return tipo
 
 
-def obtener_o_crear_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
-    convocatoria = _convocatoria_vigente(db)
-    expediente = (
-        db.query(ExpedienteModel)
-        .filter(
-            ExpedienteModel.id_alumno == alumno.id_alumno,
-            ExpedienteModel.id_convocatoria == convocatoria.id_convocatoria,
-        )
-        .first()
-    )
-    if expediente:
-        return expediente
-    expediente = ExpedienteModel(
-        id_alumno=alumno.id_alumno,
-        id_convocatoria=convocatoria.id_convocatoria,
-        estado_expediente="Pendiente",
-    )
-    db.add(expediente)
-    db.flush()
-    return expediente
-
-
-def asegurar_documentos_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
-    expediente = obtener_o_crear_expediente(db, alumno)
+def _asegurar_documentos_en_expediente(db: Session, expediente: ExpedienteModel) -> None:
     for definicion in DOCUMENTOS_FLUJO:
         tipo = obtener_o_crear_tipo(db, definicion)
         documento = (
@@ -135,6 +177,59 @@ def asegurar_documentos_expediente(db: Session, alumno: AlumnoModel) -> Expedien
             )
         else:
             documento.generado_por_sistema = definicion["sistema"]
+
+
+def inscribir_alumno_convocatoria(db: Session, alumno: AlumnoModel, id_convocatoria: int) -> dict:
+    convocatoria = (
+        db.query(ConvocatoriaModel)
+        .filter(
+            ConvocatoriaModel.id_convocatoria == id_convocatoria,
+            ConvocatoriaModel.estado == "Activa",
+            ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
+        )
+        .first()
+    )
+    if convocatoria is None:
+        raise HTTPException(status_code=404, detail="Convocatoria disponible no encontrada.")
+    validar_etapa_actual(convocatoria, "documentos")
+
+    expediente_activo = _expediente_actual(db, alumno)
+    if expediente_activo is not None and expediente_activo.id_convocatoria != id_convocatoria:
+        raise HTTPException(status_code=409, detail="Ya tienes una inscripcion activa en otra convocatoria.")
+
+    expediente = (
+        db.query(ExpedienteModel)
+        .filter(
+            ExpedienteModel.id_alumno == alumno.id_alumno,
+            ExpedienteModel.id_convocatoria == convocatoria.id_convocatoria,
+        )
+        .first()
+    )
+    if expediente is None:
+        expediente = ExpedienteModel(
+            id_alumno=alumno.id_alumno,
+            id_convocatoria=convocatoria.id_convocatoria,
+            estado_expediente="Pendiente",
+        )
+        db.add(expediente)
+        db.flush()
+    _asegurar_documentos_en_expediente(db, expediente)
+    db.commit()
+    db.refresh(expediente)
+    return serializar_documentacion(db, alumno)
+
+
+def obtener_expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
+    expediente = _expediente_actual(db, alumno)
+    if expediente is None:
+        raise HTTPException(status_code=409, detail="Necesitas inscribirte a una convocatoria antes de cargar documentacion.")
+    validar_etapa_actual(expediente.convocatoria, "documentos")
+    return expediente
+
+
+def asegurar_documentos_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
+    expediente = obtener_expediente_actual(db, alumno)
+    _asegurar_documentos_en_expediente(db, expediente)
     db.commit()
     db.refresh(expediente)
     return expediente
@@ -153,11 +248,11 @@ def documentos_del_flujo(db: Session, expediente: ExpedienteModel):
 
 
 def calcular_flujo(filas) -> tuple[bool, bool, bool, bool, bool]:
-    iniciales = [(d, t) for d, t in filas if t.etapa in ["elegibilidad", "expediente"]]
-    seleccion = [(d, t) for d, t in filas if t.etapa == "seleccion_empresa"]
-    asignacion = [(d, t) for d, t in filas if t.etapa == "asignacion"]
+    iniciales = [(d, t) for d, t in filas if t.etapa in ["Elegibilidad", "Expediente"]]
+    seleccion = [(d, t) for d, t in filas if t.etapa == "SeleccionEmpresa"]
+    asignacion = [(d, t) for d, t in filas if t.etapa == "Asignacion"]
 
-    elegibilidad = [(d, t) for d, t in filas if t.etapa == "elegibilidad"]
+    elegibilidad = [(d, t) for d, t in filas if t.etapa == "Elegibilidad"]
     elegibilidad_aprobada = bool(elegibilidad) and all(d.estado_documento == "Aprobado" for d, _ in elegibilidad)
     expediente_inicial_aprobado = bool(iniciales) and all(d.estado_documento == "Aprobado" for d, _ in iniciales)
     seleccion_habilitada = expediente_inicial_aprobado
@@ -166,10 +261,32 @@ def calcular_flujo(filas) -> tuple[bool, bool, bool, bool, bool]:
     return elegibilidad_aprobada, expediente_inicial_aprobado, seleccion_habilitada, seleccion_validada, asignacion_habilitada
 
 
-def _nombre_completo(usuario: UsuarioModel | None) -> str:
-    if usuario is None:
+def _nombre_completo(alumno: AlumnoModel | None) -> str:
+    if alumno is None:
         return "Alumno"
-    return " ".join(parte for parte in [usuario.nombre, usuario.apellido_paterno, usuario.apellido_materno] if parte)
+    return " ".join(parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno] if parte) or "Alumno"
+
+
+def _slug_carpeta(valor: str | None, fallback: str) -> str:
+    texto = valor or fallback
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
+    return texto or fallback
+
+
+def _carpeta_documento_alumno(alumno: AlumnoModel, expediente: ExpedienteModel, bloque: str) -> Path:
+    nombre_alumno = "_".join(
+        parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno, alumno.matricula] if parte
+    )
+    tipo_practica = alumno.tipo_practica.nombre if alumno.tipo_practica else "practica"
+    return (
+        UPLOAD_DIR
+        / "alumnos"
+        / _slug_carpeta(nombre_alumno, f"alumno_{alumno.id_alumno}")
+        / _slug_carpeta(tipo_practica, "practica")
+        / f"convocatoria_{expediente.id_convocatoria}"
+        / _slug_carpeta(bloque, "documentos")
+    )
 
 
 def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
@@ -183,13 +300,13 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
     for documento, tipo in filas:
         definicion = obtener_definicion(tipo.nombre_documento) or {}
         habilitado = False
-        if tipo.etapa == "elegibilidad":
+        if tipo.etapa == "Elegibilidad":
             habilitado = True
-        elif tipo.etapa == "expediente":
+        elif tipo.etapa == "Expediente":
             habilitado = elegibilidad_aprobada
-        elif tipo.etapa == "seleccion_empresa":
+        elif tipo.etapa == "SeleccionEmpresa":
             habilitado = seleccion_habilitada
-        elif tipo.etapa in {"asignacion", "asignacion_firmada"}:
+        elif tipo.etapa in {"Asignacion", "AsignacionFirmada"}:
             habilitado = asignacion_habilitada
 
         codigo_generacion = codigo_generacion_por_nombre(tipo.nombre_documento)
@@ -200,7 +317,7 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
                 "nombre": tipo.nombre_documento,
                 "descripcion": tipo.descripcion,
                 "instrucciones": definicion.get("instrucciones"),
-                "etapa": tipo.etapa,
+                "etapa": _etapa_ui(tipo.etapa),
                 "obligatorio": bool(tipo.obligatorio),
                 "nombre_archivo": documento.nombre_archivo or None,
                 "ruta_archivo": documento.ruta_archivo or None,
@@ -224,9 +341,9 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
         "alumno": {
             "id_alumno": alumno.id_alumno,
             "id_usuario": alumno.id_usuario,
-            "nombre": usuario.nombre if usuario else "Alumno",
-            "apellido_paterno": usuario.apellido_paterno if usuario else None,
-            "apellido_materno": usuario.apellido_materno if usuario else None,
+            "nombre": alumno.nombre,
+            "apellido_paterno": alumno.apellido_paterno,
+            "apellido_materno": alumno.apellido_materno,
             "correo": usuario.correo if usuario else None,
             "matricula": alumno.matricula,
             "semestre": alumno.semestre,
@@ -244,6 +361,7 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
             "seleccion_validada": seleccion_validada,
             "asignacion_habilitada": asignacion_habilitada,
         },
+        "convocatoria": _convocatoria_response(expediente.convocatoria),
         "resumen": {
             "aprobados": aprobados,
             "revision": revision,
@@ -269,7 +387,12 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
     alumnos = db.query(AlumnoModel).order_by(AlumnoModel.id_alumno).all()
     resultado = []
     for alumno in alumnos:
-        expediente = asegurar_documentos_expediente(db, alumno)
+        try:
+            expediente = asegurar_documentos_expediente(db, alumno)
+        except HTTPException as exc:
+            if exc.status_code == 409:
+                continue
+            raise
         usuario = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == alumno.id_usuario).first()
         carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == alumno.id_carrera).first()
         filas = documentos_del_flujo(db, expediente)
@@ -278,7 +401,7 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
             {
                 "id_alumno": alumno.id_alumno,
                 "id_expediente": expediente.id_expediente,
-                "nombre": _nombre_completo(usuario),
+                "nombre": _nombre_completo(alumno),
                 "correo": usuario.correo if usuario else None,
                 "matricula": alumno.matricula,
                 "semestre": alumno.semestre,
@@ -314,7 +437,11 @@ def subir_archivo_alumno(db: Session, alumno: AlumnoModel, id_documento: int, ar
     documento = db.query(DocumentoModel).filter(DocumentoModel.id_documento == id_documento).first()
     if documento is None:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    carpeta = UPLOAD_DIR / str(documento.id_expediente)
+    expediente = db.query(ExpedienteModel).filter(ExpedienteModel.id_expediente == documento.id_expediente).first()
+    if expediente is None:
+        raise HTTPException(status_code=404, detail="Expediente no encontrado")
+    validar_etapa_actual(expediente.convocatoria, "documentos")
+    carpeta = _carpeta_documento_alumno(alumno, expediente, info_documento.get("etapa") or "documentos")
     carpeta.mkdir(parents=True, exist_ok=True)
     nombre_archivo = generar_nomenclatura(info_documento["nombre"], alumno.matricula)
     destino = carpeta / f"{id_documento}_{nombre_archivo}"
@@ -325,9 +452,7 @@ def subir_archivo_alumno(db: Session, alumno: AlumnoModel, id_documento: int, ar
     documento.ruta_archivo = str(destino)
     documento.estado_documento = "Pendiente"
     documento.fecha_carga = datetime.now()
-    expediente = db.query(ExpedienteModel).filter(ExpedienteModel.id_expediente == documento.id_expediente).first()
-    if expediente:
-        expediente.estado_expediente = "En Revision"
+    expediente.estado_expediente = "En Revision"
     db.commit()
     return serializar_documentacion(db, alumno)
 
@@ -341,7 +466,7 @@ def habilitar_documentacion_asignacion(db: Session, alumno: AlumnoModel) -> dict
     filas = documentos_del_flujo(db, expediente)
     carpeta = UPLOAD_DIR / str(expediente.id_expediente)
     for documento, tipo in filas:
-        if tipo.etapa != "asignacion":
+        if tipo.etapa != "Asignacion":
             continue
         nombre_archivo = generar_nomenclatura(tipo.nombre_documento, alumno.matricula)
         destino = carpeta / f"{documento.id_documento}_{nombre_archivo}"
@@ -351,7 +476,7 @@ def habilitar_documentacion_asignacion(db: Session, alumno: AlumnoModel) -> dict
         documento.estado_documento = "Aprobado"
         documento.generado_por_sistema = True
         documento.fecha_carga = datetime.now()
-    alumno.estado_alumno = "Asignado"
+    # DB limpia no tiene estado_alumno="asignado"; la asignacion se refleja en asignacion.estado_asignacion.
     expediente.estado_expediente = "Aprobado"
     db.commit()
     return serializar_documentacion(db, alumno)

@@ -87,14 +87,11 @@ def codigo_generacion_por_nombre(nombre_documento: str | None) -> str | None:
 
 
 def _nombre_completo(alumno: AlumnoModel) -> str:
-    usuario = alumno.usuario
-    if usuario is None:
-        return "Alumno"
     return " ".join(
         parte
-        for parte in [usuario.nombre, usuario.apellido_paterno, usuario.apellido_materno]
+        for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno]
         if parte
-    )
+    ) or "Alumno"
 
 
 def _fecha_larga(hoy: date) -> str:
@@ -127,21 +124,21 @@ def _contexto(alumno: AlumnoModel) -> dict[str, str]:
         "nombre_practica": "Practicas Profesionales",
         "tipo_practica": "Practicas Profesionales",
         "nombre_alumno": _nombre_completo(alumno),
-        "nombre": usuario.nombre if usuario else "",
-        "apellido_paterno": usuario.apellido_paterno if usuario and usuario.apellido_paterno else "",
-        "apellido_materno": usuario.apellido_materno if usuario and usuario.apellido_materno else "",
+        "nombre": alumno.nombre or "",
+        "apellido_paterno": alumno.apellido_paterno or "",
+        "apellido_materno": alumno.apellido_materno or "",
         "correo": usuario.correo if usuario else "",
         "matricula": alumno.matricula,
         "carrera": carrera,
         "unidad_academica": "Facultad de Contaduria y Administracion, Campus I",
-        "periodo_inicio": convocatoria.fecha_inicio.strftime("%d/%m/%Y") if convocatoria else "",
-        "periodo_fin": convocatoria.fecha_fin.strftime("%d/%m/%Y") if convocatoria else "",
-        "periodo_inicio_dia": str(convocatoria.fecha_inicio.day) if convocatoria else "__",
-        "periodo_inicio_mes": MESES[convocatoria.fecha_inicio.month - 1] if convocatoria else "_____",
-        "periodo_inicio_anio": str(convocatoria.fecha_inicio.year) if convocatoria else "_____",
-        "periodo_fin_dia": str(convocatoria.fecha_fin.day) if convocatoria else "__",
-        "periodo_fin_mes": MESES[convocatoria.fecha_fin.month - 1] if convocatoria else "_____",
-        "periodo_fin_anio": str(convocatoria.fecha_fin.year) if convocatoria else "_____",
+        "periodo_inicio": convocatoria.fecha_inicio_general.strftime("%d/%m/%Y") if convocatoria.fecha_inicio_general else "" if convocatoria else "",
+        "periodo_fin": convocatoria.fecha_cierre_general.strftime("%d/%m/%Y") if convocatoria.fecha_cierre_general else "" if convocatoria else "",
+        "periodo_inicio_dia": str(convocatoria.fecha_inicio_general.day) if convocatoria.fecha_inicio_general else "__" if convocatoria else "__",
+        "periodo_inicio_mes": MESES[convocatoria.fecha_inicio_general.month - 1] if convocatoria.fecha_inicio_general else "_____" if convocatoria else "_____",
+        "periodo_inicio_anio": str(convocatoria.fecha_inicio_general.year) if convocatoria.fecha_inicio_general else "_____" if convocatoria else "_____",
+        "periodo_fin_dia": str(convocatoria.fecha_cierre_general.day) if convocatoria.fecha_cierre_general else "__" if convocatoria else "__",
+        "periodo_fin_mes": MESES[convocatoria.fecha_cierre_general.month - 1] if convocatoria.fecha_cierre_general else "_____" if convocatoria else "_____",
+        "periodo_fin_anio": str(convocatoria.fecha_cierre_general.year) if convocatoria.fecha_cierre_general else "_____" if convocatoria else "_____",
     }
 
 

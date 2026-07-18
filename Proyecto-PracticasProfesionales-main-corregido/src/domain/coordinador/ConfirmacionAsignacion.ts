@@ -56,8 +56,13 @@ export interface AsesorInterno {
 export interface ConfirmacionAsignacionesResponse {
   convocatoria_id: number | null;
   convocatoria: string | null;
+  secretaria_academica: string;
   asesores: AsesorInterno[];
   alumnos: AlumnoConfirmacion[];
+}
+
+export interface SecretariaAcademicaResponse {
+  secretaria_academica: string;
 }
 
 export interface ConfirmarAsignacionRequest {

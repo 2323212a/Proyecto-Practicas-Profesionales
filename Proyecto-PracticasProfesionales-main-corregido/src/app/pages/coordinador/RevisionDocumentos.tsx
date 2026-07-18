@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useSearchParams } from "react-router";
 import {
   AlertTriangle,
   CheckCircle,
@@ -30,8 +31,11 @@ const estadoDoc = (doc: DocumentoRevisionFlujo) => {
 };
 
 export function RevisionDocumentos() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const alumnoParametro = Number(searchParams.get("alumno"));
+  const alumnoInicial = Number.isInteger(alumnoParametro) && alumnoParametro > 0 ? alumnoParametro : null;
   const [alumnos, setAlumnos] = useState<AlumnoResumenRevision[]>([]);
-  const [seleccionado, setSeleccionado] = useState<number | null>(null);
+  const [seleccionado, setSeleccionado] = useState<number | null>(alumnoInicial);
   const [detalle, setDetalle] = useState<DetalleRevisionAlumno | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [loading, setLoading] = useState(true);
@@ -48,10 +52,19 @@ export function RevisionDocumentos() {
       setLoading(true);
       const data = await gestionRevisionDocumentalUseCase.listarAlumnosFlujo();
       setAlumnos(data);
-      if (!seleccionado && data.length) setSeleccionado(data[0].id_alumno);
+      const seleccionadoExiste = seleccionado !== null && data.some((alumno) => alumno.id_alumno === seleccionado);
+      if (!seleccionadoExiste && data.length) {
+        const primerAlumno = data[0].id_alumno;
+        setSeleccionado(primerAlumno);
+        setSearchParams({ alumno: String(primerAlumno) }, { replace: true });
+      } else if (!data.length) {
+        setSeleccionado(null);
+        setDetalle(null);
+        setSearchParams({}, { replace: true });
+      }
     } catch (err) {
       console.error(err);
-      setError("No se pudo cargar la lista de alumnos.");
+      setError(getApiErrorMessage(err, "No se pudo cargar la lista de alumnos."));
     } finally {
       setLoading(false);
     }
@@ -63,14 +76,22 @@ export function RevisionDocumentos() {
       setDetalle(await gestionRevisionDocumentalUseCase.obtenerDetalleAlumno(idAlumno));
     } catch (err) {
       console.error(err);
-      setError("No se pudo cargar el expediente del alumno.");
+      setError(getApiErrorMessage(err, "No se pudo cargar el expediente del alumno."));
     } finally {
       setLoadingDetalle(false);
     }
   };
 
   useEffect(() => { void cargarAlumnos(); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial list load; refreshes are explicit.
-  useEffect(() => { if (seleccionado) cargarDetalle(seleccionado); }, [seleccionado]);
+  useEffect(() => { if (seleccionado) void cargarDetalle(seleccionado); }, [seleccionado]);
+  useEffect(() => {
+    if (alumnoInicial && alumnoInicial !== seleccionado) setSeleccionado(alumnoInicial);
+  }, [alumnoInicial, seleccionado]);
+
+  function seleccionarAlumno(idAlumno: number) {
+    setSeleccionado(idAlumno);
+    setSearchParams({ alumno: String(idAlumno) }, { replace: true });
+  }
 
   const filtrados = useMemo(() => {
     const q = busqueda.toLowerCase().trim();
@@ -143,7 +164,7 @@ export function RevisionDocumentos() {
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error(err);
-      setError("No se pudo abrir el PDF.");
+      setError(getApiErrorMessage(err, "No se pudo abrir el PDF."));
     }
   };
 
@@ -160,8 +181,8 @@ export function RevisionDocumentos() {
         <aside className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="p-3 border-b border-gray-100"><div className="border rounded-xl px-2.5 py-1.5 flex items-center gap-2"><Search className="w-3.5 h-3.5 text-gray-400" /><input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="outline-none text-[11px] w-full" placeholder="Buscar alumno..." /></div></div>
           <div className="max-h-[660px] overflow-y-auto divide-y divide-gray-100">
-            {loading ? <div className="p-3 text-[11px] text-gray-500">Cargando alumnos...</div> : filtrados.map((a) => (
-              <button key={a.id_alumno} onClick={() => setSeleccionado(a.id_alumno)} className={`w-full text-left p-3 hover:bg-blue-50 ${seleccionado === a.id_alumno ? "bg-blue-50" : ""}`}>
+            {loading ? <div className="p-3 text-[11px] text-gray-500">Cargando alumnos...</div> : filtrados.length === 0 ? <div className="p-3 text-[11px] text-gray-500">No hay alumnos para revisar.</div> : filtrados.map((a) => (
+              <button key={a.id_alumno} onClick={() => seleccionarAlumno(a.id_alumno)} className={`w-full text-left p-3 hover:bg-blue-50 ${seleccionado === a.id_alumno ? "bg-blue-50" : ""}`}>
                 <div className="font-semibold text-[11px] text-[#0d2b5e]">{a.nombre}</div>
                 <div className="text-[11px] text-gray-500 mt-0.5">{a.matricula} - {a.carrera ?? "Carrera no registrada"}</div>
                 <div className="mt-1 flex gap-2 text-[11px]"><span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{a.resumen.aprobados} aprobados</span><span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{a.resumen.revision} revision</span></div>

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Users, Search, Plus, Edit2, Trash2, UserX, KeyRound, Download, Copy } from "lucide-react";
 import { gestionUsuariosUseCase } from "../../dependencies";
 import { apiClient } from "../../../infrastructure/api/apiClient";
@@ -33,6 +33,7 @@ type PerfilEditable = Record<string, string | number | null>;
 type CarreraCatalogo = {
   id_carrera: number;
   nombre: string;
+  tipo_periodo?: string;
 };
 
 type TipoPracticaCatalogo = {
@@ -70,13 +71,36 @@ function extraerMensajeError(error: unknown, mensajeDefault: string) {
 
   const detail = (data as { detail?: unknown }).detail;
   if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const mensajes = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (typeof item === "object" && item !== null) {
+          const msg = (item as { msg?: unknown; message?: unknown }).msg ??
+            (item as { message?: unknown }).message;
+          return typeof msg === "string" ? msg : JSON.stringify(item);
+        }
+        return String(item);
+      })
+      .filter(Boolean);
+    if (mensajes.length > 0) return mensajes.join("\n");
+  }
   if (typeof detail === "object" && detail !== null) {
-    const mensaje = (detail as { mensaje?: unknown }).mensaje;
+    const mensaje = (detail as { mensaje?: unknown; message?: unknown }).mensaje ??
+      (detail as { message?: unknown }).message;
     if (typeof mensaje === "string") return mensaje;
+    return JSON.stringify(detail);
   }
 
-  const mensaje = (data as { mensaje?: unknown }).mensaje;
+  const mensaje = (data as { mensaje?: unknown; message?: unknown }).mensaje ??
+    (data as { message?: unknown }).message;
   return typeof mensaje === "string" ? mensaje : mensajeDefault;
+}
+
+function esNumeroValido(valor: string) {
+  if (valor.trim() === "") return false;
+  const numero = Number(valor);
+  return Number.isFinite(numero);
 }
 
 export function GestionUsuarios() {
@@ -137,12 +161,42 @@ export function GestionUsuarios() {
 
   async function handleCrearUsuario() {
     try {
+      const errores: string[] = [];
+      const esAlumno = Number(nuevoUsuario.id_rol) === 1;
+
+      if (!nuevoUsuario.nombre.trim()) errores.push("El nombre es obligatorio.");
+      if (!nuevoUsuario.apellido_paterno.trim()) errores.push("El apellido paterno es obligatorio.");
+      if (!nuevoUsuario.correo.trim()) errores.push("El correo es obligatorio.");
+      if (!nuevoUsuario.password.trim()) errores.push("La contraseña es obligatoria.");
+
+      if (esAlumno) {
+        if (carreras.length === 0) errores.push("No hay carreras activas. Primero registra una carrera en Catálogos.");
+        if (tiposPractica.length === 0) errores.push("No hay tipos de práctica activos. Primero registra un tipo de práctica en Catálogos.");
+        if (!nuevoUsuario.matricula.trim()) errores.push("La matrícula es obligatoria para Alumno.");
+        if (!nuevoUsuario.id_carrera) errores.push("La carrera es obligatoria para Alumno.");
+        if (!nuevoUsuario.id_tipo_practica) errores.push("El tipo de práctica es obligatorio para Alumno.");
+        if (!esNumeroValido(nuevoUsuario.semestre)) errores.push("El semestre debe ser un número válido.");
+        if (!nuevoUsuario.grupo.trim()) errores.push("El grupo es obligatorio para Alumno.");
+        if (!esNumeroValido(nuevoUsuario.creditos_aprobados)) errores.push("Los créditos aprobados deben ser un número válido.");
+      }
+
+      if (errores.length > 0) {
+        alert(errores.join("\n"));
+        return;
+      }
+
+      const carreraSeleccionada = carreras.find(
+        (carrera) => carrera.id_carrera === Number(nuevoUsuario.id_carrera),
+      ) as (CarreraCatalogo & { tipo_periodo?: string }) | undefined;
+
       await gestionUsuariosUseCase.crear({
         ...nuevoUsuario,
+        id_rol: Number(nuevoUsuario.id_rol),
         id_carrera: nuevoUsuario.id_carrera ? Number(nuevoUsuario.id_carrera) : null,
         id_tipo_practica: nuevoUsuario.id_tipo_practica ? Number(nuevoUsuario.id_tipo_practica) : null,
         semestre: nuevoUsuario.semestre ? Number(nuevoUsuario.semestre) : null,
         creditos_aprobados: nuevoUsuario.creditos_aprobados ? Number(nuevoUsuario.creditos_aprobados) : 0,
+        periodo_practica: nuevoUsuario.periodo_practica || carreraSeleccionada?.tipo_periodo || "",
       });
 
       setShowCreate(false);
@@ -169,7 +223,7 @@ export function GestionUsuarios() {
       await cargarUsuarios();
     } catch (error) {
       console.error(error);
-      alert("Error al crear usuario");
+      alert(extraerMensajeError(error, "Error al crear usuario"));
     }
   }
 
@@ -253,7 +307,7 @@ export function GestionUsuarios() {
       await cargarUsuarios();
     } catch (error) {
       console.error(error);
-      alert("Error al resetear contrasena");
+      alert(extraerMensajeError(error, "Error al resetear contrasena"));
     }
   }
 
@@ -617,7 +671,8 @@ export function GestionUsuarios() {
 
             <tbody className="divide-y divide-gray-100">
               {filtrados.map((u) => {
-                const nombreCompleto = `${u.nombre} ${
+                const nombreBase = u.nombre ?? "Sin nombre";
+                const nombreCompleto = `${nombreBase} ${
                   u.apellido_paterno ?? ""
                 } ${u.apellido_materno ?? ""}`.trim();
 
@@ -631,7 +686,7 @@ export function GestionUsuarios() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-[#e3f0ff] rounded-lg flex items-center justify-center text-[#1565c0] font-bold text-sm">
-                          {u.nombre.charAt(0)}
+                          {nombreBase.charAt(0)}
                         </div>
 
                         <span className="text-sm font-medium text-gray-800">
@@ -970,7 +1025,7 @@ export function GestionUsuarios() {
                 </span>
               <input
                 type="text"
-                value={usuarioEditar.nombre}
+                value={usuarioEditar.nombre ?? ""}
                 onChange={(e) =>
                   setUsuarioEditar({
                     ...usuarioEditar,

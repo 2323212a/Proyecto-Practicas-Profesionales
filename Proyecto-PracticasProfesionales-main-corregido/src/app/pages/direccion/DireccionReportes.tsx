@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   Briefcase,
   Building2,
   CheckCircle2,
@@ -78,11 +77,7 @@ export function DireccionReportes() {
   const [exportando, setExportando] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    void cargar();
-  }, []);
-
-  async function cargar(filtrosConsulta = filtros) {
+  const cargar = useCallback(async (filtrosConsulta: DireccionFiltros = filtros) => {
     try {
       setCargando(true);
       setError("");
@@ -97,7 +92,7 @@ export function DireccionReportes() {
     } finally {
       setCargando(false);
     }
-  }
+  }, [filtros]);
 
   async function exportarPdf(filtrosExportacion = filtros) {
     try {
@@ -115,6 +110,10 @@ export function DireccionReportes() {
       setExportando(false);
     }
   }
+
+  useEffect(() => {
+    void cargar();
+  }, [cargar]);
 
   function actualizarFiltro<K extends keyof DireccionFiltros>(
     campo: K,
@@ -159,11 +158,6 @@ export function DireccionReportes() {
       return coincideTipo && coincideBusqueda;
     });
   }, [datos, tipoReporte, busqueda]);
-
-  const totalRegistros = useMemo(
-    () => (datos?.reportes ?? []).reduce((acc, reporte) => acc + (reporte.registros ?? 0), 0),
-    [datos],
-  );
 
   const puedeExportar = Boolean(datos) && !cargando && !error && !exportando;
 
@@ -246,7 +240,7 @@ export function DireccionReportes() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <CampoSelect
             label="Convocatoria"
-            value={filtros.convocatoria}
+            value={filtros.convocatoria ?? "todos"}
             onChange={(value) => actualizarFiltro("convocatoria", value)}
             options={catalogos?.convocatorias ?? []}
             defaultLabel="Todas las convocatorias"
@@ -255,7 +249,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Carrera"
-            value={filtros.carrera}
+            value={filtros.carrera ?? "todos"}
             onChange={(value) => actualizarFiltro("carrera", value)}
             options={catalogos?.carreras ?? []}
             defaultLabel="Todas las carreras"
@@ -264,7 +258,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Tipo de práctica"
-            value={filtros.tipo_practica}
+            value={filtros.tipo_practica ?? "todos"}
             onChange={(value) => actualizarFiltro("tipo_practica", value)}
             options={catalogos?.tipos_practica ?? []}
             defaultLabel="Todos los tipos"
@@ -273,7 +267,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Periodo de práctica"
-            value={filtros.periodo_practica}
+            value={filtros.periodo_practica ?? "todos"}
             onChange={(value) => actualizarFiltro("periodo_practica", value)}
             options={catalogos?.periodos_practica ?? []}
             defaultLabel="Todos los periodos"
@@ -282,7 +276,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Estado de empresa"
-            value={filtros.estado_empresa}
+            value={filtros.estado_empresa ?? "todos"}
             onChange={(value) => actualizarFiltro("estado_empresa", value)}
             options={catalogos?.estados_empresa ?? []}
             defaultLabel="Todos los estados"
@@ -291,7 +285,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Estado de vacante"
-            value={filtros.estado_vacante}
+            value={filtros.estado_vacante ?? "todos"}
             onChange={(value) => actualizarFiltro("estado_vacante", value)}
             options={catalogos?.estados_vacante ?? []}
             defaultLabel="Todos los estados"
@@ -300,7 +294,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Estado de convenio"
-            value={filtros.estado_convenio}
+            value={filtros.estado_convenio ?? "todos"}
             onChange={(value) => actualizarFiltro("estado_convenio", value)}
             options={catalogos?.estados_convenio ?? []}
             defaultLabel="Todos los estados"
@@ -309,7 +303,7 @@ export function DireccionReportes() {
 
           <CampoSelect
             label="Tipo de periodo"
-            value={filtros.tipo_periodo}
+            value={filtros.tipo_periodo ?? "todos"}
             onChange={(value) => actualizarFiltro("tipo_periodo", value)}
             options={catalogos?.tipos_periodo ?? []}
             defaultLabel="Semestral y cuatrimestral"
@@ -940,7 +934,6 @@ function obtenerFiltrosActivos(filtros: DireccionFiltros) {
     estado_vacante: "Estado de vacante",
     estado_convenio: "Estado de convenio",
     tipo_tramite: "Tipo de tramite",
-    periodo_participacion: "Periodo de participacion",
     tipo_periodo: "Tipo de periodo",
   };
 

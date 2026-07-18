@@ -102,9 +102,6 @@ def _validar_fases_iniciales(db: Session, alumno: AlumnoModel, asignacion: Asign
     if asignacion is None:
         return False, "Debes tener una empresa asignada antes de subir reportes."
 
-    if alumno.estado_alumno not in {"Asignado", "Liberado"}:
-        return False, "Tu estado debe ser Asignado para iniciar reportes."
-
     return True, None
 
 

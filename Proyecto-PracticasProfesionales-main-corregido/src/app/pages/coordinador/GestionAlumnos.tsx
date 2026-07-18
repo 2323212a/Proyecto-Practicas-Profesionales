@@ -36,10 +36,8 @@ function estadoColor(estado: string) {
   return "bg-gray-100 text-gray-600";
 }
 
-function rutaSiguientePaso(alumno: AlumnoGestionCoordinador) {
-  if (alumno.fase === "Asignacion") return "/coordinador/asignaciones";
-  if (alumno.fase === "Seguimiento de practicas") return "/coordinador/seguimiento";
-  return "/coordinador/documentos";
+function rutaDocumentosAlumno(alumno: AlumnoGestionCoordinador) {
+  return `/coordinador/documentos?alumno=${alumno.id_alumno}`;
 }
 
 export function GestionAlumnos() {
@@ -402,7 +400,7 @@ export function GestionAlumnos() {
 
                   <td className="px-6 py-4">
                     <button
-                      onClick={() => navigate(rutaSiguientePaso(a))}
+                      onClick={() => navigate(rutaDocumentosAlumno(a))}
                       className="flex items-center gap-1 text-xs text-[#1565c0] hover:underline font-medium"
                     >
                       Gestionar

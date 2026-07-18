@@ -1,4 +1,5 @@
 import type {
+  ConvocatoriasDisponiblesAlumnoResponse,
   DocumentacionAlumnoResponse,
   DocumentosAlumnoResponse,
   SubirDocumentoAlumnoRequest,
@@ -21,6 +22,21 @@ export class DocumentoAlumnoHttpRepository implements DocumentoAlumnoRepository 
   async obtenerDocumentacion(): Promise<DocumentacionAlumnoResponse> {
     const { data } = await apiClient.get<DocumentacionAlumnoResponse>(
       "/alumno/documentos/documentacion"
+    );
+    return data;
+  }
+
+  async listarConvocatoriasDisponibles(): Promise<ConvocatoriasDisponiblesAlumnoResponse> {
+    const { data } = await apiClient.get<ConvocatoriasDisponiblesAlumnoResponse>(
+      "/alumno/documentos/convocatorias-disponibles"
+    );
+    return data;
+  }
+
+  async inscribirseConvocatoria(idConvocatoria: number): Promise<DocumentacionAlumnoResponse> {
+    const { data } = await apiClient.post<DocumentacionAlumnoResponse>(
+      "/alumno/documentos/inscripcion",
+      { id_convocatoria: idConvocatoria }
     );
     return data;
   }

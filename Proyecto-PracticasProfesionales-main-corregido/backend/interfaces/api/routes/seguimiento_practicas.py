@@ -40,7 +40,7 @@ INCIDENCIAS_EVALUACION_ALUMNO_EMPRESA = [
     "No se respeto el plan de trabajo",
     "Actividades ajenas a la carrera",
     "Falta de supervision",
-    "Problemas de horario",
+    "Problemas de jornada",
     "Ambiente laboral inadecuado",
 ]
 
@@ -80,14 +80,14 @@ class PlantillaEvaluacionAlumnoEmpresaResponse(BaseModel):
     incidencias_sugeridas: list[str]
 
 
-def _nombre_usuario(usuario) -> str:
-    if usuario is None:
-        return "Sin usuario"
+def _nombre_usuario(perfil) -> str:
+    if perfil is None:
+        return "Sin nombre"
     return " ".join(
         parte
-        for parte in [usuario.nombre, usuario.apellido_paterno, usuario.apellido_materno]
+        for parte in [getattr(perfil, "nombre", None), getattr(perfil, "apellido_paterno", None), getattr(perfil, "apellido_materno", None)]
         if parte
-    ) or usuario.correo
+    ) or getattr(perfil, "correo", "Sin nombre")
 
 
 def _decimal(valor) -> float:
@@ -207,7 +207,7 @@ def _incidencia_response(incidencia: IncidenciaPracticaModel):
     return {
         "id_incidencia": incidencia.id_incidencia,
         "id_asignacion": incidencia.id_asignacion,
-        "alumno": _nombre_usuario(alumno.usuario) if alumno and alumno.usuario else "Sin alumno",
+        "alumno": _nombre_usuario(alumno) if alumno and alumno.usuario else "Sin alumno",
         "matricula": alumno.matricula if alumno else None,
         "empresa": empresa.nombre_empresa if empresa else "Sin empresa",
         "reportante": incidencia.reportante,

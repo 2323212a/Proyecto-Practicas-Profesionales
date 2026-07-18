@@ -308,7 +308,6 @@ def emitir_liberacion_coordinador(id_asignacion: int, db: Session = Depends(obte
     liberacion.observaciones = "Liberacion emitida por coordinacion."
     asignacion.estado_asignacion = "Finalizada"
     if asignacion.alumno:
-        asignacion.alumno.estado_alumno = "Liberado"
         crear_notificacion(
             db,
             asignacion.alumno.id_usuario,
@@ -377,7 +376,6 @@ def anexar_documento_liberacion(
     liberacion.observaciones = "Documento de liberacion anexado por coordinacion."
     asignacion.estado_asignacion = "Finalizada"
     if asignacion.alumno:
-        asignacion.alumno.estado_alumno = "Liberado"
         crear_notificacion(
             db,
             asignacion.alumno.id_usuario,

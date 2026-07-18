@@ -1,6 +1,7 @@
 import type {
   ConfirmacionAsignacionesResponse,
   ConfirmarAsignacionRequest,
+  SecretariaAcademicaResponse,
   RechazarSeleccionRequest,
 } from "../../domain/coordinador/ConfirmacionAsignacion";
 import type { ConfirmacionAsignacionRepository } from "../../domain/coordinador/ConfirmacionAsignacionRepository";
@@ -22,5 +23,9 @@ export class GestionConfirmacionAsignacionesUseCase {
 
   rechazar(idSeleccion: number, datos: RechazarSeleccionRequest): Promise<void> {
     return this.repository.rechazar(idSeleccion, datos);
+  }
+
+  actualizarSecretariaAcademica(nombre: string): Promise<SecretariaAcademicaResponse> {
+    return this.repository.actualizarSecretariaAcademica(nombre);
   }
 }

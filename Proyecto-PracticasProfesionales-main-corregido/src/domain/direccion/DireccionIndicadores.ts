@@ -70,7 +70,6 @@ export interface DireccionCatalogos {
   estados_vacante: string[];
   estados_convenio: string[];
   tipos_tramite: string[];
-  periodos_participacion: string[];
   tipos_periodo: string[];
 }
 
@@ -85,7 +84,6 @@ export interface DireccionFiltros {
   estado_vacante?: string;
   estado_convenio?: string;
   tipo_tramite?: string;
-  periodo_participacion?: string;
   tipo_periodo?: string;
 }
 

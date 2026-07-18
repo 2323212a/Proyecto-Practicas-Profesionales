@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -184,7 +184,7 @@ export function AdminReportes() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
-  async function cargar(filtrosAplicados = filtros) {
+  const cargar = useCallback(async (filtrosAplicados: AdminReportesFiltros = filtros) => {
     try {
       setCargando(true);
       setError("");
@@ -196,7 +196,7 @@ export function AdminReportes() {
     } finally {
       setCargando(false);
     }
-  }
+  }, [filtros]);
 
   async function exportarPdf() {
     if (error || !datos) {
@@ -223,7 +223,7 @@ export function AdminReportes() {
       .catch((err) => {
         console.error(err);
       });
-  }, []);
+  }, [cargar]);
 
   const tarjetas = useMemo<ColoredStatCard[]>(() => {
     const resumen = datos?.resumen ?? {};

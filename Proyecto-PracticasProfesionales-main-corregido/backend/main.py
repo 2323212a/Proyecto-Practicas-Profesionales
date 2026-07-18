@@ -6,8 +6,6 @@ from app.services.auditoria_service import registrar_bitacora
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from infrastructure.database.connection import Base, engine
-from infrastructure.database.schema_updates import ensure_runtime_schema
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.security.auth_dependencies import obtener_usuario_actual
@@ -90,7 +88,7 @@ from infrastructure.persistence.models.tipo_practica import TipoPracticaModel
 from infrastructure.persistence.models.vinculacion_empresa import VinculacionEmpresaModel
 
 # La estructura oficial se crea con los SQL de la DB limpia.
-# No ejecutar create_all/ensure_runtime_schema para evitar crear tablas antiguas.
+# No crear ni reparar esquema en runtime para evitar tablas antiguas.
 
 app = FastAPI(
     title="Sistema Integral de Prácticas Profesionales",

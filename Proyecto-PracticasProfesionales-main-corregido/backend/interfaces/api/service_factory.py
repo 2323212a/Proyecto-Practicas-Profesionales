@@ -51,7 +51,7 @@ def CarreraService(db):
 
 
 def ConvocatoriaService(db):
-    return ConvocatoriaApplicationService(ConvocatoriaRepository(db))
+    return ConvocatoriaApplicationService(ConvocatoriaRepository(db), db)
 
 
 def DocumentoService(db):

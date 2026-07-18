@@ -32,29 +32,57 @@ class ConvocatoriaBase(BaseModel):
 
     @model_validator(mode="after")
     def validar_fechas(self):
-        pares = [
-            ("general", self.fecha_inicio_general, self.fecha_cierre_general),
-            ("empresas", self.fecha_inicio_empresas, self.fecha_cierre_empresas),
-            ("documentos", self.fecha_inicio_documentos, self.fecha_cierre_documentos),
-            ("validacion", self.fecha_inicio_validacion, self.fecha_cierre_validacion),
-            ("seleccion", self.fecha_inicio_seleccion, self.fecha_cierre_seleccion),
-            ("asignacion", self.fecha_inicio_asignacion, self.fecha_cierre_asignacion),
-            ("practicas", self.fecha_inicio_practicas, self.fecha_cierre_practicas),
-            ("cierre", self.fecha_inicio_cierre, self.fecha_cierre_cierre),
+        campos = [
+            self.fecha_inicio_general,
+            self.fecha_cierre_general,
+            self.fecha_inicio_empresas,
+            self.fecha_cierre_empresas,
+            self.fecha_inicio_documentos,
+            self.fecha_cierre_documentos,
+            self.fecha_inicio_validacion,
+            self.fecha_cierre_validacion,
+            self.fecha_inicio_seleccion,
+            self.fecha_cierre_seleccion,
+            self.fecha_inicio_asignacion,
+            self.fecha_cierre_asignacion,
+            self.fecha_inicio_practicas,
+            self.fecha_cierre_practicas,
+            self.fecha_inicio_cierre,
+            self.fecha_cierre_cierre,
         ]
-        for etapa, inicio, cierre in pares:
+        pares = [
+            (self.fecha_inicio_general, self.fecha_cierre_general),
+            (self.fecha_inicio_empresas, self.fecha_cierre_empresas),
+            (self.fecha_inicio_documentos, self.fecha_cierre_documentos),
+            (self.fecha_inicio_validacion, self.fecha_cierre_validacion),
+            (self.fecha_inicio_seleccion, self.fecha_cierre_seleccion),
+            (self.fecha_inicio_asignacion, self.fecha_cierre_asignacion),
+            (self.fecha_inicio_practicas, self.fecha_cierre_practicas),
+            (self.fecha_inicio_cierre, self.fecha_cierre_cierre),
+        ]
+        for inicio, cierre in pares:
             if inicio and cierre and inicio > cierre:
-                raise ValueError(f"La fecha de inicio de {etapa} no puede ser mayor que la fecha de cierre")
-        cierre_anterior = None
-        etapa_anterior = None
-        for etapa, inicio, cierre in pares:
-            if inicio and cierre_anterior and inicio < cierre_anterior:
-                raise ValueError(
-                    f"La fecha de inicio de {etapa} no puede ser anterior al cierre de {etapa_anterior}"
-                )
-            if cierre:
-                cierre_anterior = cierre
-                etapa_anterior = etapa
+                raise ValueError("El calendario de la convocatoria no respeta el flujo de etapas.")
+
+        if all(campo is not None for campo in campos):
+            reglas = [
+                self.fecha_inicio_empresas >= self.fecha_inicio_general,
+                self.fecha_cierre_empresas <= self.fecha_cierre_general,
+                self.fecha_inicio_documentos >= self.fecha_inicio_general,
+                self.fecha_cierre_documentos <= self.fecha_cierre_general,
+                self.fecha_inicio_validacion >= self.fecha_inicio_documentos,
+                self.fecha_cierre_validacion <= self.fecha_cierre_general,
+                self.fecha_inicio_seleccion >= self.fecha_cierre_validacion,
+                self.fecha_cierre_seleccion <= self.fecha_cierre_general,
+                self.fecha_inicio_asignacion >= self.fecha_cierre_seleccion,
+                self.fecha_cierre_asignacion <= self.fecha_cierre_general,
+                self.fecha_inicio_practicas >= self.fecha_cierre_asignacion,
+                self.fecha_cierre_practicas <= self.fecha_cierre_general,
+                self.fecha_inicio_cierre >= self.fecha_cierre_practicas,
+                self.fecha_cierre_cierre <= self.fecha_cierre_general,
+            ]
+            if not all(reglas):
+                raise ValueError("El calendario de la convocatoria no respeta el flujo de etapas.")
         return self
 
 

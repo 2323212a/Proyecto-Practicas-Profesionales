@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   CalendarDays,
   CheckCircle2,
   Database,
@@ -11,6 +12,7 @@ import {
   GraduationCap,
   KeyRound,
   Plus,
+  Power,
   RefreshCw,
   Trash2,
   Upload,
@@ -21,9 +23,11 @@ import {
   actualizarCarrera,
   actualizarConvocatoria,
   actualizarTipoPractica,
+  cerrarConvocatoria,
   crearCarrera,
   crearConvocatoria,
   crearTipoPractica,
+  desactivarConvocatoria,
   eliminarCarrera,
   eliminarConvocatoria,
   importarAlumnosMasivo,
@@ -36,6 +40,7 @@ import {
 } from "../../../infrastructure/catalogos/catalogosApi";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 type CatalogoActivo = "carreras" | "convocatorias" | "tipos-practica" | null;
 type TipoCarga = "alumnos" | "personal";
@@ -138,16 +143,141 @@ const tipoPracticaInicial: TipoPractica = {
   activo: true,
 };
 
-const etapasConvocatoria: Array<[string, keyof Convocatoria, keyof Convocatoria]> = [
-  ["General", "fecha_inicio_general", "fecha_cierre_general"],
-  ["Registro de empresas", "fecha_inicio_empresas", "fecha_cierre_empresas"],
-  ["Documentacion de alumnos", "fecha_inicio_documentos", "fecha_cierre_documentos"],
-  ["Validacion documental", "fecha_inicio_validacion", "fecha_cierre_validacion"],
-  ["Seleccion de empresas", "fecha_inicio_seleccion", "fecha_cierre_seleccion"],
-  ["Asignacion", "fecha_inicio_asignacion", "fecha_cierre_asignacion"],
-  ["Practicas", "fecha_inicio_practicas", "fecha_cierre_practicas"],
-  ["Cierre administrativo", "fecha_inicio_cierre", "fecha_cierre_cierre"],
+type EtapaConvocatoria = {
+  orden: number;
+  nombre: string;
+  descripcion: string;
+  inicioCampo: keyof Convocatoria;
+  cierreCampo: keyof Convocatoria;
+};
+
+const etapasConvocatoria: EtapaConvocatoria[] = [
+  {
+    orden: 1,
+    nombre: "General",
+    descripcion: "Rango completo en el que existe el proceso de practicas.",
+    inicioCampo: "fecha_inicio_general",
+    cierreCampo: "fecha_cierre_general",
+  },
+  {
+    orden: 2,
+    nombre: "Empresas",
+    descripcion: "Registro de participacion y captura de vacantes.",
+    inicioCampo: "fecha_inicio_empresas",
+    cierreCampo: "fecha_cierre_empresas",
+  },
+  {
+    orden: 3,
+    nombre: "Documentos",
+    descripcion: "Inscripcion y carga documental de alumnos.",
+    inicioCampo: "fecha_inicio_documentos",
+    cierreCampo: "fecha_cierre_documentos",
+  },
+  {
+    orden: 4,
+    nombre: "Validacion",
+    descripcion: "Revision documental por coordinacion.",
+    inicioCampo: "fecha_inicio_validacion",
+    cierreCampo: "fecha_cierre_validacion",
+  },
+  {
+    orden: 5,
+    nombre: "Seleccion",
+    descripcion: "Eleccion de vacantes por alumnos.",
+    inicioCampo: "fecha_inicio_seleccion",
+    cierreCampo: "fecha_cierre_seleccion",
+  },
+  {
+    orden: 6,
+    nombre: "Asignacion",
+    descripcion: "Confirmacion y asignacion formal de practicas.",
+    inicioCampo: "fecha_inicio_asignacion",
+    cierreCampo: "fecha_cierre_asignacion",
+  },
+  {
+    orden: 7,
+    nombre: "Practicas",
+    descripcion: "Periodo de reportes, horas y seguimiento.",
+    inicioCampo: "fecha_inicio_practicas",
+    cierreCampo: "fecha_cierre_practicas",
+  },
+  {
+    orden: 8,
+    nombre: "Cierre",
+    descripcion: "Liberacion y cierre administrativo del expediente.",
+    inicioCampo: "fecha_inicio_cierre",
+    cierreCampo: "fecha_cierre_cierre",
+  },
 ];
+
+function validarCalendarioConvocatoria(form: Convocatoria): string | null {
+  for (const { inicioCampo, cierreCampo } of etapasConvocatoria) {
+    if (!form[inicioCampo] || !form[cierreCampo]) {
+      return "La convocatoria no tiene calendario completo.";
+    }
+  }
+
+  const reglas = [
+    form.fecha_inicio_general! <= form.fecha_cierre_general!,
+    form.fecha_inicio_empresas! >= form.fecha_inicio_general!,
+    form.fecha_cierre_empresas! <= form.fecha_cierre_general!,
+    form.fecha_inicio_empresas! <= form.fecha_cierre_empresas!,
+    form.fecha_inicio_documentos! >= form.fecha_inicio_general!,
+    form.fecha_cierre_documentos! <= form.fecha_cierre_general!,
+    form.fecha_inicio_documentos! <= form.fecha_cierre_documentos!,
+    form.fecha_inicio_validacion! >= form.fecha_inicio_documentos!,
+    form.fecha_cierre_validacion! <= form.fecha_cierre_general!,
+    form.fecha_inicio_validacion! <= form.fecha_cierre_validacion!,
+    form.fecha_inicio_seleccion! >= form.fecha_cierre_validacion!,
+    form.fecha_cierre_seleccion! <= form.fecha_cierre_general!,
+    form.fecha_inicio_seleccion! <= form.fecha_cierre_seleccion!,
+    form.fecha_inicio_asignacion! >= form.fecha_cierre_seleccion!,
+    form.fecha_cierre_asignacion! <= form.fecha_cierre_general!,
+    form.fecha_inicio_asignacion! <= form.fecha_cierre_asignacion!,
+    form.fecha_inicio_practicas! >= form.fecha_cierre_asignacion!,
+    form.fecha_cierre_practicas! <= form.fecha_cierre_general!,
+    form.fecha_inicio_practicas! <= form.fecha_cierre_practicas!,
+    form.fecha_inicio_cierre! >= form.fecha_cierre_practicas!,
+    form.fecha_cierre_cierre! <= form.fecha_cierre_general!,
+    form.fecha_inicio_cierre! <= form.fecha_cierre_cierre!,
+  ];
+
+  return reglas.every(Boolean) ? null : "El calendario de la convocatoria no respeta el flujo de etapas.";
+}
+
+function obtenerResumenCalendario(form: Convocatoria) {
+  const completo = etapasConvocatoria.every(({ inicioCampo, cierreCampo }) => form[inicioCampo] && form[cierreCampo]);
+  const error = completo ? validarCalendarioConvocatoria(form) : "La convocatoria no tiene calendario completo.";
+  return {
+    completo,
+    flujoValido: !error,
+    error,
+  };
+}
+
+function obtenerEstadoEtapa(form: Convocatoria, etapa: EtapaConvocatoria) {
+  const inicio = form[etapa.inicioCampo] as string | null;
+  const cierre = form[etapa.cierreCampo] as string | null;
+  if (!inicio || !cierre) {
+    return {
+      texto: "Incompleta",
+      clase: "bg-yellow-50 text-yellow-700 border-yellow-200",
+      icono: AlertTriangle,
+    };
+  }
+  if (inicio > cierre) {
+    return {
+      texto: "Desordenada",
+      clase: "bg-red-50 text-red-700 border-red-200",
+      icono: AlertTriangle,
+    };
+  }
+  return {
+    texto: "Completa",
+    clase: "bg-green-50 text-green-700 border-green-200",
+    icono: CheckCircle2,
+  };
+}
 
 const columnasAlumnos = [
   "nombre",
@@ -173,18 +303,6 @@ const columnasPersonal = [
   "telefono",
 ];
 
-const ejemploAlumnos = [
-  "Ana",
-  "Pérez",
-  "López",
-  "ana.perez@unach.mx",
-  "A012345",
-  "Ingeniería en Software",
-  "5",
-  "A",
-  "Prácticas 1",
-];
-
 const ejemploAlumnosCarga = [
   "Ana",
   "Perez",
@@ -198,17 +316,6 @@ const ejemploAlumnosCarga = [
   "120",
 ];
 
-const ejemploPersonal = [
-  "Luis",
-  "García",
-  "Méndez",
-  "luis.garcia@unach.mx",
-  "Asesor Interno",
-  "Sistemas",
-  "Docente",
-  "9611234567",
-];
-
 const ejemploPersonalCarga = [
   "Luis",
   "Garcia",
@@ -218,14 +325,6 @@ const ejemploPersonalCarga = [
   "Sistemas",
   "Docente",
   "9611234567",
-];
-
-const rolesPersonalPermitidos = [
-  "Administrador",
-  "Coordinador de Prácticas",
-  "Coordinador de Unidades Receptoras",
-  "Asesor Interno",
-  "Dirección",
 ];
 
 const rolesPersonalPlantilla = [
@@ -244,7 +343,7 @@ const erroresPersonalPlantilla = [
   "No ligar personal a empresas.",
 ];
 
-function fechaTexto(fecha: string) {
+function fechaTexto(fecha?: string | null) {
   if (!fecha) return "Sin fecha";
   const date = new Date(`${fecha}T00:00:00`);
   if (Number.isNaN(date.getTime())) return fecha;
@@ -263,17 +362,6 @@ function descargarCsv(nombre: string, filas: Array<Array<string | number>>) {
         .join(","),
     )
     .join("\n");
-  const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = nombre;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function descargarCsvSimple(nombre: string, encabezados: string[], ejemplo: string[]) {
-  const contenido = `${encabezados.join(",")}\n${ejemplo.join(",")}`;
   const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -662,15 +750,6 @@ export function AdminCatalogos() {
     ]);
   }
 
-  function descargarPlantillaCsv() {
-    if (tipoCarga === "alumnos") {
-      descargarCsvSimple("plantilla_alumnos.csv", columnasAlumnos, ejemploAlumnosCarga);
-      return;
-    }
-
-    descargarCsvSimple("plantilla_personal.csv", columnasPersonal, ejemploPersonalCarga);
-  }
-
   function descargarErrores() {
     const errores = resultadoValidacion?.errores ?? resultadoImportacion?.errores ?? [];
     descargarCsv("errores_importacion.csv", [
@@ -791,27 +870,10 @@ export function AdminCatalogos() {
       return;
     }
 
-    for (const [etapa, inicioCampo, cierreCampo] of etapasConvocatoria) {
-      const inicio = convocatoriaForm[inicioCampo];
-      const cierre = convocatoriaForm[cierreCampo];
-      if (inicio && cierre && cierre < inicio) {
-        setError(`La fecha de cierre de ${etapa} no puede ser anterior al inicio.`);
-        return;
-      }
-    }
-    let cierreAnterior: string | null = null;
-    let etapaAnterior = "";
-    for (const [etapa, inicioCampo, cierreCampo] of etapasConvocatoria) {
-      const inicio = convocatoriaForm[inicioCampo] as string | null;
-      const cierre = convocatoriaForm[cierreCampo] as string | null;
-      if (inicio && cierreAnterior && inicio < cierreAnterior) {
-        setError(`La fecha de inicio de ${etapa} no puede ser anterior al cierre de ${etapaAnterior}.`);
-        return;
-      }
-      if (cierre) {
-        cierreAnterior = cierre;
-        etapaAnterior = etapa;
-      }
+    const errorCalendario = validarCalendarioConvocatoria(convocatoriaForm);
+    if (errorCalendario) {
+      setError(errorCalendario);
+      return;
     }
 
     const data = {
@@ -852,7 +914,7 @@ export function AdminCatalogos() {
       await cargarCatalogos();
     } catch (err) {
       console.error(err);
-      setError("No se pudo guardar la convocatoria.");
+      setError(getApiErrorMessage(err, "No se pudo guardar la convocatoria."));
     } finally {
       setCargando(false);
     }
@@ -922,9 +984,48 @@ export function AdminCatalogos() {
     }
   }
 
+  async function eliminarConvocatoriaAdmin(convocatoria: Convocatoria) {
+    const confirmar = window.confirm(`Eliminar la convocatoria "${convocatoria.nombre}"? Esta accion no se puede deshacer.`);
+    if (!confirmar) return;
+
+    try {
+      setCargando(true);
+      setError("");
+      await eliminarConvocatoria(convocatoria.id_convocatoria);
+      setMensaje("Convocatoria eliminada.");
+      await cargarCatalogos();
+    } catch (err) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo eliminar la convocatoria."));
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  async function cambiarEstadoConvocatoria(convocatoria: Convocatoria, estado: "Inactiva" | "Cerrada") {
+    try {
+      setCargando(true);
+      setError("");
+      if (estado === "Inactiva") {
+        await desactivarConvocatoria(convocatoria.id_convocatoria);
+        setMensaje("Convocatoria desactivada.");
+      } else {
+        await cerrarConvocatoria(convocatoria.id_convocatoria);
+        setMensaje("Convocatoria cerrada.");
+      }
+      await cargarCatalogos();
+    } catch (err) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo actualizar la convocatoria."));
+    } finally {
+      setCargando(false);
+    }
+  }
+
   const columnasGuia = tipoCarga === "alumnos" ? columnasAlumnos : columnasPersonal;
   const errores = resultadoValidacion?.errores ?? resultadoImportacion?.errores ?? [];
   const puedeImportar = Boolean(resultadoValidacion && resultadoValidacion.errores.length === 0);
+  const resumenCalendario = obtenerResumenCalendario(convocatoriaForm);
 
   const catalogos = useMemo(
     () => [
@@ -1367,26 +1468,83 @@ export function AdminCatalogos() {
                   </select>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-3">
-                  {etapasConvocatoria.map(([etapa, inicioCampo, cierreCampo]) => (
-                    <div key={etapa} className="border rounded-xl p-4">
-                      <div className="text-xs font-bold text-[#0d2b5e] uppercase mb-3">{etapa}</div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="date"
-                          value={(convocatoriaForm[inicioCampo] as string | null) ?? ""}
-                          onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, [inicioCampo]: event.target.value || null })}
-                          className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                        />
-                        <input
-                          type="date"
-                          value={(convocatoriaForm[cierreCampo] as string | null) ?? ""}
-                          onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, [cierreCampo]: event.target.value || null })}
-                          className="px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-                        />
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-4 border-b border-gray-200">
+                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                      <div>
+                        <h4 className="font-bold text-[#0d2b5e] flex items-center gap-2">
+                          <CalendarDays className="w-4 h-4" />
+                          Calendario por etapas
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Define las ventanas que habilitan cada modulo del proceso.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${resumenCalendario.completo ? "bg-green-50 text-green-700 border-green-200" : "bg-yellow-50 text-yellow-700 border-yellow-200"}`}>
+                          {resumenCalendario.completo ? "Calendario completo" : "Calendario incompleto"}
+                        </span>
+                        <span className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${resumenCalendario.flujoValido ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                          {resumenCalendario.flujoValido ? "Flujo valido" : "Flujo invalido"}
+                        </span>
                       </div>
                     </div>
-                  ))}
+                    {resumenCalendario.error && (
+                      <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        {resumenCalendario.error}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid lg:grid-cols-2 gap-0">
+                    {etapasConvocatoria.map((etapa) => {
+                      const estadoEtapa = obtenerEstadoEtapa(convocatoriaForm, etapa);
+                      const IconoEstado = estadoEtapa.icono;
+                      return (
+                        <div key={etapa.nombre} className="p-4 border-b border-gray-100 lg:odd:border-r">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-7 h-7 rounded-full bg-blue-50 text-[#1565c0] text-xs font-bold flex items-center justify-center">
+                                  {etapa.orden}
+                                </span>
+                                <div className="font-bold text-sm text-[#0d2b5e]">{etapa.nombre}</div>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2 leading-relaxed">{etapa.descripcion}</p>
+                            </div>
+                            <span className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border ${estadoEtapa.clase}`}>
+                              <IconoEstado className="w-3 h-3" />
+                              {estadoEtapa.texto}
+                            </span>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-3 mt-4">
+                            <label className="block">
+                              <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha inicio</span>
+                              <input
+                                type="date"
+                                required
+                                aria-label={`Inicio ${etapa.nombre}`}
+                                value={(convocatoriaForm[etapa.inicioCampo] as string | null) ?? ""}
+                                onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, [etapa.inicioCampo]: event.target.value || null })}
+                                className="mt-1 w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha cierre</span>
+                              <input
+                                type="date"
+                                required
+                                aria-label={`Cierre ${etapa.nombre}`}
+                                value={(convocatoriaForm[etapa.cierreCampo] as string | null) ?? ""}
+                                onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, [etapa.cierreCampo]: event.target.value || null })}
+                                className="mt-1 w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg text-sm"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <textarea
@@ -1423,19 +1581,41 @@ export function AdminCatalogos() {
                           </span>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           onClick={() => {
                             setModoEdicion(true);
                             setConvocatoriaForm(convocatoria);
                           }}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-lg"
                           title="Editar"
                         >
                           <Edit2 className="w-4 h-4" />
+                          Editar
                         </button>
-                        <button onClick={() => eliminarItem("convocatorias", convocatoria.id_convocatoria)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Eliminar">
+                        <button
+                          onClick={() => cambiarEstadoConvocatoria(convocatoria, "Inactiva")}
+                          className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 rounded-lg"
+                          title="Desactivar"
+                        >
+                          <Power className="w-4 h-4" />
+                          Desactivar
+                        </button>
+                        <button
+                          onClick={() => cambiarEstadoConvocatoria(convocatoria, "Cerrada")}
+                          className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 rounded-lg"
+                          title="Cerrar"
+                        >
+                          <Archive className="w-4 h-4" />
+                          Cerrar
+                        </button>
+                        <button
+                          onClick={() => eliminarConvocatoriaAdmin(convocatoria)}
+                          className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-lg"
+                          title="Eliminar"
+                        >
                           <Trash2 className="w-4 h-4" />
+                          Eliminar
                         </button>
                       </div>
                     </div>

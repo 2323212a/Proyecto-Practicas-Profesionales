@@ -12,6 +12,7 @@ from app.services.convenio_empresa_service import (
     obtener_convenio_actual,
     obtener_convenio_vigente,
 )
+from app.services.convocatoria_rules_service import validar_etapa_actual
 from app.services.empresa_reglas_service import (
     convocatoria_activa_para_empresas,
     validar_habilitacion_empresa_para_vacantes,
@@ -128,12 +129,14 @@ class SolicitarParticipacionRequest(BaseModel):
     observaciones: str | None = None
 
 
-def _nombre_usuario(usuario) -> str:
+def _nombre_usuario(perfil) -> str:
+    if perfil is None:
+        return "Sin nombre"
     return " ".join(
         parte
-        for parte in [usuario.nombre, usuario.apellido_paterno, usuario.apellido_materno]
+        for parte in [getattr(perfil, "nombre", None), getattr(perfil, "apellido_paterno", None), getattr(perfil, "apellido_materno", None)]
         if parte
-    )
+    ) or getattr(perfil, "correo", "Sin nombre")
 
 
 def _decimal_to_float(valor) -> float:
@@ -149,7 +152,7 @@ def _hora_unidad_response(hora: HorasModel) -> dict:
         "id_horas": hora.id_horas,
         "id_asignacion": hora.id_asignacion,
         "id_alumno": alumno.id_alumno,
-        "alumno": _nombre_usuario(alumno.usuario),
+        "alumno": _nombre_usuario(alumno),
         "matricula": alumno.matricula,
         "carrera": alumno.carrera.nombre if alumno.carrera else "Sin carrera",
         "proyecto": asignacion.vacante.titulo if asignacion.vacante else "Sin proyecto",
@@ -216,7 +219,7 @@ def _alumnos_unidad_items(id_empresa: int, db: Session) -> list[dict]:
             {
                 "id_asignacion": asignacion.id_asignacion,
                 "id_alumno": alumno.id_alumno,
-                "nombre": _nombre_usuario(alumno.usuario),
+                "nombre": _nombre_usuario(alumno),
                 "matricula": alumno.matricula,
                 "carrera": alumno.carrera.nombre if alumno.carrera else "Sin carrera",
                 "semestre": alumno.semestre,
@@ -454,7 +457,7 @@ def listar_alumnos_unidad(id_empresa: int, db: Session = Depends(obtener_db)):
             {
                 "id_asignacion": asignacion.id_asignacion,
                 "id_alumno": alumno.id_alumno,
-                "nombre": _nombre_usuario(alumno.usuario),
+                "nombre": _nombre_usuario(alumno),
                 "matricula": alumno.matricula,
                 "carrera": alumno.carrera.nombre if alumno.carrera else "Sin carrera",
                 "semestre": alumno.semestre,
@@ -730,6 +733,7 @@ def crear_vacante_unidad(
     )
     if convocatoria is None:
         raise HTTPException(status_code=404, detail="Convocatoria activa no encontrada")
+    validar_etapa_actual(convocatoria, "empresas")
     validar_participacion_aceptada(db, id_empresa, datos.id_convocatoria)
     existente = (
         db.query(VacanteModel)

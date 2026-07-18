@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, DateTime, Enum, Integer, String, Text, func
 
 from infrastructure.database.connection import Base
 
@@ -8,33 +7,25 @@ class ConfiguracionSistemaModel(Base):
     __tablename__ = "configuracion_sistema"
 
     id_configuracion = Column(Integer, primary_key=True, autoincrement=True)
-    nombre_sistema = Column(String(150), nullable=False)
-    escuela_facultad = Column(String(150), nullable=False)
-    correo_institucional = Column(String(100), nullable=False)
-    estado_sistema = Column(String(30), nullable=False, default="Activo", server_default="Activo")
+    nombre_sistema = Column(String(180), nullable=False)
+    escuela_facultad = Column(String(180), nullable=True)
+    correo_institucional = Column(String(150), nullable=True)
+    secretaria_academica = Column(String(180), nullable=True)
+    coordinadora_practicas = Column(String(180), nullable=True)
+    estado_sistema = Column(
+        Enum("Activo", "Mantenimiento", "Suspendido"),
+        nullable=False,
+        default="Activo",
+        server_default="Activo",
+    )
     inscripcion_empresas_estado = Column(
         Enum("Abierta", "Cerrada"),
         nullable=False,
         default="Abierta",
         server_default="Abierta",
     )
-    ciclo_escolar = Column(String(50), nullable=False)
-    hero_titulo = Column(String(150), nullable=False)
-    hero_subtitulo = Column(Text, nullable=False)
-    id_convocatoria_principal = Column(
-        Integer,
-        ForeignKey("convocatoria.id_convocatoria"),
-        nullable=True,
-    )
-    convocatoria_nombre = Column(String(120), nullable=False)
-    convocatoria_inicio = Column(Date, nullable=True)
-    convocatoria_cierre = Column(Date, nullable=True)
+    ciclo_escolar = Column(String(80), nullable=True)
+    hero_titulo = Column(String(200), nullable=True)
+    hero_subtitulo = Column(Text, nullable=True)
     soporte_telefono = Column(String(30), nullable=True)
-    ultima_actualizacion = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-    convocatoria_principal = relationship("ConvocatoriaModel")
+    ultima_actualizacion = Column(DateTime, nullable=True, server_default=func.now(), onupdate=func.now())

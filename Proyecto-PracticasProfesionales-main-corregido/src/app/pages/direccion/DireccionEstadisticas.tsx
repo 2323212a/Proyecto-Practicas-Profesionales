@@ -122,19 +122,14 @@ export function DireccionEstadisticas() {
     [datos],
   );
 
-  const totalVacantes = useMemo(
-    () => vacantes.reduce((acc, item) => acc + item.value, 0),
-    [vacantes],
-  );
-
-  const convenios = datos?.convenios_por_estado ?? [];
+  const convenios = useMemo(() => datos?.convenios_por_estado ?? [], [datos]);
 
   const totalConvenios = useMemo(
     () => convenios.reduce((acc, item) => acc + (item.total ?? 0), 0),
     [convenios],
   );
 
-  const horasPorMes = datos?.horas_por_mes ?? [];
+  const horasPorMes = useMemo(() => datos?.horas_por_mes ?? [], [datos]);
   const totalHoras = useMemo(
     () => horasPorMes.reduce((acc, item) => acc + (item.horas ?? 0), 0),
     [horasPorMes],

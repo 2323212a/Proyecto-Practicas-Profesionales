@@ -47,7 +47,7 @@ class AsignacionService:
 
         nueva_asignacion = self.repository.nuevo(asignacion.model_dump())
 
-        alumno.estado_alumno = "Asignado"
+        # La DB limpia no usa estado_alumno para asignado; la asignación activa representa el proceso.
         return self.repository.crear(nueva_asignacion)
 
     def actualizar(self, id_asignacion: int, datos):

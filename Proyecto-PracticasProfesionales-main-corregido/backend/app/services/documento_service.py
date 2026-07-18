@@ -16,7 +16,7 @@ class DocumentoService:
     def crear(self, documento):
         datos = documento.model_dump()
         datos["estado_documento"] = "Pendiente"
-        datos["validacion_automatica_estado"] = "No validado"
+        datos["validacion_automatica_estado"] = "No aplica"
         nuevo = self.repository.nuevo(datos)
         return self.repository.crear(nuevo)
 

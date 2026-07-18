@@ -44,6 +44,7 @@ export interface DocumentacionAlumnoResponse {
     seleccion_validada: boolean;
     asignacion_habilitada: boolean;
   };
+  convocatoria?: ConvocatoriaDisponibleAlumno;
   resumen: {
     aprobados: number;
     revision: number;
@@ -52,6 +53,30 @@ export interface DocumentacionAlumnoResponse {
     total: number;
   };
   documentos: DocumentoFlujoAlumno[];
+}
+
+export interface ConvocatoriaDisponibleAlumno {
+  id_convocatoria: number;
+  nombre: string;
+  tipo_periodo: string;
+  estado: string;
+  fecha_inicio_documentos: string | null;
+  fecha_cierre_documentos: string | null;
+  fecha_inicio_validacion: string | null;
+  fecha_cierre_validacion: string | null;
+  fecha_inicio_seleccion: string | null;
+  fecha_cierre_seleccion: string | null;
+  fecha_inicio_asignacion: string | null;
+  fecha_cierre_asignacion: string | null;
+  fecha_inicio_practicas: string | null;
+  fecha_cierre_practicas: string | null;
+  fecha_inicio_cierre: string | null;
+  fecha_cierre_cierre: string | null;
+}
+
+export interface ConvocatoriasDisponiblesAlumnoResponse {
+  convocatorias: ConvocatoriaDisponibleAlumno[];
+  mensaje: string | null;
 }
 
 export interface DocumentoAlumno {

@@ -16,7 +16,7 @@ def listar_notificaciones(
     db: Session = Depends(obtener_db),
     usuario_actual: UsuarioModel = Depends(requerir_roles(["Administrador"])),
 ):
-    return db.query(NotificacionModel).order_by(NotificacionModel.fecha_envio.desc()).all()
+    return db.query(NotificacionModel).order_by(NotificacionModel.fecha_creacion.desc()).all()
 
 
 @router.get("/usuario/{id_usuario}", response_model=list[NotificacionResponse])
@@ -30,7 +30,7 @@ def listar_notificaciones_usuario(
     return (
         db.query(NotificacionModel)
         .filter(NotificacionModel.id_usuario == id_usuario)
-        .order_by(NotificacionModel.fecha_envio.desc())
+        .order_by(NotificacionModel.fecha_creacion.desc())
         .all()
     )
 

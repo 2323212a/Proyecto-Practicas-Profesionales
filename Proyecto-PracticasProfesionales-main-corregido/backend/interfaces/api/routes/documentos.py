@@ -95,7 +95,7 @@ def prevalidar_documento(
 ):
     documento = DocumentoService(db).cambiar_estado_validacion_automatica(
         id_documento,
-        "Prevalidado"
+        "Valido"
     )
 
     if documento is None:
@@ -111,7 +111,7 @@ def revision_manual_documento(
 ):
     documento = DocumentoService(db).cambiar_estado_validacion_automatica(
         id_documento,
-        "Revision manual"
+        "Pendiente"
     )
 
     if documento is None:

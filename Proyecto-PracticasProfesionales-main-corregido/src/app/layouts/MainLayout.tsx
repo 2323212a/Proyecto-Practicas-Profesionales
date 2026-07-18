@@ -128,6 +128,7 @@ function getNav(role: string): NavItem[] {
       { label: "Alumnos Asignados", icon: Users, path: "/asesor/alumnos" },
       { label: "Reportes", icon: BarChart3, path: "/asesor/reportes" },
       { label: "Evaluaciones", icon: Star, path: "/asesor/observaciones" },
+      { label: "Notificaciones", icon: Bell, path: "/asesor/notificaciones" },
     ];
   }
 

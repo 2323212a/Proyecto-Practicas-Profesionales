@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.services.convocatoria_rules_service import validar_etapa_actual
 from infrastructure.persistence.models.convenio import ConvenioModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
@@ -87,9 +88,5 @@ def convocatoria_activa_para_empresas(db: Session, id_convocatoria: int) -> Conv
     if convocatoria is None:
         raise HTTPException(status_code=404, detail="Convocatoria activa no encontrada")
 
-    hoy = date.today()
-    if convocatoria.fecha_inicio_empresas and hoy < convocatoria.fecha_inicio_empresas:
-        raise HTTPException(status_code=400, detail="La etapa de registro de empresas aun no inicia.")
-    if convocatoria.fecha_cierre_empresas and hoy > convocatoria.fecha_cierre_empresas:
-        raise HTTPException(status_code=400, detail="La etapa de registro de empresas ya cerro.")
+    validar_etapa_actual(convocatoria, "empresas")
     return convocatoria

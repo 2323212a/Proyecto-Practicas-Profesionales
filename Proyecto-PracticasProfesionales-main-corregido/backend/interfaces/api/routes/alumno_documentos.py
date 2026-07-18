@@ -12,8 +12,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.services.notificacion_service import notificar_roles
-from app.services.documentacion_flujo_service import serializar_documentacion, subir_archivo_alumno
+from app.services.documentacion_flujo_service import (
+    inscribir_alumno_convocatoria,
+    listar_convocatorias_disponibles_alumno,
+    serializar_documentacion,
+    subir_archivo_alumno,
+)
 from app.services.documentacion_generada_service import generar_documento_oficial, precalentar_documentos_oficiales
+from app.services.convocatoria_rules_service import validar_etapa_actual
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
@@ -40,16 +46,28 @@ class SubirDocumentoAlumnoRequest(BaseModel):
     mime_type: str = "application/pdf"
 
 
-def _convocatoria_vigente(db: Session):
+class InscripcionConvocatoriaRequest(BaseModel):
+    id_convocatoria: int
+
+
+def _convocatoria_vigente(db: Session, alumno: AlumnoModel):
+    periodo = alumno.periodo_practica
     activa = (
         db.query(ConvocatoriaModel)
-        .filter(ConvocatoriaModel.estado == "Activa")
-        .order_by(ConvocatoriaModel.fecha_inicio.desc())
+        .filter(
+            ConvocatoriaModel.estado == "Activa",
+            ConvocatoriaModel.tipo_periodo == periodo,
+        )
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc())
         .first()
     )
     if activa is not None:
+        validar_etapa_actual(activa, "documentos")
         return activa
-    return db.query(ConvocatoriaModel).order_by(ConvocatoriaModel.fecha_inicio.desc()).first()
+    raise HTTPException(
+        status_code=409,
+        detail=f"No hay convocatoria activa para el periodo {periodo}. Contacta a administracion.",
+    )
 
 
 def _safe_filename(filename: str) -> str:
@@ -72,26 +90,23 @@ def _requiere_prevalidacion(tipo: TipoDocumentoModel) -> bool:
 
 def _estado_prevalidacion(tipo: TipoDocumentoModel, nombre_archivo: str, mime_type: str) -> str:
     if not _requiere_prevalidacion(tipo):
-        return "No validado"
+        return "No aplica"
     nombre = nombre_archivo.lower()
     if mime_type == "application/pdf" and any(clave in nombre for clave in ["imss", "seguro", "vigencia", "derechos"]):
-        return "Prevalidado"
-    return "Revision manual"
+        return "Valido"
+    return "Pendiente"
 
 
 def _documento_response(documento: DocumentoModel):
-    observacion = (
-        documento.observaciones[-1].descripcion
-        if documento.observaciones
-        else None
-    )
+    observaciones_relacionadas = getattr(documento, "observaciones_relacionadas", []) or []
+    observacion = observaciones_relacionadas[-1].descripcion if observaciones_relacionadas else documento.observaciones
     return {
         "id_documento": documento.id_documento,
         "id_expediente": documento.id_expediente,
         "id_tipo_documento": documento.id_tipo_documento,
         "nombre_archivo": documento.nombre_archivo,
         "ruta_archivo": documento.ruta_archivo,
-        "url": f"/uploads/documentos/{Path(documento.ruta_archivo).name}",
+        "url": f"/uploads/documentos/{Path(documento.ruta_archivo).name}" if documento.ruta_archivo else None,
         "estado_documento": documento.estado_documento,
         "fecha_carga": documento.fecha_carga.isoformat(),
         "generado_por_sistema": documento.generado_por_sistema,
@@ -107,9 +122,7 @@ def _documento_response(documento: DocumentoModel):
 
 
 def _asegurar_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
-    convocatoria = _convocatoria_vigente(db)
-    if convocatoria is None:
-        raise HTTPException(status_code=400, detail="No hay convocatoria registrada")
+    convocatoria = _convocatoria_vigente(db, alumno)
 
     expediente = (
         db.query(ExpedienteModel)
@@ -121,16 +134,7 @@ def _asegurar_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
     )
     if expediente is not None:
         return expediente
-
-    expediente = ExpedienteModel(
-        id_alumno=alumno.id_alumno,
-        id_convocatoria=convocatoria.id_convocatoria,
-        estado_expediente="En Revision",
-    )
-    db.add(expediente)
-    db.commit()
-    db.refresh(expediente)
-    return expediente
+    raise HTTPException(status_code=409, detail="Necesitas inscribirte a una convocatoria antes de cargar documentacion.")
 
 
 @router.get("/me/")
@@ -148,6 +152,49 @@ def subir_mi_documento_alumno(
     db: Session = Depends(obtener_db),
 ):
     return subir_documento_alumno(id_alumno, datos, db)
+
+
+@router.get("/convocatorias-disponibles")
+def listar_convocatorias_disponibles_actual(
+    id_alumno: int = Depends(obtener_id_alumno_actual),
+    db: Session = Depends(obtener_db),
+):
+    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == id_alumno).first()
+    if alumno is None:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    convocatorias = listar_convocatorias_disponibles_alumno(db, alumno)
+    mensaje = None
+    if not convocatorias:
+        existe_activa_compatible = (
+            db.query(ConvocatoriaModel)
+            .filter(
+                ConvocatoriaModel.estado == "Activa",
+                ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
+            )
+            .first()
+            is not None
+        )
+        mensaje = (
+            "La convocatoria existe, pero la etapa de inscripcion/documentos no esta abierta."
+            if existe_activa_compatible
+            else "No hay convocatorias disponibles para tu periodo de practica."
+        )
+    return {
+        "convocatorias": convocatorias,
+        "mensaje": mensaje,
+    }
+
+
+@router.post("/inscripcion")
+def inscribir_convocatoria_actual(
+    datos: InscripcionConvocatoriaRequest,
+    id_alumno: int = Depends(obtener_id_alumno_actual),
+    db: Session = Depends(obtener_db),
+):
+    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == id_alumno).first()
+    if alumno is None:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    return inscribir_alumno_convocatoria(db, alumno, datos.id_convocatoria)
 
 
 @router.get("/{id_alumno:int}")

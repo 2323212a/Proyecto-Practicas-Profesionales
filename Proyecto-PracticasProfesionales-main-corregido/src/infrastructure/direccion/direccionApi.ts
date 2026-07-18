@@ -14,7 +14,7 @@ export async function descargarDireccionPdf(filtros: DireccionFiltros = {}) {
     responseType: "blob",
   });
 
-  const contentType = headers["content-type"] ?? "";
+  const contentType = String(headers["content-type"] ?? "");
   if (!contentType.includes("application/pdf")) {
     throw new Error("La respuesta de Direccion no es un PDF valido.");
   }

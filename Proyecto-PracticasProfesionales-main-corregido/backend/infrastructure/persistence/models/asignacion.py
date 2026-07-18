@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Enum, ForeignKey, ForeignKeyConstraint, Integer, UniqueConstraint
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Integer, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -21,7 +21,7 @@ class AsignacionModel(Base):
     id_convocatoria = Column(Integer, ForeignKey("convocatoria.id_convocatoria"), nullable=False)
     id_tipo_practica = Column(Integer, ForeignKey("tipo_practica.id_tipo_practica"), nullable=False)
     id_asesor = Column(Integer, ForeignKey("personal_interno.id_personal"), nullable=True)
-    fecha_asignacion = Column(Date, nullable=False)
+    fecha_asignacion = Column(DateTime, nullable=False, server_default=func.now())
     estado_asignacion = Column(
         Enum("Activa", "Finalizada", "Cancelada"),
         nullable=False,
@@ -34,6 +34,10 @@ class AsignacionModel(Base):
         default="Normal",
         server_default="Normal"
     )
+    asignado_por = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=True)
+    observaciones = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True, onupdate=func.now())
 
     alumno = relationship("AlumnoModel", back_populates="asignaciones")
     empresa = relationship("EmpresaModel", back_populates="asignaciones", overlaps="asignaciones,vacante")

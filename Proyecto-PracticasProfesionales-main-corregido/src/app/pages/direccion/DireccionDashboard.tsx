@@ -108,9 +108,9 @@ export function DireccionDashboard() {
     [datos],
   );
 
-  const alumnosPorCarrera = datos?.alumnos_por_carrera ?? [];
-  const horasPorMes = datos?.horas_por_mes ?? [];
-  const conveniosData = datos?.convenios_por_estado ?? [];
+  const alumnosPorCarrera = useMemo(() => datos?.alumnos_por_carrera ?? [], [datos]);
+  const horasPorMes = useMemo(() => datos?.horas_por_mes ?? [], [datos]);
+  const conveniosData = useMemo(() => datos?.convenios_por_estado ?? [], [datos]);
 
   const totalConvenios = useMemo(
     () => conveniosData.reduce((acc, item) => acc + (item.total ?? 0), 0),

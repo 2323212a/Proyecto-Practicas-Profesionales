@@ -1,6 +1,7 @@
 import type {
   ConfirmacionAsignacionesResponse,
   ConfirmarAsignacionRequest,
+  SecretariaAcademicaResponse,
   RechazarSeleccionRequest,
 } from "../../domain/coordinador/ConfirmacionAsignacion";
 import type { ConfirmacionAsignacionRepository } from "../../domain/coordinador/ConfirmacionAsignacionRepository";
@@ -28,5 +29,13 @@ export class ConfirmacionAsignacionHttpRepository
       `/coordinador/confirmar-asignaciones/${idSeleccion}/rechazar`,
       datos
     );
+  }
+
+  async actualizarSecretariaAcademica(nombre: string): Promise<SecretariaAcademicaResponse> {
+    const { data } = await apiClient.put<SecretariaAcademicaResponse>(
+      "/coordinador/confirmar-asignaciones/secretaria-academica",
+      { nombre }
+    );
+    return data;
   }
 }
