@@ -9,7 +9,6 @@ import {
   Filter,
   FilterX,
   RefreshCw,
-  Search,
   Users,
   X,
 } from "lucide-react";
@@ -56,8 +55,6 @@ const filtrosIniciales: DireccionFiltros = {
 
 export function DireccionReportes() {
   const [datos, setDatos] = useState<DireccionIndicadoresResponse | null>(null);
-  const [tipoReporte, setTipoReporte] = useState("Todos");
-  const [busqueda, setBusqueda] = useState("");
   const [filtros, setFiltros] = useState<DireccionFiltros>(filtrosIniciales);
   const [reporteSeleccionado, setReporteSeleccionado] = useState<ReporteDireccion | null>(null);
   const [convocatoriaSeleccionada, setConvocatoriaSeleccionada] =
@@ -102,8 +99,6 @@ export function DireccionReportes() {
 
   function limpiarFiltros() {
     setFiltros(filtrosIniciales);
-    setTipoReporte("Todos");
-    setBusqueda("");
     void cargar(filtrosIniciales);
   }
 
@@ -127,20 +122,11 @@ export function DireccionReportes() {
   const catalogos = datos?.catalogos;
   const resumen = datos?.resumen;
 
-  const filtrosActivos = useMemo(
-    () =>
-      Object.values(filtros).filter((valor) => valor && valor !== "todos").length +
-      (tipoReporte !== "Todos" ? 1 : 0) +
-      (busqueda.trim() ? 1 : 0),
-    [filtros, tipoReporte, busqueda],
-  );
-
   const filtrosActivosDetalle = useMemo(() => {
-    const items = obtenerFiltrosActivos(filtros);
-    if (tipoReporte !== "Todos") items.push({ label: "Tipo de reporte", value: tipoReporte });
-    if (busqueda.trim()) items.push({ label: "Búsqueda", value: busqueda.trim() });
-    return items;
-  }, [filtros, tipoReporte, busqueda]);
+    return obtenerFiltrosActivos(filtros);
+  }, [filtros]);
+
+  const filtrosActivos = filtrosActivosDetalle.length;
 
   const puntosAtencion = useMemo(() => obtenerPuntosAtencion(datos), [datos]);
   const recomendaciones = useMemo(() => obtenerRecomendaciones(datos), [datos]);
@@ -295,46 +281,11 @@ export function DireccionReportes() {
           />
         </div>}
 
-        {mostrarFiltros && <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_1fr_auto_auto]">
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-400">
-              Tipo de reporte
-            </label>
-            <select
-              value={tipoReporte}
-              onChange={(e) => setTipoReporte(e.target.value)}
-              disabled={cargando}
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-[#1565c0] focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <option value="Todos">Todos los reportes</option>
-              {(datos?.reportes ?? []).map((reporte) => (
-                <option key={reporte.tipo} value={reporte.tipo}>
-                  {reporte.titulo}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-400">
-              Buscar reporte
-            </label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                disabled={cargando}
-                placeholder="Buscar por título, descripción o tipo..."
-                className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none transition focus:border-[#1565c0] focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-            </div>
-          </div>
-
+        {mostrarFiltros && <div className="mt-4 flex flex-wrap gap-3">
           <button
             onClick={aplicarFiltros}
             disabled={cargando}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#0d2b5e] disabled:cursor-not-allowed disabled:opacity-60 xl:self-end"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#0d2b5e] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Filter className="h-4 w-4" />
             Aplicar
@@ -343,7 +294,7 @@ export function DireccionReportes() {
           <button
             onClick={limpiarFiltros}
             disabled={cargando || filtrosActivos === 0}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 xl:self-end"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FilterX className="h-4 w-4" />
             Limpiar

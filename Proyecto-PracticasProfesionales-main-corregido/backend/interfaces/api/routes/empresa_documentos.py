@@ -54,6 +54,7 @@ class SubirDocumentoEmpresaRequest(BaseModel):
 
 class SubirFormatoEmpresaRequest(BaseModel):
     id_tipo_documento_empresa: int
+    id_empresa: int | None = None
     nombre_archivo: str
     contenido_base64: str
     mime_type: str | None = None
@@ -81,6 +82,7 @@ class ConfigurarRequisitoEmpresaRequest(BaseModel):
     requiere_formato: bool = False
     activo: bool = True
     etapa: str = "Documentacion"
+    tipo_tramite: str | None = None
 
 
 TIPOS_BASE_EMPRESA = [
@@ -151,6 +153,14 @@ def _validar_etapa(etapa: str) -> str:
     return etapa
 
 
+def _validar_tipo_tramite_requisito(tipo_tramite: str | None) -> str | None:
+    if tipo_tramite in (None, "", "Todos", "Todas"):
+        return None
+    if tipo_tramite not in {"Convenio", "Vinculacion"}:
+        raise HTTPException(status_code=400, detail="El tipo de tramite debe ser Convenio o Vinculacion")
+    return tipo_tramite
+
+
 def _asegurar_tipos_base(db: Session) -> None:
     if db.query(TipoDocumentoEmpresaModel).count() > 0:
         actualizados = False
@@ -182,6 +192,9 @@ def _formato_response(formato: FormatoEmpresaModel | None):
         return None
     return {
         "id_formato_empresa": formato.id_formato_empresa,
+        "id_empresa": formato.id_empresa,
+        "alcance": "Empresa" if formato.id_empresa else "Todas",
+        "empresa_nombre": formato.empresa.nombre_empresa if formato.empresa else None,
         "nombre_archivo": formato.nombre_archivo,
         "url": f"/empresa/documentos/formatos/{formato.id_formato_empresa}/archivo",
         "version": formato.version,
@@ -223,8 +236,34 @@ def _asegurar_permiso_documento_empresa(usuario: UsuarioModel, documento: Docume
     raise HTTPException(status_code=403, detail="No tienes permisos para ver este documento")
 
 
-def _asegurar_permiso_formato_empresa(usuario: UsuarioModel) -> None:
-    if _nombre_rol(usuario) in {"Administrador", "Coordinador de Unidades Receptoras", "Unidad Receptora", "Direccion"}:
+def _etapa_permitida_para_empresa(etapa: str, empresa: EmpresaModel) -> bool:
+    if etapa == "Documentacion":
+        return True
+    if etapa == "Convenio":
+        return empresa.tipo_tramite == "Convenio"
+    if etapa == "Vinculacion":
+        return empresa.tipo_tramite == "Vinculacion"
+    return False
+
+
+def _requisito_permitido_para_empresa(tipo: TipoDocumentoEmpresaModel, empresa: EmpresaModel) -> bool:
+    if tipo.tipo_tramite is not None and tipo.tipo_tramite != empresa.tipo_tramite:
+        return False
+    return _etapa_permitida_para_empresa(tipo.etapa, empresa)
+
+
+def _asegurar_permiso_formato_empresa(usuario: UsuarioModel, formato: FormatoEmpresaModel) -> None:
+    rol = _nombre_rol(usuario)
+    if rol in {"Administrador", "Coordinador de Unidades Receptoras", "Direccion"}:
+        return
+    if rol == "Unidad Receptora" and usuario.responsable_empresa is not None:
+        empresa = usuario.responsable_empresa.empresa
+        if empresa is None:
+            raise HTTPException(status_code=403, detail="No tienes permisos para ver este formato")
+        if formato.id_empresa is not None and formato.id_empresa != empresa.id_empresa:
+            raise HTTPException(status_code=404, detail="Formato no encontrado")
+        if not _requisito_permitido_para_empresa(formato.tipo_documento, empresa):
+            raise HTTPException(status_code=404, detail="Formato no encontrado")
         return
     raise HTTPException(status_code=403, detail="No tienes permisos para ver este formato")
 
@@ -248,7 +287,7 @@ def _puede_eliminar_requisito(db: Session, id_tipo_documento_empresa: int) -> bo
 
 
 def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = None):
-    formatos_activos = [formato for formato in tipo.formatos if formato.activo]
+    formatos_activos = [formato for formato in tipo.formatos if formato.activo and formato.id_empresa is None]
     formato = sorted(
         formatos_activos,
         key=lambda item: item.updated_at or item.created_at,
@@ -262,6 +301,7 @@ def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = No
         "activo": tipo.activo,
         "requiere_formato": tipo.requiere_formato,
         "etapa": tipo.etapa,
+        "tipo_tramite": tipo.tipo_tramite,
         "formato": _formato_response(formato),
         "puede_eliminar": (
             _puede_eliminar_requisito(db, tipo.id_tipo_documento_empresa)
@@ -269,6 +309,18 @@ def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = No
             else False
         ),
     }
+
+
+def _formato_para_empresa(tipo: TipoDocumentoEmpresaModel, empresa: EmpresaModel):
+    formatos_activos = [formato for formato in tipo.formatos if formato.activo]
+    formatos_empresa = [formato for formato in formatos_activos if formato.id_empresa == empresa.id_empresa]
+    formatos_generales = [formato for formato in formatos_activos if formato.id_empresa is None]
+    candidatos = formatos_empresa or formatos_generales
+    return sorted(
+        candidatos,
+        key=lambda item: item.updated_at or item.created_at,
+        reverse=True,
+    )[0] if candidatos else None
 
 
 def _es_requisito_de_convenio(tipo: TipoDocumentoEmpresaModel | None) -> bool:
@@ -281,6 +333,9 @@ def _es_requisito_de_convenio(tipo: TipoDocumentoEmpresaModel | None) -> bool:
 
 
 def _documentacion_legal_aprobada(db: Session, id_empresa: int) -> bool:
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
+    if empresa is None:
+        return False
     tipos_obligatorios = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
@@ -290,6 +345,9 @@ def _documentacion_legal_aprobada(db: Session, id_empresa: int) -> bool:
         )
         .all()
     )
+    tipos_obligatorios = [
+        tipo for tipo in tipos_obligatorios if _requisito_permitido_para_empresa(tipo, empresa)
+    ]
     if not tipos_obligatorios:
         return False
 
@@ -382,6 +440,9 @@ def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
         )
         .all()
     )
+    tipos_obligatorios = [
+        tipo for tipo in tipos_obligatorios if _requisito_permitido_para_empresa(tipo, empresa)
+    ]
     documentos = (
         db.query(DocumentoEmpresaModel)
         .filter(DocumentoEmpresaModel.id_empresa == empresa.id_empresa)
@@ -444,14 +505,11 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
 
     items = []
     for tipo in tipos:
-        if tipo.etapa == "Convenio" and not documentacion_legal_aprobada:
+        if not _requisito_permitido_para_empresa(tipo, empresa):
             continue
-        formatos_activos = [formato for formato in tipo.formatos if formato.activo]
-        formato = sorted(
-            formatos_activos,
-            key=lambda item: item.updated_at or item.created_at,
-            reverse=True,
-        )[0] if formatos_activos else None
+        if tipo.etapa in {"Convenio", "Vinculacion"} and not documentacion_legal_aprobada:
+            continue
+        formato = _formato_para_empresa(tipo, empresa)
         documento = por_tipo.get(tipo.id_tipo_documento_empresa)
         items.append(
             {
@@ -486,6 +544,7 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
             "telefono": empresa.telefono,
             "correo_contacto": empresa.correo_contacto,
             "estado_empresa": empresa.estado_empresa,
+            "tipo_tramite": empresa.tipo_tramite,
         },
         "resumen": resumen,
         "convenio_actual": (
@@ -558,10 +617,12 @@ def subir_documento_empresa(
     )
     if tipo is None:
         raise HTTPException(status_code=404, detail="Tipo de documento no encontrado")
-    if tipo.etapa == "Convenio" and not _documentacion_legal_aprobada(db, id_empresa):
+    if not _requisito_permitido_para_empresa(tipo, empresa):
+        raise HTTPException(status_code=400, detail="El requisito no corresponde al tipo de tramite de la empresa")
+    if tipo.etapa in {"Convenio", "Vinculacion"} and not _documentacion_legal_aprobada(db, id_empresa):
         raise HTTPException(
             status_code=400,
-            detail="El convenio se habilita cuando la documentacion legal obligatoria esta aprobada",
+            detail="El tramite se habilita cuando la documentacion legal obligatoria esta aprobada",
         )
     contenido = _decode_base64(datos.contenido_base64)
     validar_documento_usuario(contenido, datos.nombre_archivo, datos.mime_type)
@@ -640,7 +701,7 @@ def descargar_formato_empresa_seguro(
     )
     if formato is None or not formato.ruta_archivo:
         raise HTTPException(status_code=404, detail="Formato no encontrado")
-    _asegurar_permiso_formato_empresa(usuario_actual)
+    _asegurar_permiso_formato_empresa(usuario_actual, formato)
     return _file_response_segura(formato.ruta_archivo, formato.nombre_archivo)
 
 
@@ -698,6 +759,22 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
         raise HTTPException(status_code=404, detail="Tipo de documento no encontrado")
     if not tipo.requiere_formato:
         raise HTTPException(status_code=400, detail="El requisito no esta configurado para usar formato")
+    if tipo.etapa in {"Convenio", "Vinculacion"} and datos.id_empresa is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Los formatos de Convenio y Vinculación deben asignarse a una empresa específica.",
+        )
+    empresa = None
+    if datos.id_empresa is not None:
+        empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == datos.id_empresa).first()
+        if empresa is None:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        if not _requisito_permitido_para_empresa(tipo, empresa):
+            raise HTTPException(
+                status_code=400,
+                detail="El formato no corresponde al tipo de tramite de la empresa seleccionada",
+            )
+
     contenido = _decode_base64(datos.contenido_base64)
     validar_formato_institucional(contenido, datos.nombre_archivo, datos.mime_type)
 
@@ -707,12 +784,18 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
     ruta = carpeta / f"formato_{tipo.id_tipo_documento_empresa}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
-    db.query(FormatoEmpresaModel).filter(
+    formatos_query = db.query(FormatoEmpresaModel).filter(
         FormatoEmpresaModel.id_tipo_documento_empresa == tipo.id_tipo_documento_empresa
-    ).update({"activo": False})
+    )
+    if datos.id_empresa is None:
+        formatos_query = formatos_query.filter(FormatoEmpresaModel.id_empresa.is_(None))
+    else:
+        formatos_query = formatos_query.filter(FormatoEmpresaModel.id_empresa == datos.id_empresa)
+    formatos_query.update({"activo": False})
 
     formato = FormatoEmpresaModel(
         id_tipo_documento_empresa=tipo.id_tipo_documento_empresa,
+        id_empresa=datos.id_empresa,
         nombre_archivo=safe_name,
         ruta_archivo=str(ruta),
         version=datos.version.strip() if datos.version else None,
@@ -723,7 +806,8 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
         db,
         ["Unidad Receptora"],
         "Formato de empresa actualizado",
-        f"Coordinacion actualizo el formato de {tipo.nombre}.",
+        f"Coordinacion actualizo el formato de {tipo.nombre}."
+        + (f" Empresa: {empresa.nombre_empresa}." if empresa else ""),
     )
     db.commit()
     db.refresh(formato)
@@ -761,12 +845,14 @@ def crear_requisito_empresa(
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre del documento es obligatorio")
     etapa = _validar_etapa(datos.etapa)
+    tipo_tramite = _validar_tipo_tramite_requisito(datos.tipo_tramite)
 
     duplicado = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
             TipoDocumentoEmpresaModel.nombre == nombre,
             TipoDocumentoEmpresaModel.etapa == etapa,
+            TipoDocumentoEmpresaModel.tipo_tramite == tipo_tramite,
             TipoDocumentoEmpresaModel.activo.is_(True),
         )
         .first()
@@ -781,6 +867,7 @@ def crear_requisito_empresa(
         requiere_formato=datos.requiere_formato,
         activo=datos.activo,
         etapa=etapa,
+        tipo_tramite=tipo_tramite,
     )
     db.add(tipo)
     db.commit()
@@ -822,12 +909,14 @@ def configurar_requisito_empresa(
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre del documento es obligatorio")
     etapa = _validar_etapa(datos.etapa)
+    tipo_tramite = _validar_tipo_tramite_requisito(datos.tipo_tramite)
 
     duplicado = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
             TipoDocumentoEmpresaModel.nombre == nombre,
             TipoDocumentoEmpresaModel.etapa == etapa,
+            TipoDocumentoEmpresaModel.tipo_tramite == tipo_tramite,
             TipoDocumentoEmpresaModel.activo.is_(True),
             TipoDocumentoEmpresaModel.id_tipo_documento_empresa != id_tipo_documento_empresa,
         )
@@ -842,6 +931,7 @@ def configurar_requisito_empresa(
     tipo.requiere_formato = datos.requiere_formato
     tipo.activo = datos.activo
     tipo.etapa = etapa
+    tipo.tipo_tramite = tipo_tramite
 
     notificar_roles(
         db,

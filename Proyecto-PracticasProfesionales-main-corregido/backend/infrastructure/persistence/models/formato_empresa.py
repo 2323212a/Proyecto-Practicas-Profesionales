@@ -13,6 +13,7 @@ class FormatoEmpresaModel(Base):
         ForeignKey("tipo_documento_empresa.id_tipo_documento_empresa"),
         nullable=False,
     )
+    id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=True)
     nombre_archivo = Column(String(255), nullable=False)
     ruta_archivo = Column(String(255), nullable=False)
     version = Column(String(50), nullable=True)
@@ -23,3 +24,4 @@ class FormatoEmpresaModel(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     tipo_documento = relationship("TipoDocumentoEmpresaModel", back_populates="formatos")
+    empresa = relationship("EmpresaModel")

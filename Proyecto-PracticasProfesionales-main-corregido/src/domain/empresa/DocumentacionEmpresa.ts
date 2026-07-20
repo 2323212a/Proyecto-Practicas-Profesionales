@@ -3,6 +3,7 @@ export type EstadoDocumentoEmpresa = "Pendiente" | "Aprobado" | "Con observacion
 export interface EmpresaDocumentacionInfo {
   id_empresa: number;
   nombre_empresa: string;
+  tipo_tramite?: "Convenio" | "Vinculacion" | string | null;
   rfc: string | null;
   giro: string | null;
   domicilio: string | null;
@@ -13,6 +14,9 @@ export interface EmpresaDocumentacionInfo {
 
 export interface FormatoEmpresa {
   id_formato_empresa: number;
+  id_empresa: number | null;
+  alcance?: "Todas" | "Empresa";
+  empresa_nombre?: string | null;
   nombre_archivo: string;
   url: string;
   version: string | null;
@@ -39,6 +43,7 @@ export interface RequisitoEmpresa {
   activo?: boolean;
   requiere_formato: boolean;
   etapa?: "Documentacion" | "Convenio" | "Vinculacion";
+  tipo_tramite?: "Convenio" | "Vinculacion" | null;
   puede_eliminar?: boolean;
   formato: FormatoEmpresa | null;
   documento: DocumentoEmpresa | null;
@@ -82,6 +87,7 @@ export interface EditarDocumentoEmpresaInput extends ArchivoBase64Input {
 
 export interface SubirFormatoEmpresaInput extends ArchivoBase64Input {
   id_tipo_documento_empresa: number;
+  id_empresa?: number | null;
   version?: string;
 }
 
@@ -92,6 +98,7 @@ export interface ConfigurarRequisitoEmpresaInput {
   requiere_formato: boolean;
   activo: boolean;
   etapa: "Documentacion" | "Convenio" | "Vinculacion";
+  tipo_tramite?: "Convenio" | "Vinculacion" | null;
 }
 
 export interface RevisarDocumentoEmpresaInput {

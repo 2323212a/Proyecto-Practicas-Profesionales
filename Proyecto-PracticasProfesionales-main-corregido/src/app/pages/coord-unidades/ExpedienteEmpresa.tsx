@@ -33,6 +33,7 @@ type ConfiguracionRequisitoForm = {
   requiere_formato: boolean;
   activo: boolean;
   etapa: "Documentacion" | "Convenio" | "Vinculacion";
+  tipo_tramite: "Todos" | "Convenio" | "Vinculacion";
 };
 
 const estadoColor: Record<string, string> = {
@@ -88,6 +89,8 @@ export function ExpedienteEmpresa() {
   });
   const [observaciones, setObservaciones] = useState("");
   const [formatoTipo, setFormatoTipo] = useState<number | null>(null);
+  const [formatoAlcance, setFormatoAlcance] = useState<"todas" | "empresa">("todas");
+  const [formatoEmpresaId, setFormatoEmpresaId] = useState<number | "">("");
   const [configurando, setConfigurando] = useState<RequisitoEmpresa | null>(null);
   const [creandoRequisito, setCreandoRequisito] = useState(false);
   const [configForm, setConfigForm] = useState<ConfiguracionRequisitoForm>({
@@ -97,6 +100,7 @@ export function ExpedienteEmpresa() {
     requiere_formato: false,
     activo: true,
     etapa: "Documentacion",
+    tipo_tramite: "Todos",
   });
 
   useEffect(() => {
@@ -125,6 +129,7 @@ export function ExpedienteEmpresa() {
         if (actual && conExpediente.some((item) => item.empresa.id_empresa === actual)) return actual;
         return conExpediente[0]?.empresa.id_empresa ?? null;
       });
+      setFormatoEmpresaId((actual) => actual || conExpediente[0]?.empresa.id_empresa || "");
     } catch (err) {
       console.error(err);
       setError("No se pudo cargar la documentacion empresarial.");
@@ -190,6 +195,9 @@ export function ExpedienteEmpresa() {
   async function subirFormato(requisito: RequisitoEmpresa, event: ChangeEvent<HTMLInputElement>) {
     const archivo = event.target.files?.[0];
     if (!archivo) return;
+    const etapa = requisito.etapa ?? "Documentacion";
+    const tipoTramite = requisito.tipo_tramite ?? null;
+    const requiereEmpresaEspecifica = etapa === "Convenio" || etapa === "Vinculacion";
     if (archivo.size > MAX_FORMATO_BYTES) {
       setError("El archivo excede el límite máximo de 2 MB.");
       event.target.value = "";
@@ -202,17 +210,40 @@ export function ExpedienteEmpresa() {
     }
 
     try {
+      const empresasCompatibles = empresas.filter((item) => {
+        if (etapa === "Convenio") return item.empresa.tipo_tramite === "Convenio";
+        if (etapa === "Vinculacion") return item.empresa.tipo_tramite === "Vinculacion";
+        if (tipoTramite) return item.empresa.tipo_tramite === tipoTramite;
+        return true;
+      });
+      const idBase = Number(formatoEmpresaId || seleccionada);
+      const idEmpresaFormato =
+        formatoAlcance === "empresa" || requiereEmpresaEspecifica
+          ? empresasCompatibles.some((item) => item.empresa.id_empresa === idBase)
+            ? idBase
+            : null
+          : null;
+      if ((formatoAlcance === "empresa" || requiereEmpresaEspecifica) && !idEmpresaFormato) {
+        setError("Selecciona la empresa a la que se asignara el formato.");
+        event.target.value = "";
+        return;
+      }
       setFormatoTipo(requisito.id_tipo_documento_empresa);
       setError("");
       setExito("");
       const contenido = await archivoABase64(archivo);
       await gestionDocumentacionEmpresaUseCase.subirFormato({
         id_tipo_documento_empresa: requisito.id_tipo_documento_empresa,
+        id_empresa: idEmpresaFormato,
         nombre_archivo: archivo.name,
         contenido_base64: contenido,
         mime_type: archivo.type || null,
       });
-      setExito(`Formato oficial actualizado para ${requisito.nombre}.`);
+      setExito(
+        formatoAlcance === "empresa"
+          ? `Formato asignado para esta empresa en ${requisito.nombre}.`
+          : `Formato general actualizado para ${requisito.nombre}.`,
+      );
       await cargar();
     } catch (err) {
       console.error(err);
@@ -233,6 +264,7 @@ export function ExpedienteEmpresa() {
       requiere_formato: requisito.requiere_formato,
       activo: (requisito as RequisitoEmpresa & { activo?: boolean }).activo ?? true,
       etapa: (requisito as RequisitoEmpresa & { etapa?: string }).etapa ?? "Documentacion",
+      tipo_tramite: requisito.tipo_tramite ?? "Todos",
     });
   }
 
@@ -246,6 +278,7 @@ export function ExpedienteEmpresa() {
       requiere_formato: false,
       activo: true,
       etapa: "Documentacion",
+      tipo_tramite: "Todos",
     });
   }
 
@@ -263,6 +296,7 @@ export function ExpedienteEmpresa() {
             requiere_formato: configForm.requiere_formato,
             activo: configForm.activo,
             etapa: configForm.etapa,
+            tipo_tramite: configForm.tipo_tramite === "Todos" ? null : configForm.tipo_tramite,
           },
         );
       } else {
@@ -273,6 +307,7 @@ export function ExpedienteEmpresa() {
           requiere_formato: configForm.requiere_formato,
           activo: configForm.activo,
           etapa: configForm.etapa,
+          tipo_tramite: configForm.tipo_tramite === "Todos" ? null : configForm.tipo_tramite,
         });
       }
       setConfigurando(null);
@@ -393,10 +428,64 @@ export function ExpedienteEmpresa() {
     }
   }
 
+  function renderSelectorAlcanceFormato(etapa: string, tipoTramite?: string | null) {
+    const requiereEmpresaEspecifica = etapa === "Convenio" || etapa === "Vinculacion";
+    const empresasCompatibles = empresas.filter((item) => {
+      if (etapa === "Convenio") return item.empresa.tipo_tramite === "Convenio";
+      if (etapa === "Vinculacion") return item.empresa.tipo_tramite === "Vinculacion";
+      if (tipoTramite) return item.empresa.tipo_tramite === tipoTramite;
+      return true;
+    });
+    const empresaSeleccionadaCompatible = empresasCompatibles.some(
+      (item) => item.empresa.id_empresa === Number(formatoEmpresaId),
+    );
+
+    return (
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <label className="block">
+          <span className="text-xs font-semibold text-gray-600">Alcance del formato</span>
+          <select
+            value={requiereEmpresaEspecifica ? "empresa" : formatoAlcance}
+            onChange={(event) => setFormatoAlcance(event.target.value as "todas" | "empresa")}
+            disabled={requiereEmpresaEspecifica}
+            className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-xs outline-none focus:border-[#1565c0]"
+          >
+            {!requiereEmpresaEspecifica && <option value="todas">Todas las empresas</option>}
+            <option value="empresa">Solo una empresa</option>
+          </select>
+          {requiereEmpresaEspecifica && (
+            <span className="mt-1 block text-xs text-blue-700">
+              Los formatos de Convenio y Vinculación deben asignarse a una empresa específica.
+            </span>
+          )}
+        </label>
+
+        {(formatoAlcance === "empresa" || requiereEmpresaEspecifica) && (
+          <label className="block">
+            <span className="text-xs font-semibold text-gray-600">Empresa</span>
+            <select
+              value={empresaSeleccionadaCompatible ? formatoEmpresaId : ""}
+              onChange={(event) => setFormatoEmpresaId(Number(event.target.value))}
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-xs outline-none focus:border-[#1565c0]"
+            >
+              <option value="">Selecciona empresa</option>
+              {empresasCompatibles.map((item) => (
+                <option key={item.empresa.id_empresa} value={item.empresa.id_empresa}>
+                  {item.empresa.nombre_empresa} - {item.empresa.tipo_tramite ?? "Sin tramite"}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+    );
+  }
+
   function renderRequisito(requisito: RequisitoEmpresa, modo: "revision" | "configuracion") {
     const documento = requisito.documento;
     const estado = documento?.estado_documento ?? "Faltante";
     const etapa = requisito.etapa ?? "Documentacion";
+    const aplicaA = requisito.tipo_tramite ?? "Todas";
     const activo = requisito.activo ?? true;
     const puedeEliminar = requisito.puede_eliminar ?? false;
 
@@ -420,6 +509,9 @@ export function ExpedienteEmpresa() {
                     : "Requiere formato, pendiente de anexar"
                   : "Sin formato institucional requerido"}
               </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Aplica a: {aplicaA === "Todas" ? "Todas las empresas" : aplicaA}
+              </p>
               {etapa === "Convenio" && (
                 <p className="inline-flex mt-2 text-xs text-green-700 bg-green-50 border border-green-100 rounded-full px-3 py-1 font-semibold">
                   Al aprobarse genera o actualiza el convenio formal
@@ -439,6 +531,14 @@ export function ExpedienteEmpresa() {
                   <p className="text-xs text-gray-600 mt-2">
                     Estado: {requisito.formato ? `Cargado - ${requisito.formato.nombre_archivo}` : "Pendiente de subir"}
                   </p>
+                  {requisito.formato && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      Alcance: {requisito.formato.id_empresa
+                        ? `Solo ${requisito.formato.empresa_nombre ?? "empresa asignada"}`
+                        : "Todas las empresas"}
+                    </p>
+                  )}
+                  {renderSelectorAlcanceFormato(etapa, requisito.tipo_tramite)}
                   <div className="flex flex-wrap gap-2 mt-3">
                     {requisito.formato && (
                       <button
@@ -834,7 +934,29 @@ export function ExpedienteEmpresa() {
                 >
                   <option value="Documentacion">Documentacion</option>
                   <option value="Convenio">Convenio</option>
+                  <option value="Vinculacion">Vinculacion</option>
                 </select>
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold text-gray-500">Aplica a</span>
+                <select
+                  value={configForm.tipo_tramite}
+                  onChange={(event) =>
+                    setConfigForm({
+                      ...configForm,
+                      tipo_tramite: event.target.value as ConfiguracionRequisitoForm["tipo_tramite"],
+                    })
+                  }
+                  className="mt-1 w-full border border-gray-300 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1565c0]"
+                >
+                  <option value="Todos">Todas las empresas</option>
+                  <option value="Convenio">Solo empresas de Convenio</option>
+                  <option value="Vinculacion">Solo empresas de Vinculacion</option>
+                </select>
+                <span className="mt-1 block text-xs text-gray-500">
+                  Úsalo para que un requisito de Documentacion sea solo de Convenio o solo de Vinculacion.
+                </span>
               </label>
 
               <div className="grid md:grid-cols-3 gap-3">
@@ -879,6 +1001,13 @@ export function ExpedienteEmpresa() {
                       <p className="text-xs text-blue-700 mt-1">
                         {textoFormatoPorEtapa(configForm.etapa)}
                       </p>
+                      {configurando.formato && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          Alcance actual: {configurando.formato.id_empresa
+                            ? `Solo ${configurando.formato.empresa_nombre ?? "empresa asignada"}`
+                            : "Todas las empresas"}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -919,6 +1048,10 @@ export function ExpedienteEmpresa() {
                       </label>
                     </div>
                   </div>
+                  {renderSelectorAlcanceFormato(
+                    configForm.etapa,
+                    configForm.tipo_tramite === "Todos" ? null : configForm.tipo_tramite,
+                  )}
                 </div>
               )}
 
