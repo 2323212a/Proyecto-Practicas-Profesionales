@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.services.auditoria_service import registrar_bitacora
 from app.services.upload_security import leer_uploadfile_validado_importacion
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import enviar_correo_importacion_usuario
+from infrastructure.email.email_service import enviar_correo_importacion_usuario, mostrar_password_temporal_en_respuesta
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
@@ -373,6 +373,18 @@ def _enviar_credenciales_importacion(
     }
 
 
+def _credenciales_respuesta(credenciales: list[dict]) -> list[dict]:
+    if mostrar_password_temporal_en_respuesta():
+        return credenciales
+    return [
+        {
+            **credencial,
+            "password_temporal": None,
+        }
+        for credencial in credenciales
+    ]
+
+
 @router.post("/validar-alumnos")
 async def validar_alumnos(archivo: UploadFile = File(...), db: Session = Depends(obtener_db)):
     df = _leer_archivo(archivo, ["Plantilla Alumnos", "Alumnos"], COLUMNAS_ALUMNOS_REQUERIDAS)
@@ -469,7 +481,7 @@ async def importar_alumnos(
         "importados": len(importados),
         "errores": [],
         "alumnos": importados,
-        "credenciales": credenciales,
+        "credenciales": _credenciales_respuesta(credenciales),
         **resultado_correo,
         "mensaje_credenciales": "Guarda este archivo ahora. Las contrasenas no podran recuperarse despues.",
     }
@@ -543,7 +555,7 @@ async def importar_personal(
         "importados": len(importados),
         "errores": [],
         "personal": importados,
-        "credenciales": credenciales,
+        "credenciales": _credenciales_respuesta(credenciales),
         **resultado_correo,
         "mensaje_credenciales": "Guarda este archivo ahora. Las contrasenas no podran recuperarse despues.",
     }

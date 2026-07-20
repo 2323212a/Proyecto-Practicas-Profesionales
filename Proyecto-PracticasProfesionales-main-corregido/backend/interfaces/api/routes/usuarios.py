@@ -9,7 +9,11 @@ from sqlalchemy.orm import Session
 from interfaces.api.schemas.usuario import UsuarioCreate, UsuarioEstadoUpdate, UsuarioResponse, UsuarioUpdate
 from interfaces.api.schemas.usuario_perfil import UsuarioPerfilResponse, UsuarioPerfilUpdate
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import enviar_correo_reset_password, enviar_correo_usuario_creado
+from infrastructure.email.email_service import (
+    enviar_correo_reset_password,
+    enviar_correo_usuario_creado,
+    mostrar_password_temporal_en_respuesta,
+)
 from interfaces.api.service_factory import UsuarioService
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
@@ -720,7 +724,7 @@ def resetear_password_usuario(
         "correo": usuario.correo,
         "id_rol": usuario.id_rol,
         "debe_cambiar_password": bool(usuario.debe_cambiar_password),
-        "password_temporal": password_temporal,
+        "password_temporal": password_temporal if mostrar_password_temporal_en_respuesta() else None,
         "correo_enviado": correo_enviado,
         "advertencia_correo": advertencia_correo,
         "mensaje": "Guarda esta contrasena ahora. No podra consultarse despues."

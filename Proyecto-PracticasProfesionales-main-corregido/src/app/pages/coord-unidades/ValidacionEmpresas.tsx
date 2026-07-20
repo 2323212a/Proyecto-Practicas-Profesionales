@@ -116,7 +116,10 @@ export function ValidacionEmpresas() {
         [
           mensajeCorreoOperacion("aceptada", respuesta.correo_enviado, respuesta.advertencia_correo),
           `Correo: ${respuesta.correo}`,
-          `Contrasena temporal: ${respuesta.password_temporal ?? "Ya tenia cuenta"}`,
+          `Contrasena temporal: ${
+            respuesta.password_temporal
+              ?? (respuesta.cuenta_creada ? "No se muestra por seguridad" : "Ya tenia cuenta")
+          }`,
         ].join("\n"),
       );
       await cargarEmpresas();

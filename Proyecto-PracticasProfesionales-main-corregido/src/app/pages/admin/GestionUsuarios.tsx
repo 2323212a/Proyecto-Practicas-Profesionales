@@ -24,7 +24,7 @@ type ResetPasswordResultado = {
   correo: string;
   id_rol: number;
   debe_cambiar_password: boolean;
-  password_temporal: string;
+  password_temporal: string | null;
   mensaje: string;
   correo_enviado?: boolean;
   advertencia_correo?: string | null;
@@ -336,7 +336,7 @@ export function GestionUsuarios() {
   }
 
   function descargarCredencialReset() {
-    if (!resetResultado) return;
+    if (!resetResultado?.password_temporal) return;
     const contenido = [
       "correo,password_temporal",
       `"${resetResultado.correo}","${resetResultado.password_temporal}"`,
@@ -352,7 +352,7 @@ export function GestionUsuarios() {
 
   function cerrarResetPassword() {
     setResetResultado((actual) =>
-      actual ? { ...actual, password_temporal: "" } : null
+      actual ? { ...actual, password_temporal: null } : null
     );
     setResetResultado(null);
   }
@@ -1150,10 +1150,12 @@ export function GestionUsuarios() {
               Contrasena temporal
             </h3>
             <p className="text-sm text-gray-500">
-              Guarda esta contrasena ahora. No podra consultarse despues.
+              {resetResultado.password_temporal
+                ? "Guarda esta contrasena ahora. No podra consultarse despues."
+                : "La contrasena temporal fue generada, pero no se muestra en esta respuesta."}
             </p>
             <p className="text-sm text-gray-500 mt-1">
-              Por seguridad, esta contrasena temporal solo se muestra una vez.
+              Por seguridad, usa el correo enviado o habilita la visualizacion solo en QA/local.
             </p>
 
             <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -1161,27 +1163,29 @@ export function GestionUsuarios() {
               <div className="font-semibold text-[#0d2b5e]">{resetResultado.correo}</div>
               <div className="text-xs text-gray-500 mt-3">Contrasena temporal</div>
               <div className="font-mono font-bold text-lg text-[#0d2b5e]">
-                {resetResultado.password_temporal}
+                {resetResultado.password_temporal ?? "No se muestra por seguridad"}
               </div>
             </div>
 
             <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-[#0d2b5e]">
               {resetResultado.id_rol === 1
                 ? "Este alumno debera cambiar la contrasena al iniciar sesion."
-                : "Este usuario podra iniciar sesion con la contrasena temporal. No se le obligara a cambiarla automaticamente."}
+                : "Este usuario debera cambiar la contrasena al iniciar sesion."}
             </div>
 
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => navigator.clipboard?.writeText(resetResultado.password_temporal)}
-                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50 flex items-center justify-center gap-2"
+                onClick={() => resetResultado.password_temporal && navigator.clipboard?.writeText(resetResultado.password_temporal)}
+                disabled={!resetResultado.password_temporal}
+                className="flex-1 py-2.5 border-2 border-gray-200 text-gray-600 rounded-xl text-sm font-bold hover:bg-gray-50 flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Copy className="w-4 h-4" />
                 Copiar
               </button>
               <button
                 onClick={descargarCredencialReset}
-                className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0] flex items-center justify-center gap-2"
+                disabled={!resetResultado.password_temporal}
+                className="flex-1 py-2.5 bg-[#0d2b5e] text-white rounded-xl text-sm font-bold hover:bg-[#1565c0] flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:bg-gray-300"
               >
                 <Download className="w-4 h-4" />
                 Descargar

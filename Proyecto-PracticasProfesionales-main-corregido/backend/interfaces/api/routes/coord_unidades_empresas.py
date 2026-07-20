@@ -16,7 +16,11 @@ from app.services.empresa_reglas_service import (
     validar_participacion_aceptada,
 )
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import enviar_correo_empresa_aceptada, enviar_correo_empresa_rechazada
+from infrastructure.email.email_service import (
+    enviar_correo_empresa_aceptada,
+    enviar_correo_empresa_rechazada,
+    mostrar_password_temporal_en_respuesta,
+)
 from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
@@ -502,7 +506,7 @@ def aceptar_solicitud_empresa(
         "correo": correo,
         "correo_enviado": correo_enviado,
         "advertencia_correo": advertencia_correo,
-        "password_temporal": password_temporal,
+        "password_temporal": password_temporal if mostrar_password_temporal_en_respuesta() else None,
     }
 
 

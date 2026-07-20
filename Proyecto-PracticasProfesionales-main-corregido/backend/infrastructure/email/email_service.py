@@ -37,6 +37,11 @@ def _correo_habilitado() -> bool:
     return os.getenv("EMAIL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def mostrar_password_temporal_en_respuesta() -> bool:
+    mostrar = os.getenv("SHOW_TEMP_PASSWORDS_IN_RESPONSE", "false").strip().lower() in {"1", "true", "yes", "on"}
+    return mostrar and not _correo_habilitado()
+
+
 def _smtp_config() -> dict[str, str | int]:
     if not _correo_habilitado():
         raise EmailConfigError("El envio de correo esta deshabilitado.")
