@@ -31,6 +31,8 @@ export interface DocumentoEmpresa {
   observaciones: string | null;
   fecha_carga: string | null;
   fecha_revision: string | null;
+  puede_deshacer_revision?: boolean;
+  segundos_restantes_deshacer_revision?: number | null;
 }
 
 export interface RequisitoEmpresa {

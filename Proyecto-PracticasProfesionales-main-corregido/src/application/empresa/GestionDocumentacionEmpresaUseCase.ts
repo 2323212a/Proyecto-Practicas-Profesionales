@@ -40,6 +40,10 @@ export class GestionDocumentacionEmpresaUseCase {
     return this.repository.revisarDocumento(idDocumentoEmpresa, datos);
   }
 
+  deshacerRevision(idDocumentoEmpresa: number): Promise<DocumentoEmpresa> {
+    return this.repository.deshacerRevision(idDocumentoEmpresa);
+  }
+
   editarDocumento(
     idDocumentoEmpresa: number,
     datos: EditarDocumentoEmpresaInput,

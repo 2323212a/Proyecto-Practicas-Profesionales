@@ -11,6 +11,8 @@ export interface EmpresaRevision {
   periodo_participacion: string | null;
   estado_solicitud: string | null;
   motivo_rechazo: string | null;
+  puede_deshacer_rechazo?: boolean;
+  segundos_restantes_deshacer?: number | null;
   cuenta_creada: boolean;
   correo_usuario: string | null;
   vacantes: number;
@@ -29,6 +31,8 @@ export interface SolicitudEmpresaDetalle {
     observaciones: string | null;
     fecha_solicitud: string | null;
     fecha_revision: string | null;
+    puede_deshacer_rechazo?: boolean;
+    segundos_restantes_deshacer?: number | null;
   };
   cuenta_creada: boolean;
   correo_usuario: string | null;

@@ -11,8 +11,10 @@ import {
 import { useNavigate } from "react-router";
 import axios from "axios";
 
-import { gestionEmpresasRevisionUseCase } from "../../dependencies";
+import { gestionDocumentacionEmpresaUseCase, gestionEmpresasRevisionUseCase } from "../../dependencies";
 import type { EmpresaRevision, SolicitudEmpresaDetalle } from "../../../domain/coord-unidades/EmpresaRevision";
+import type { DocumentacionEmpresaResponse, RequisitoEmpresa } from "../../../domain/empresa/DocumentacionEmpresa";
+import { ContextHelp } from "../../../shared/components/ContextHelp";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 const estadoColor: Record<string, string> = {
@@ -39,6 +41,58 @@ function formatearFecha(valor: string | null) {
   }).format(fecha);
 }
 
+function formatearTiempoRestante(segundos?: number | null) {
+  if (!segundos || segundos <= 0) return "0:00";
+  const minutos = Math.floor(segundos / 60);
+  const seg = segundos % 60;
+  return `${minutos}:${String(seg).padStart(2, "0")}`;
+}
+
+function estaAprobado(requisito: RequisitoEmpresa | undefined) {
+  return requisito?.documento?.estado_documento === "Aprobado";
+}
+
+function normalizarTexto(valor: string) {
+  return valor
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function esRequisitoActa(requisito: RequisitoEmpresa) {
+  const nombre = normalizarTexto(requisito.nombre);
+  return (
+    nombre === "acta constitutiva" ||
+    nombre === "acta de constitucion" ||
+    nombre.includes("acta constitutiva")
+  );
+}
+
+function obtenerResumenRapido(
+  empresa: EmpresaRevision,
+  expediente: DocumentacionEmpresaResponse | null,
+) {
+  const documentos = expediente?.documentos ?? [];
+  const encontrarPorNombre = (fragmentos: string[]) =>
+    documentos.find((item) => {
+      const nombre = item.nombre.toLowerCase();
+      return fragmentos.some((fragmento) => nombre.includes(fragmento));
+    });
+
+  const acta = documentos.find(esRequisitoActa);
+  const convenio = documentos.find((item) => (item.etapa ?? "Documentacion") === "Convenio");
+
+  return {
+    rfc: Boolean(empresa.rfc?.trim()),
+    acta: estaAprobado(acta),
+    convenio: estaAprobado(convenio) || expediente?.convenio_actual?.estado_convenio === "Vigente",
+    responsable: Boolean(empresa.cuenta_creada || empresa.correo_usuario || empresa.correo_contacto),
+    vacantes: empresa.vacantes,
+    estado: empresa.estado_empresa,
+  };
+}
+
 export function ValidacionEmpresas() {
   const navigate = useNavigate();
   const [empresas, setEmpresas] = useState<EmpresaRevision[]>([]);
@@ -49,6 +103,9 @@ export function ValidacionEmpresas() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("Solicitudes");
   const [solicitudDetalle, setSolicitudDetalle] = useState<SolicitudEmpresaDetalle | null>(null);
+  const [empresaHover, setEmpresaHover] = useState<number | null>(null);
+  const [cargandoVistaRapida, setCargandoVistaRapida] = useState(false);
+  const [expedientesMap, setExpedientesMap] = useState<Record<number, DocumentacionEmpresaResponse>>({});
 
   useEffect(() => {
     void cargarEmpresas();
@@ -112,6 +169,25 @@ export function ValidacionEmpresas() {
     }
   }
 
+  async function cargarVistaRapida() {
+    if (cargandoVistaRapida || Object.keys(expedientesMap).length > 0) {
+      return;
+    }
+    try {
+      setCargandoVistaRapida(true);
+      const expedientes = await gestionDocumentacionEmpresaUseCase.listarRevision();
+      const map: Record<number, DocumentacionEmpresaResponse> = {};
+      for (const expediente of expedientes) {
+        map[expediente.empresa.id_empresa] = expediente;
+      }
+      setExpedientesMap(map);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCargandoVistaRapida(false);
+    }
+  }
+
   async function rechazarSolicitud(empresa: EmpresaRevision) {
     const motivo = window.prompt("Motivo de rechazo");
     if (!motivo?.trim()) {
@@ -129,6 +205,30 @@ export function ValidacionEmpresas() {
     } catch (err) {
       console.error(err);
       setError(axios.isAxiosError(err) ? err.response?.data?.detail ?? "No se pudo rechazar la solicitud." : "No se pudo rechazar la solicitud.");
+    } finally {
+      setProcesando(null);
+    }
+  }
+
+  async function deshacerRechazo(empresa: EmpresaRevision) {
+    const confirmar = window.confirm(
+      "Se restaurara la empresa a estado Solicitante. Esta accion solo se permite en los primeros 10 minutos.",
+    );
+    if (!confirmar) {
+      return;
+    }
+    try {
+      setProcesando(empresa.id_empresa);
+      setError("");
+      await gestionEmpresasRevisionUseCase.deshacerRechazo(empresa.id_empresa);
+      await cargarEmpresas();
+    } catch (err) {
+      console.error(err);
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail ?? "No se pudo deshacer el rechazo.");
+      } else {
+        setError("No se pudo deshacer el rechazo.");
+      }
     } finally {
       setProcesando(null);
     }
@@ -166,7 +266,13 @@ export function ValidacionEmpresas() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Empresas</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Empresas</h1>
+          <ContextHelp
+            title="Ayuda"
+            message="Aqui revisas solicitudes de alta de empresas, cambios de estado y su acceso al padron. Si un rechazo fue por error, puedes usar Deshacer rechazo durante 10 minutos."
+          />
+        </div>
         <p className="text-gray-500 text-sm mt-1">
           Revision de solicitudes, unidades receptoras y publicacion en el padron empresarial.
         </p>
@@ -265,11 +371,45 @@ export function ValidacionEmpresas() {
               {!cargando &&
                 filtradas.map((empresa) => (
                   <tr key={empresa.id_empresa} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-[#0d2b5e]">{empresa.nombre_empresa}</div>
+                    <td
+                      className="px-6 py-4 relative"
+                      onMouseEnter={() => {
+                        setEmpresaHover(empresa.id_empresa);
+                        void cargarVistaRapida();
+                      }}
+                      onMouseLeave={() => setEmpresaHover(null)}
+                    >
+                      <div className="font-medium text-[#0d2b5e] underline decoration-dotted underline-offset-2">
+                        {empresa.nombre_empresa}
+                      </div>
                       <div className="text-xs text-gray-400">
                         {empresa.correo_contacto ?? "Sin correo"} - {empresa.telefono ?? "Sin telefono"}
                       </div>
+
+                      {empresaHover === empresa.id_empresa && (
+                        <div className="absolute z-20 left-6 top-[calc(100%+6px)] w-72 rounded-xl border border-gray-200 bg-white shadow-xl p-4">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Vista rapida</p>
+
+                          {cargandoVistaRapida && Object.keys(expedientesMap).length === 0 ? (
+                            <p className="text-xs text-gray-500">Cargando datos del expediente...</p>
+                          ) : (() => {
+                            const resumen = obtenerResumenRapido(empresa, expedientesMap[empresa.id_empresa] ?? null);
+                            const estadoItem = (ok: boolean) => (ok ? "✔" : "❌");
+                            return (
+                              <div className="space-y-1 text-sm text-gray-700">
+                                <p className="font-semibold text-[#0d2b5e]">Empresa</p>
+                                <p>{estadoItem(resumen.rfc)} RFC</p>
+                                <p>{estadoItem(resumen.acta)} Acta</p>
+                                <p>{estadoItem(resumen.convenio)} Convenio</p>
+                                <p>{estadoItem(resumen.responsable)} Responsable</p>
+                                <p className="pt-1">{resumen.vacantes} vacantes</p>
+                                <p className="font-semibold text-[#0d2b5e] pt-1">Estado</p>
+                                <p>{resumen.estado}</p>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </td>
 
                     <td className="text-gray-600">{empresa.giro ?? "Sin giro"}</td>
@@ -330,6 +470,18 @@ export function ValidacionEmpresas() {
                           >
                             <XCircle className="w-3 h-3" />
                             Rechazar
+                          </button>
+                        )}
+
+                        {empresa.estado_empresa === "Rechazada" && empresa.puede_deshacer_rechazo && (
+                          <button
+                            onClick={() => deshacerRechazo(empresa)}
+                            disabled={procesando === empresa.id_empresa}
+                            className="border border-amber-200 text-amber-700 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
+                            title={`Tiempo restante: ${formatearTiempoRestante(empresa.segundos_restantes_deshacer)}`}
+                          >
+                            <AlertTriangle className="w-3 h-3" />
+                            Deshacer rechazo ({formatearTiempoRestante(empresa.segundos_restantes_deshacer)})
                           </button>
                         )}
 

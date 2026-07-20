@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Mail,
   Settings,
   Shield,
   Star,
@@ -114,6 +115,7 @@ function getNav(role: string): NavItem[] {
       { label: "Roles y Permisos", icon: Shield, path: "/admin/roles" },
       { label: "Catalogos", icon: ClipboardList, path: "/admin/catalogos" },
       { label: "Reportes", icon: BarChart3, path: "/admin/reportes" },
+      { label: "Cola de Correos", icon: Mail, path: "/admin/cola-correos" },
       { label: "Configuracion", icon: Settings, path: "/admin/configuracion" },
     ];
   }

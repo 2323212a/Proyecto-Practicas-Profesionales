@@ -25,6 +25,7 @@ import type {
 } from "../../../domain/empresa/DocumentacionEmpresa";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 import { resolveApiUrl } from "../../../shared/utils/apiUrl";
+import { ContextHelp } from "../../../shared/components/ContextHelp";
 
 import type { StatCard } from "../../../shared/types/ui";
 type ConfiguracionRequisitoForm = {
@@ -42,6 +43,8 @@ const estadoColor: Record<string, string> = {
   Suspendida: "bg-red-100 text-red-700",
   Inactiva: "bg-gray-100 text-gray-600",
 };
+
+const MAX_FILE_BYTES = 1 * 1024 * 1024;
 
 function archivoABase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,6 +85,13 @@ function formatearFecha(valor: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(fecha);
+}
+
+function formatearTiempoRestante(segundos?: number | null) {
+  if (!segundos || segundos <= 0) return "0:00";
+  const minutos = Math.floor(segundos / 60);
+  const seg = segundos % 60;
+  return `${minutos}:${String(seg).padStart(2, "0")}`;
 }
 
 export function ExpedienteEmpresa() {
@@ -193,6 +203,25 @@ export function ExpedienteEmpresa() {
     }
   }
 
+  async function deshacerRevision(documento: DocumentoEmpresa) {
+    const confirmar = window.confirm(
+      "Se restaurara el documento a estado Pendiente. Esta accion solo se permite en los primeros 10 minutos.",
+    );
+    if (!confirmar) return;
+
+    try {
+      setProcesando(documento.id_documento_empresa);
+      setError("");
+      await gestionDocumentacionEmpresaUseCase.deshacerRevision(documento.id_documento_empresa);
+      await cargar();
+    } catch (err) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo deshacer la revision."));
+    } finally {
+      setProcesando(null);
+    }
+  }
+
   function abrirAprobacionConvenio(documento: DocumentoEmpresa) {
     const inicio = new Date().toISOString().slice(0, 10);
     const finDate = new Date();
@@ -204,6 +233,12 @@ export function ExpedienteEmpresa() {
   async function subirFormato(requisito: RequisitoEmpresa, event: ChangeEvent<HTMLInputElement>) {
     const archivo = event.target.files?.[0];
     if (!archivo) return;
+
+    if (archivo.size > MAX_FILE_BYTES) {
+      setError("El archivo excede el tamano maximo permitido (1 MB).");
+      event.target.value = "";
+      return;
+    }
 
     try {
       setFormatoTipo(requisito.id_tipo_documento_empresa);
@@ -581,6 +616,18 @@ export function ExpedienteEmpresa() {
                 Observar/Rechazar
               </button>
             )}
+
+            {documento?.puede_deshacer_revision && (
+              <button
+                onClick={() => deshacerRevision(documento)}
+                disabled={procesando === documento.id_documento_empresa}
+                className="border border-amber-200 text-amber-700 rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
+                title={`Tiempo restante: ${formatearTiempoRestante(documento.segundos_restantes_deshacer_revision)}`}
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Deshacer revision ({formatearTiempoRestante(documento.segundos_restantes_deshacer_revision)})
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -598,7 +645,13 @@ export function ExpedienteEmpresa() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Expediente de Empresa</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Expediente de Empresa</h1>
+          <ContextHelp
+            title="Ayuda"
+            message="Aqui validas cada documento de la empresa. Al aprobar o rechazar puedes Deshacer revision durante 10 minutos para corregir errores operativos."
+          />
+        </div>
         <p className="text-gray-500 text-sm mt-1">
           Revision documental de unidades receptoras y publicacion de formatos institucionales.
         </p>

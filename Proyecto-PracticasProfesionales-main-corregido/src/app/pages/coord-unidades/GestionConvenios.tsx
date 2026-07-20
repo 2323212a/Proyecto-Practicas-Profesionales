@@ -21,6 +21,7 @@ import { apiClient } from "../../../infrastructure/api/apiClient";
 import { gestionEmpresasRevisionUseCase } from "../../dependencies";
 
 import { resolveApiUrl } from "../../../shared/utils/apiUrl";
+import { ContextHelp } from "../../../shared/components/ContextHelp";
 import type { StatCard } from "../../../shared/types/ui";
 type ConvenioApi = {
   id_convenio: number;
@@ -191,7 +192,13 @@ export function GestionConvenios() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Convenios</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Convenios</h1>
+          <ContextHelp
+            title="Ayuda"
+            message="En esta pantalla monitoreas vigencias, vencimientos y renovaciones. Un convenio por vencer debe renovarse para que sus vacantes no pierdan publicacion."
+          />
+        </div>
         <p className="text-gray-500 text-sm mt-1">
           Seguimiento de vigencias generadas desde los convenios firmados del expediente empresarial.
         </p>

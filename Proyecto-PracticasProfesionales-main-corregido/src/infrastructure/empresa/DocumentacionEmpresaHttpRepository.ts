@@ -43,6 +43,13 @@ export class DocumentacionEmpresaHttpRepository implements DocumentacionEmpresaR
     return data;
   }
 
+  async deshacerRevision(idDocumentoEmpresa: number): Promise<DocumentoEmpresa> {
+    const { data } = await apiClient.post<DocumentoEmpresa>(
+      `/coord-unidades/documentos-empresa/${idDocumentoEmpresa}/deshacer-revision`,
+    );
+    return data;
+  }
+
   async editarDocumento(
     idDocumentoEmpresa: number,
     datos: EditarDocumentoEmpresaInput,

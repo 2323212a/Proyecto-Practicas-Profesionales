@@ -19,6 +19,8 @@ function mapEmpresaRevision(item: EmpresaRevisionApi): EmpresaRevision {
     periodo_participacion: item.periodo_participacion,
     estado_solicitud: item.estado_solicitud,
     motivo_rechazo: item.motivo_rechazo,
+    puede_deshacer_rechazo: item.puede_deshacer_rechazo,
+    segundos_restantes_deshacer: item.segundos_restantes_deshacer,
     cuenta_creada: item.cuenta_creada,
     correo_usuario: item.correo_usuario,
     vacantes: item.vacantes,
@@ -39,6 +41,8 @@ function mapSolicitudDetalle(item: SolicitudEmpresaDetalleApi): SolicitudEmpresa
       observaciones: item.solicitud.observaciones,
       fecha_solicitud: item.solicitud.fecha_solicitud,
       fecha_revision: item.solicitud.fecha_revision,
+      puede_deshacer_rechazo: item.solicitud.puede_deshacer_rechazo,
+      segundos_restantes_deshacer: item.solicitud.segundos_restantes_deshacer,
     },
     cuenta_creada: item.cuenta_creada,
     correo_usuario: item.correo_usuario,
@@ -76,5 +80,9 @@ export class EmpresaRevisionHttpRepository implements EmpresaRevisionRepository 
       motivo_rechazo: motivo,
       observaciones,
     });
+  }
+
+  async deshacerRechazo(idEmpresa: number): Promise<void> {
+    await apiClient.post(`/coord-unidades/empresas/${idEmpresa}/deshacer-rechazo`);
   }
 }

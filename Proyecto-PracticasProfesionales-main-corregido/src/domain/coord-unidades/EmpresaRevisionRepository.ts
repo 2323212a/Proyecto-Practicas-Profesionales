@@ -6,4 +6,5 @@ export interface EmpresaRevisionRepository {
   obtenerSolicitud(idEmpresa: number): Promise<SolicitudEmpresaDetalle>;
   aceptarSolicitud(idEmpresa: number): Promise<AceptarSolicitudResponse>;
   rechazarSolicitud(idEmpresa: number, motivo: string, observaciones?: string): Promise<void>;
+  deshacerRechazo(idEmpresa: number): Promise<void>;
 }

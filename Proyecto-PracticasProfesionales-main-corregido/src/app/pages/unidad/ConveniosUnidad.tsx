@@ -21,6 +21,8 @@ type UsuarioSesion = {
   };
 };
 
+const MAX_FILE_BYTES = 1 * 1024 * 1024;
+
 const estadoColor: Record<string, string> = {
   Aprobado: "bg-green-100 text-green-700",
   Pendiente: "bg-yellow-100 text-yellow-700",
@@ -99,6 +101,12 @@ export function ConveniosUnidad() {
   async function subirDocumento(requisito: RequisitoEmpresa, event: ChangeEvent<HTMLInputElement>) {
     const archivo = event.target.files?.[0];
     if (!archivo || !idEmpresa) return;
+
+    if (archivo.size > MAX_FILE_BYTES) {
+      setError("El archivo excede el tamano maximo permitido (1 MB).");
+      event.target.value = "";
+      return;
+    }
 
     try {
       setSubiendo(requisito.id_tipo_documento_empresa);

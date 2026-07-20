@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
+from app.services.notificacion_service import EventoNotificacion, notificar_evento_usuario
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
 from infrastructure.persistence.models.carrera import CarreraModel
@@ -33,6 +34,8 @@ router = APIRouter(
     tags=["Coordinador Unidades - Empresas"],
     dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
 )
+
+VENTANA_DESHACER_RECHAZO_MINUTOS = 10
 
 
 class CambiarEstadoEmpresaRequest(BaseModel):
@@ -149,6 +152,27 @@ def _usuario_empresa(db: Session, id_empresa: int) -> UsuarioModel | None:
         .first()
     )
     return responsable.usuario if responsable else None
+
+
+def _estado_deshacer_rechazo(
+    empresa: EmpresaModel,
+    solicitud: SolicitudEmpresaModel | None,
+    usuario_empresa: UsuarioModel | None,
+) -> tuple[bool, int | None]:
+    if solicitud is None:
+        return False, None
+    if empresa.estado_empresa != "Rechazada" or solicitud.estado_solicitud != "Rechazada":
+        return False, None
+    if solicitud.fecha_revision is None:
+        return False, None
+    if usuario_empresa is not None:
+        return False, None
+
+    delta = datetime.now() - solicitud.fecha_revision
+    segundos_restantes = int((VENTANA_DESHACER_RECHAZO_MINUTOS * 60) - delta.total_seconds())
+    if segundos_restantes <= 0:
+        return False, 0
+    return True, segundos_restantes
 
 
 @router.get("/dashboard")
@@ -281,6 +305,11 @@ def listar_empresas_revision(db: Session = Depends(obtener_db)):
     for empresa in empresas:
         solicitud = _ultima_solicitud(db, empresa.id_empresa)
         usuario = _usuario_empresa(db, empresa.id_empresa)
+        puede_deshacer_rechazo, segundos_restantes_deshacer = _estado_deshacer_rechazo(
+            empresa,
+            solicitud,
+            usuario,
+        )
         resultado.append({
             "id_empresa": empresa.id_empresa,
             "nombre_empresa": empresa.nombre_empresa,
@@ -294,6 +323,8 @@ def listar_empresas_revision(db: Session = Depends(obtener_db)):
             "periodo_participacion": empresa.periodo_participacion or (solicitud.periodo_participacion if solicitud else None),
             "estado_solicitud": solicitud.estado_solicitud if solicitud else None,
             "motivo_rechazo": solicitud.motivo_rechazo if solicitud else None,
+            "puede_deshacer_rechazo": puede_deshacer_rechazo,
+            "segundos_restantes_deshacer": segundos_restantes_deshacer,
             "cuenta_creada": usuario is not None,
             "correo_usuario": usuario.correo if usuario else None,
             "vacantes": db.query(VacanteModel)
@@ -319,6 +350,11 @@ def obtener_solicitud_empresa(id_empresa: int, db: Session = Depends(obtener_db)
 
     solicitud = _ultima_solicitud(db, id_empresa)
     usuario = _usuario_empresa(db, id_empresa)
+    puede_deshacer_rechazo, segundos_restantes_deshacer = _estado_deshacer_rechazo(
+        empresa,
+        solicitud,
+        usuario,
+    )
     return {
         "empresa": {
             "id_empresa": empresa.id_empresa,
@@ -339,6 +375,8 @@ def obtener_solicitud_empresa(id_empresa: int, db: Session = Depends(obtener_db)
             "observaciones": solicitud.observaciones if solicitud else None,
             "fecha_solicitud": solicitud.fecha_solicitud.isoformat() if solicitud and solicitud.fecha_solicitud else None,
             "fecha_revision": solicitud.fecha_revision.isoformat() if solicitud and solicitud.fecha_revision else None,
+            "puede_deshacer_rechazo": puede_deshacer_rechazo,
+            "segundos_restantes_deshacer": segundos_restantes_deshacer,
         },
         "cuenta_creada": usuario is not None,
         "correo_usuario": usuario.correo if usuario else None,
@@ -410,6 +448,13 @@ def aceptar_solicitud_empresa(
         solicitud.fecha_revision = func.now()
         solicitud.revisada_por = usuario_actual.id_usuario
 
+    notificar_evento_usuario(
+        db,
+        usuario.id_usuario,
+        EventoNotificacion.EMPRESA_APROBADA,
+        {"empresa": empresa.nombre_empresa},
+    )
+
     db.commit()
     return {
         "mensaje": "Solicitud aceptada. La empresa ya puede iniciar sesion y subir documentos.",
@@ -446,6 +491,49 @@ def rechazar_solicitud_empresa(
 
     db.commit()
     return {"mensaje": "Solicitud rechazada", "estado_empresa": empresa.estado_empresa}
+
+
+@router.post("/{id_empresa}/deshacer-rechazo")
+def deshacer_rechazo_solicitud_empresa(
+    id_empresa: int,
+    db: Session = Depends(obtener_db),
+):
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    solicitud = _ultima_solicitud(db, id_empresa)
+    if solicitud is None:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    usuario_empresa = _usuario_empresa(db, id_empresa)
+    puede_deshacer_rechazo, segundos_restantes_deshacer = _estado_deshacer_rechazo(
+        empresa,
+        solicitud,
+        usuario_empresa,
+    )
+    if not puede_deshacer_rechazo:
+        if segundos_restantes_deshacer == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="La ventana para deshacer rechazo ya expiro (10 minutos).",
+            )
+        raise HTTPException(status_code=400, detail="No se puede deshacer este rechazo")
+
+    empresa.estado_empresa = "Solicitante"
+    solicitud.estado_solicitud = "Recibida"
+    solicitud.motivo_rechazo = None
+    solicitud.fecha_revision = None
+    solicitud.revisada_por = None
+
+    db.commit()
+    db.refresh(empresa)
+
+    return {
+        "mensaje": "Rechazo deshecho correctamente",
+        "estado_empresa": empresa.estado_empresa,
+        "estado_solicitud": solicitud.estado_solicitud,
+    }
 
 
 @router.get("/vacantes/")
@@ -541,6 +629,36 @@ def cambiar_estado_vacante(
 
     vacante.estado_vacante = datos.estado_vacante
     vacante.observaciones = datos.observaciones
+
+    usuario_empresa = _usuario_empresa(db, vacante.id_empresa)
+    if usuario_empresa is not None:
+        if datos.estado_vacante == "PrePadron":
+            notificar_evento_usuario(
+                db,
+                usuario_empresa.id_usuario,
+                EventoNotificacion.VACANTE_APROBADA,
+                {"vacante": vacante.titulo, "empresa": vacante.empresa.nombre_empresa},
+            )
+        elif datos.estado_vacante == "Rechazada":
+            notificar_evento_usuario(
+                db,
+                usuario_empresa.id_usuario,
+                EventoNotificacion.VACANTE_RECHAZADA,
+                {
+                    "vacante": vacante.titulo,
+                    "empresa": vacante.empresa.nombre_empresa,
+                    "observacion": datos.observaciones or "Sin observaciones",
+                },
+            )
+
+        if datos.observaciones:
+            notificar_evento_usuario(
+                db,
+                usuario_empresa.id_usuario,
+                EventoNotificacion.NUEVA_OBSERVACION,
+                {"observacion": datos.observaciones},
+            )
+
     db.commit()
     db.refresh(vacante)
     return {"mensaje": "Estado de vacante actualizado", "estado_vacante": vacante.estado_vacante}
@@ -597,6 +715,34 @@ def cambiar_estado_empresa(
             )
 
     empresa.estado_empresa = datos.estado_empresa
+
+    usuario_empresa = _usuario_empresa(db, empresa.id_empresa)
+    if usuario_empresa is not None:
+        if datos.estado_empresa == "Activa":
+            notificar_evento_usuario(
+                db,
+                usuario_empresa.id_usuario,
+                EventoNotificacion.EMPRESA_APROBADA,
+                {"empresa": empresa.nombre_empresa},
+            )
+        elif datos.estado_empresa == "Rechazada":
+            notificar_evento_usuario(
+                db,
+                usuario_empresa.id_usuario,
+                EventoNotificacion.EMPRESA_RECHAZADA,
+                {
+                    "empresa": empresa.nombre_empresa,
+                    "motivo": datos.observaciones or "Sin motivo registrado",
+                },
+            )
+        elif datos.observaciones:
+            notificar_evento_usuario(
+                db,
+                usuario_empresa.id_usuario,
+                EventoNotificacion.NUEVA_OBSERVACION,
+                {"observacion": datos.observaciones},
+            )
+
     db.commit()
     db.refresh(empresa)
 

@@ -19,11 +19,13 @@ import {
 
 import type { CoordUnidadesDashboardResponse } from "../../../domain/coord-unidades/CoordUnidadesDashboard";
 import { obtenerDashboardCoordUnidades } from "../../../infrastructure/coord-unidades/coordUnidadesDashboardApi";
+import { ContextHelp } from "../../../shared/components/ContextHelp";
 
 interface TarjetaResumen {
   label: string;
   description: string;
   value: number;
+  path: string;
   icon: LucideIcon;
   iconClass: string;
   iconContainerClass: string;
@@ -89,6 +91,7 @@ export function CoordUnidadesDashboard() {
         resumen?.solicitudes_nuevas ??
         resumen?.empresas_pendientes ??
         0,
+      path: "/coord-unidades/empresas",
       icon: Building2,
       iconClass: "text-amber-700",
       iconContainerClass: "bg-amber-50 ring-amber-100",
@@ -98,6 +101,7 @@ export function CoordUnidadesDashboard() {
       label: "Documentos pendientes",
       description: "Archivos por validar",
       value: resumen?.documentos_pendientes ?? 0,
+      path: "/coord-unidades/empresas/expediente",
       icon: FileText,
       iconClass: "text-blue-700",
       iconContainerClass: "bg-blue-50 ring-blue-100",
@@ -107,6 +111,7 @@ export function CoordUnidadesDashboard() {
       label: "Vacantes en pre-padrón",
       description: "Pendientes de publicación",
       value: resumen?.vacantes_prepadron ?? 0,
+      path: "/coord-unidades/padron",
       icon: BriefcaseBusiness,
       iconClass: "text-violet-700",
       iconContainerClass: "bg-violet-50 ring-violet-100",
@@ -116,6 +121,7 @@ export function CoordUnidadesDashboard() {
       label: "Vacantes publicadas",
       description: "Disponibles para alumnos",
       value: resumen?.vacantes_activas ?? 0,
+      path: "/coord-unidades/padron",
       icon: ClipboardList,
       iconClass: "text-emerald-700",
       iconContainerClass: "bg-emerald-50 ring-emerald-100",
@@ -185,9 +191,15 @@ export function CoordUnidadesDashboard() {
                   Coordinación de Unidades Receptoras
                 </p>
 
-                <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                  Panel de seguimiento
-                </h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+                    Panel de seguimiento
+                  </h1>
+                  <ContextHelp
+                    title="Ayuda"
+                    message="Este panel resume solicitudes, documentos, convenios y vacantes. Puedes hacer clic en cada tarjeta para ir directo al modulo de trabajo correspondiente."
+                  />
+                </div>
 
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/80">
                   Supervisa solicitudes, documentación, convenios, vacantes y
@@ -231,8 +243,10 @@ export function CoordUnidadesDashboard() {
         {/* Resumen */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {tarjetas.map((item) => (
-            <article
+            <button
               key={item.label}
+              type="button"
+              onClick={() => navigate(item.path)}
               className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
             >
               <div
@@ -241,19 +255,19 @@ export function CoordUnidadesDashboard() {
 
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-slate-600">
+                  <p className="text-left text-sm font-semibold text-slate-600">
                     {item.label}
                   </p>
 
                   {cargando ? (
                     <div className="mt-3 h-9 w-20 animate-pulse rounded-lg bg-slate-100" />
                   ) : (
-                    <p className="mt-2 text-3xl font-bold tracking-tight text-[#0d2b5e]">
+                    <p className="mt-2 text-left text-3xl font-bold tracking-tight text-[#0d2b5e]">
                       {item.value}
                     </p>
                   )}
 
-                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                  <p className="mt-2 text-left text-xs leading-5 text-slate-400">
                     {item.description}
                   </p>
                 </div>
@@ -264,7 +278,7 @@ export function CoordUnidadesDashboard() {
                   <item.icon className={`h-5 w-5 ${item.iconClass}`} />
                 </div>
               </div>
-            </article>
+            </button>
           ))}
         </section>
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 import logging
 import re
 from datetime import date, datetime, timedelta
@@ -8,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pypdf import PdfReader
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
@@ -15,7 +17,12 @@ from app.services.convenio_empresa_service import (
     activar_convenio_actual,
     obtener_convenio_actual,
 )
-from app.services.notificacion_service import crear_notificacion, notificar_roles
+from app.services.notificacion_service import (
+    EventoNotificacion,
+    crear_notificacion,
+    notificar_evento_usuario,
+    notificar_roles,
+)
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, requerir_empresa_actual_o_roles, requerir_roles
 from infrastructure.persistence.models.convenio import ConvenioModel
@@ -31,6 +38,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Documentacion de Empresas"])
 UPLOAD_DOCUMENTOS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "documentos_empresa"
 UPLOAD_FORMATOS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "formatos_empresa"
+MAX_UPLOAD_BYTES = 1 * 1024 * 1024
+VENTANA_DESHACER_REVISION_MINUTOS = 10
 FORMATOS_MIME_PERMITIDOS = {
     "application/pdf",
     "application/msword",
@@ -106,6 +115,35 @@ def _validar_mime_formato(mime_type: str) -> None:
         )
 
 
+def _es_pdf_valido(contenido: bytes) -> bool:
+    # Un PDF valido inicia con la firma magica %PDF-
+    return contenido.startswith(b"%PDF-")
+
+
+def _validar_pdf_real(mime_type: str, contenido: bytes) -> None:
+    if mime_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
+    if not _es_pdf_valido(contenido):
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo no corresponde a un PDF valido (cabecera invalida).",
+        )
+    try:
+        lector = PdfReader(BytesIO(contenido), strict=True)
+        # Fuerza lectura de metadata estructural/paginas para detectar corrupcion.
+        _ = len(lector.pages)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="No fue posible leer el documento.") from exc
+
+
+def _validar_limite_tamano(contenido: bytes) -> None:
+    if len(contenido) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo excede el tamano maximo permitido (1 MB).",
+        )
+
+
 def _validar_etapa(etapa: str) -> str:
     if etapa not in {"Documentacion", "Convenio"}:
         raise HTTPException(status_code=400, detail="La etapa debe ser Documentacion o Convenio")
@@ -155,6 +193,7 @@ def _formato_response(formato: FormatoEmpresaModel | None):
 def _documento_response(documento: DocumentoEmpresaModel | None):
     if documento is None:
         return None
+    puede_deshacer_revision, segundos_restantes_deshacer_revision = _estado_deshacer_revision(documento)
     return {
         "id_documento_empresa": documento.id_documento_empresa,
         "id_empresa": documento.id_empresa,
@@ -166,7 +205,22 @@ def _documento_response(documento: DocumentoEmpresaModel | None):
         "observaciones": documento.observaciones,
         "fecha_carga": documento.fecha_carga.isoformat() if documento.fecha_carga else None,
         "fecha_revision": documento.fecha_revision.isoformat() if documento.fecha_revision else None,
+        "puede_deshacer_revision": puede_deshacer_revision,
+        "segundos_restantes_deshacer_revision": segundos_restantes_deshacer_revision,
     }
+
+
+def _estado_deshacer_revision(documento: DocumentoEmpresaModel) -> tuple[bool, int | None]:
+    if documento.estado_documento not in {"Aprobado", "Rechazado"}:
+        return False, None
+    if documento.fecha_revision is None:
+        return False, None
+
+    delta = datetime.now() - documento.fecha_revision
+    segundos_restantes = int((VENTANA_DESHACER_REVISION_MINUTOS * 60) - delta.total_seconds())
+    if segundos_restantes <= 0:
+        return False, 0
+    return True, segundos_restantes
 
 
 def _puede_eliminar_requisito(db: Session, id_tipo_documento_empresa: int) -> bool:
@@ -574,12 +628,9 @@ def subir_documento_empresa(
             status_code=400,
             detail="El convenio se habilita cuando la documentacion legal obligatoria esta aprobada",
         )
-    if datos.mime_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
+    _validar_limite_tamano(contenido)
+    _validar_pdf_real(datos.mime_type, contenido)
 
     UPLOAD_DOCUMENTOS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(datos.nombre_archivo)
@@ -699,8 +750,12 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
     _validar_mime_formato(datos.mime_type)
 
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El formato no debe superar 10 MB")
+    _validar_limite_tamano(contenido)
+    if datos.mime_type == "application/pdf" and not _es_pdf_valido(contenido):
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo no corresponde a un PDF valido (cabecera invalida).",
+        )
 
     UPLOAD_FORMATOS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(datos.nombre_archivo)
@@ -987,14 +1042,72 @@ def revisar_documento_empresa(
             .filter(ResponsableEmpresaModel.id_empresa == empresa.id_empresa)
             .all()
         )
+        tipo_documento = documento.tipo_documento.nombre if documento.tipo_documento else documento.nombre_archivo
         for responsable in responsables:
-            crear_notificacion(
-                db,
-                responsable.id_usuario,
-                f"Documento de empresa {datos.estado_documento.lower()}",
-                f"El documento {documento.nombre_archivo} fue marcado como {datos.estado_documento}."
-                + (f" Observaciones: {datos.observaciones}" if datos.observaciones else ""),
+            if datos.estado_documento == "Aprobado":
+                notificar_evento_usuario(
+                    db,
+                    responsable.id_usuario,
+                    EventoNotificacion.DOCUMENTO_APROBADO,
+                    {"tipo_documento": tipo_documento},
+                )
+            elif datos.estado_documento == "Rechazado":
+                notificar_evento_usuario(
+                    db,
+                    responsable.id_usuario,
+                    EventoNotificacion.DOCUMENTO_RECHAZADO,
+                    {
+                        "tipo_documento": tipo_documento,
+                        "observacion": datos.observaciones or "Sin observaciones",
+                    },
+                )
+            elif datos.observaciones:
+                notificar_evento_usuario(
+                    db,
+                    responsable.id_usuario,
+                    EventoNotificacion.NUEVA_OBSERVACION,
+                    {"observacion": datos.observaciones},
+                )
+
+    db.commit()
+    db.refresh(documento)
+    return _documento_response(documento)
+
+
+@router.post(
+    "/coord-unidades/documentos-empresa/{id_documento_empresa}/deshacer-revision",
+    dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
+)
+def deshacer_revision_documento_empresa(
+    id_documento_empresa: int,
+    db: Session = Depends(obtener_db),
+):
+    documento = (
+        db.query(DocumentoEmpresaModel)
+        .filter(DocumentoEmpresaModel.id_documento_empresa == id_documento_empresa)
+        .first()
+    )
+    if documento is None:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    puede_deshacer_revision, segundos_restantes_deshacer_revision = _estado_deshacer_revision(documento)
+    if not puede_deshacer_revision:
+        if segundos_restantes_deshacer_revision == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="La ventana para deshacer revision ya expiro (10 minutos).",
             )
+        raise HTTPException(status_code=400, detail="No se puede deshacer esta revision")
+
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == documento.id_empresa).first()
+
+    documento.estado_documento = "Pendiente"
+    documento.observaciones = None
+    documento.fecha_revision = None
+
+    if empresa is not None:
+        _sincronizar_convenio_desde_documento(db, documento, empresa)
+        _recalcular_estado_empresa(db, empresa)
 
     db.commit()
     db.refresh(documento)
@@ -1017,12 +1130,9 @@ def reemplazar_documento_empresa_por_coordinacion(
     )
     if documento is None:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    if datos.mime_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
+    _validar_limite_tamano(contenido)
+    _validar_pdf_real(datos.mime_type, contenido)
 
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == documento.id_empresa).first()
     UPLOAD_DOCUMENTOS_DIR.mkdir(parents=True, exist_ok=True)

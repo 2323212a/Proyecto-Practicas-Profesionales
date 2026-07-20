@@ -19,6 +19,7 @@ export interface DocumentacionEmpresaRepository {
     idDocumentoEmpresa: number,
     datos: RevisarDocumentoEmpresaInput,
   ): Promise<DocumentoEmpresa>;
+  deshacerRevision(idDocumentoEmpresa: number): Promise<DocumentoEmpresa>;
   editarDocumento(
     idDocumentoEmpresa: number,
     datos: EditarDocumentoEmpresaInput,

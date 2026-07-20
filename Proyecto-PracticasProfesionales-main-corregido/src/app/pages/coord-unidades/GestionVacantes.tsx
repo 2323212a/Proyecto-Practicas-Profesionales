@@ -17,6 +17,7 @@ import { useNavigate } from "react-router";
 import { gestionVacantesRevisionUseCase } from "../../dependencies";
 import type { VacanteRevision } from "../../../domain/coord-unidades/VacanteRevision";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
+import { ContextHelp } from "../../../shared/components/ContextHelp";
 
 import type { StatCard } from "../../../shared/types/ui";
 const estadoColor: Record<string, string> = {
@@ -120,7 +121,13 @@ export function GestionVacantes() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Revision de Vacantes</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Revision de Vacantes</h1>
+          <ContextHelp
+            title="Ayuda"
+            message="Una vacante pasa a PrePadron cuando la revision es favorable. Se publica para alumnos al quedar Activa y cumplir empresa activa, convenio vigente y cupo disponible."
+          />
+        </div>
         <p className="text-gray-500 text-sm mt-1">
           Revisa vacantes pendientes y envialas a pre-padron. La liberacion final se realiza en Padron Empresarial.
         </p>

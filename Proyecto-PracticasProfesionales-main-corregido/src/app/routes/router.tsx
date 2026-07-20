@@ -53,6 +53,7 @@ import { AdminRolesPermisos } from "../pages/admin/AdminRolesPermisos";
 import { AdminCatalogos } from "../pages/admin/AdminCatalogos";
 import { AdminReportes } from "../pages/admin/AdminReportes";
 import { AdminConfiguracion } from "../pages/admin/AdminConfiguracion";
+import { AdminColaCorreos } from "../pages/admin/AdminColaCorreos";
 
 // Asesor
 import { AsesorDashboard } from "../pages/asesor/AsesorDashboard";
@@ -204,6 +205,7 @@ export const router = createBrowserRouter([
         { path: "catalogos", element: <AdminCatalogos /> },
         { path: "reportes", element: <AdminReportes /> },
         { path: "configuracion", element: <AdminConfiguracion /> },
+        { path: "cola-correos", element: <AdminColaCorreos /> },
       ],
     },
   ],

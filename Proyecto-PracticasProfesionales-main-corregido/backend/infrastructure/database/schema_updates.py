@@ -11,6 +11,22 @@ from sqlalchemy.engine import Connection, Engine
 ColumnUpdate = tuple[str, str, str]
 
 
+def _table_exists(connection: Connection, table_name: str) -> bool:
+    return bool(
+        connection.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = :table_name
+                """
+            ),
+            {"table_name": table_name},
+        ).scalar()
+    )
+
+
 def _column_exists(connection: Connection, table_name: str, column_name: str) -> bool:
     return bool(
         connection.execute(
@@ -31,6 +47,8 @@ def _column_exists(connection: Connection, table_name: str, column_name: str) ->
 def _apply_missing_columns(connection: Connection, updates: Iterable[ColumnUpdate]) -> set[tuple[str, str]]:
     added: set[tuple[str, str]] = set()
     for table_name, column_name, ddl in updates:
+        if not _table_exists(connection, table_name):
+            continue
         if _column_exists(connection, table_name, column_name):
             continue
         connection.execute(text(ddl))
@@ -234,6 +252,11 @@ def ensure_runtime_schema(engine: Engine) -> None:
             "convenio",
             "renovacion_solicitada",
             "ALTER TABLE convenio ADD COLUMN renovacion_solicitada TINYINT(1) NOT NULL DEFAULT 0",
+        ),
+        (
+            "cola_correos",
+            "contenido_html",
+            "ALTER TABLE cola_correos ADD COLUMN contenido_html TEXT NULL",
         ),
     ]
 

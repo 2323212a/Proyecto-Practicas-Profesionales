@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bell, Check, CheckCircle, Clock, Eye, Info, MessageSquare, X, XCircle } from "lucide-react";
 import { gestionNotificacionesUseCase } from "../dependencies";
 import type { Notificacion } from "../../domain/notificaciones/Notificacion";
+import { ContextHelp } from "../../shared/components/ContextHelp";
 
 type Filtro = "todas" | "no_leidas";
 
@@ -12,6 +13,7 @@ type UsuarioSesion = {
 type Props = {
   titulo?: string;
   subtitulo?: string;
+  ayudaContextual?: string;
 };
 
 function obtenerIdUsuario() {
@@ -50,7 +52,11 @@ function tipoVisual(notificacion: Notificacion) {
   return { icon: Info, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" };
 }
 
-export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo = "Avisos y actividades recientes del sistema." }: Props) {
+export function NotificacionesUsuarioView({
+  titulo = "Notificaciones",
+  subtitulo = "Avisos y actividades recientes del sistema.",
+  ayudaContextual,
+}: Props) {
   const [notificaciones, setNotificaciones] = useState<Notificacion[]>([]);
   const [seleccionada, setSeleccionada] = useState<Notificacion | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("todas");
@@ -118,7 +124,10 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#0d2b5e]">{titulo}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#0d2b5e]">{titulo}</h1>
+            {ayudaContextual && <ContextHelp title="Ayuda" message={ayudaContextual} />}
+          </div>
           <p className="text-gray-500 text-sm mt-1">{subtitulo}</p>
         </div>
 

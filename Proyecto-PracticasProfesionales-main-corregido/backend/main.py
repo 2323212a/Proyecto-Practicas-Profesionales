@@ -1,6 +1,7 @@
 # ruff: noqa: F401
 from pathlib import Path
 import os
+import asyncio
 
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -85,6 +86,20 @@ from infrastructure.persistence.models.vacante import VacanteModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
 from infrastructure.persistence.models.tipo_practica import TipoPracticaModel
 
+EMAIL_FEATURE_ENABLED = os.getenv("EMAIL_FEATURE_ENABLED", "1") == "1"
+EMAIL_QUEUE_WORKER_ENABLED = os.getenv("EMAIL_QUEUE_WORKER_ENABLED", "1") == "1"
+
+if EMAIL_FEATURE_ENABLED:
+    from infrastructure.persistence.models.cola_correos import ColaCorreosModel
+    from interfaces.api.routes.cola_correos import router as cola_correos_router
+else:
+    cola_correos_router = None
+
+if EMAIL_FEATURE_ENABLED and EMAIL_QUEUE_WORKER_ENABLED:
+    from app.services.cola_correos_service import worker_cola_correos
+else:
+    worker_cola_correos = None
+
 Base.metadata.create_all(bind=engine)
 ensure_runtime_schema(engine)
 
@@ -92,6 +107,7 @@ app = FastAPI(
     title="Sistema Integral de Prácticas Profesionales",
     version="1.0.0"
 )
+app.state.email_queue_task = None
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
@@ -133,6 +149,8 @@ app.include_router(unidad_router)
 app.include_router(importacion_router)
 app.include_router(admin_estadisticas_router)
 app.include_router(admin_reportes_router)
+if cola_correos_router is not None:
+    app.include_router(cola_correos_router)
 app.include_router(asesor_router)
 app.include_router(configuracion_sistema_router)
 app.include_router(empresas_router)
@@ -156,6 +174,24 @@ app.include_router(notificaciones_router)
 app.include_router(observaciones_router)
 app.include_router(bitacora_auditoria_router)
 app.include_router(direccion_router)
+
+
+@app.on_event("startup")
+async def startup_email_queue_worker() -> None:
+    if worker_cola_correos is not None and app.state.email_queue_task is None:
+        app.state.email_queue_task = asyncio.create_task(worker_cola_correos())
+
+
+@app.on_event("shutdown")
+async def shutdown_email_queue_worker() -> None:
+    tarea = app.state.email_queue_task
+    if tarea is not None:
+        tarea.cancel()
+        try:
+            await tarea
+        except asyncio.CancelledError:
+            pass
+        app.state.email_queue_task = None
 
 @app.get("/")
 def root():

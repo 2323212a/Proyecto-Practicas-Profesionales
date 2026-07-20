@@ -11,6 +11,7 @@ import {
 import { gestionEmpresasRevisionUseCase, gestionVacantesRevisionUseCase } from "../../dependencies";
 import type { EmpresaRevision } from "../../../domain/coord-unidades/EmpresaRevision";
 import type { VacanteRevision } from "../../../domain/coord-unidades/VacanteRevision";
+import { ContextHelp } from "../../../shared/components/ContextHelp";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 type EmpresaPadron = EmpresaRevision & {
@@ -175,7 +176,13 @@ export function PadronEmpresarial() {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#0d2b5e]">Padron Empresarial</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#0d2b5e]">Padron Empresarial</h1>
+            <ContextHelp
+              title="Ayuda"
+              message="El pre-padron agrupa vacantes revisadas. Al liberar padron, las vacantes pasan a publicadas para alumnos siempre que cumplan las reglas de visibilidad."
+            />
+          </div>
           <p className="text-gray-500 text-sm mt-1">
             Control de empresas visibles para alumnos dentro del catalogo de unidades receptoras.
           </p>
