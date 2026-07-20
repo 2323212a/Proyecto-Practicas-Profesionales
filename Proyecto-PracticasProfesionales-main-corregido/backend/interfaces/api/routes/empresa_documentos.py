@@ -19,6 +19,7 @@ from app.services.convenio_empresa_service import activar_convenio_actual, obten
 from app.services.empresa_reglas_service import obtener_convenio_vigente_actual, obtener_vinculacion_aprobada_actual
 from app.services.notificacion_service import crear_notificacion, notificar_roles
 from app.services.upload_security import (
+    nombre_descarga_seguro,
     normalizar_nombre_archivo,
     resolver_archivo_en_uploads,
     validar_documento_usuario,
@@ -105,20 +106,62 @@ def _slug_carpeta(valor: str | None, fallback: str) -> str:
     return texto or fallback
 
 
-def _convocatoria_carpeta_empresa(db: Session, id_empresa: int) -> str:
+def _convocatoria_empresa_documentos(db: Session, id_empresa: int) -> ConvocatoriaModel | None:
     participacion = (
         db.query(ParticipacionEmpresaConvocatoriaModel)
         .join(ConvocatoriaModel, ConvocatoriaModel.id_convocatoria == ParticipacionEmpresaConvocatoriaModel.id_convocatoria)
-        .filter(ParticipacionEmpresaConvocatoriaModel.id_empresa == id_empresa)
+        .filter(
+            ParticipacionEmpresaConvocatoriaModel.id_empresa == id_empresa,
+            ParticipacionEmpresaConvocatoriaModel.estado.in_(["Aceptada", "Pendiente"]),
+        )
         .order_by(
             ConvocatoriaModel.fecha_inicio_general.desc().nullslast(),
             ParticipacionEmpresaConvocatoriaModel.fecha_solicitud.desc(),
         )
         .first()
     )
-    if participacion is None:
+    if participacion is not None:
+        return participacion.convocatoria
+
+    hoy = date.today()
+    convocatoria = (
+        db.query(ConvocatoriaModel)
+        .filter(
+            ConvocatoriaModel.estado == "Activa",
+            ConvocatoriaModel.fecha_inicio_empresas <= hoy,
+            ConvocatoriaModel.fecha_cierre_empresas >= hoy,
+        )
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc().nullslast())
+        .first()
+    )
+    if convocatoria is not None:
+        return convocatoria
+
+    return (
+        db.query(ConvocatoriaModel)
+        .filter(ConvocatoriaModel.estado == "Activa")
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc().nullslast())
+        .first()
+    )
+
+
+def _convocatoria_carpeta_empresa(db: Session, id_empresa: int) -> str:
+    convocatoria = _convocatoria_empresa_documentos(db, id_empresa)
+    if convocatoria is None:
         return "sin_convocatoria"
-    return f"convocatoria_{participacion.id_convocatoria}"
+
+    anio_base = (
+        convocatoria.fecha_inicio_general
+        or convocatoria.fecha_inicio_empresas
+        or convocatoria.fecha_cierre_general
+        or date.today()
+    )
+    convocatoria_slug = _slug_carpeta(
+        convocatoria.nombre,
+        f"convocatoria_{convocatoria.id_convocatoria}",
+    )
+    periodo_slug = _slug_carpeta(convocatoria.tipo_periodo, "periodo")
+    return f"{convocatoria_slug}_{periodo_slug}_{anio_base.year}"
 
 
 def _carpeta_documento_empresa(db: Session, empresa: EmpresaModel, tipo: TipoDocumentoEmpresaModel) -> Path:
@@ -128,10 +171,11 @@ def _carpeta_documento_empresa(db: Session, empresa: EmpresaModel, tipo: TipoDoc
     )
     return (
         UPLOAD_DOCUMENTOS_DIR
+        / _slug_carpeta(empresa.tipo_tramite, "tramite")
         / empresa_slug
         / _convocatoria_carpeta_empresa(db, empresa.id_empresa)
-        / "documentacion"
         / _slug_carpeta(tipo.etapa, "documentacion")
+        / _slug_carpeta(tipo.nombre, f"tipo_{tipo.id_tipo_documento_empresa}")
     )
 
 
@@ -271,7 +315,11 @@ def _asegurar_permiso_formato_empresa(usuario: UsuarioModel, formato: FormatoEmp
 def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None):
     ruta = resolver_archivo_en_uploads(ruta_archivo, UPLOADS_DIR)
     media_type = mimetypes.guess_type(nombre_archivo or ruta.name)[0] or "application/octet-stream"
-    return FileResponse(ruta, media_type=media_type, filename=nombre_archivo or ruta.name)
+    return FileResponse(
+        ruta,
+        media_type=media_type,
+        filename=nombre_descarga_seguro(nombre_archivo, ruta.name),
+    )
 
 
 def _puede_eliminar_requisito(db: Session, id_tipo_documento_empresa: int) -> bool:

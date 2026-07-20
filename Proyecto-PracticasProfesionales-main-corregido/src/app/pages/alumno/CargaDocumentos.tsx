@@ -4,6 +4,7 @@ import { AlertCircle, CalendarDays, CheckCircle, Clock, Download, Eye, FileText,
 import { gestionDocumentosAlumnoUseCase } from "../../dependencies";
 import type { ConvocatoriaDisponibleAlumno, DocumentacionAlumnoResponse, DocumentoFlujoAlumno } from "../../../domain/alumno/DocumentoAlumno";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
+import { abrirVistaPreviaArchivo } from "../../../shared/utils/filePreview";
 
 const estadoConfig = (doc: DocumentoFlujoAlumno) => {
   if (doc.estado === "Aprobado") return { label: "Aprobado", color: "bg-green-100 text-green-700", icon: CheckCircle };
@@ -112,8 +113,7 @@ export function CargaDocumentos() {
     if (!doc.url_archivo) return;
     try {
       const blob = await gestionDocumentosAlumnoUseCase.descargarArchivo(doc.id_documento);
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
+      abrirVistaPreviaArchivo(blob, doc.nombre_archivo);
     } catch (err) {
       console.error(err);
       setError(getApiErrorMessage(err, "No se pudo abrir el PDF."));

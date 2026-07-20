@@ -24,6 +24,7 @@ import type {
   RequisitoEmpresa,
 } from "../../../domain/empresa/DocumentacionEmpresa";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
+import { abrirVistaPreviaArchivo } from "../../../shared/utils/filePreview";
 
 import type { StatCard } from "../../../shared/types/ui";
 type ConfiguracionRequisitoForm = {
@@ -402,26 +403,22 @@ export function ExpedienteEmpresa() {
     }
   }
 
-  async function abrirFormato(idFormatoEmpresa: number) {
+  async function abrirFormato(idFormatoEmpresa: number, nombreArchivo?: string | null) {
     try {
       setError("");
       const blob = await gestionDocumentacionEmpresaUseCase.descargarFormato(idFormatoEmpresa);
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      abrirVistaPreviaArchivo(blob, nombreArchivo ?? "formato_empresa.pdf");
     } catch (err: unknown) {
       console.error(err);
       setError(getApiErrorMessage(err, "No se pudo descargar el formato."));
     }
   }
 
-  async function abrirDocumento(idDocumentoEmpresa: number) {
+  async function abrirDocumento(idDocumentoEmpresa: number, nombreArchivo?: string | null) {
     try {
       setError("");
       const blob = await gestionDocumentacionEmpresaUseCase.descargarDocumento(idDocumentoEmpresa);
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      abrirVistaPreviaArchivo(blob, nombreArchivo ?? "documento_empresa.pdf");
     } catch (err: unknown) {
       console.error(err);
       setError(getApiErrorMessage(err, "No se pudo abrir el documento."));
@@ -542,7 +539,7 @@ export function ExpedienteEmpresa() {
                   <div className="flex flex-wrap gap-2 mt-3">
                     {requisito.formato && (
                       <button
-                        onClick={() => abrirFormato(requisito.formato!.id_formato_empresa)}
+                        onClick={() => abrirFormato(requisito.formato!.id_formato_empresa, requisito.formato!.nombre_archivo)}
                         className="border border-blue-200 bg-white text-[#1565c0] rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1"
                       >
                         <Download className="w-3 h-3" />
@@ -637,7 +634,7 @@ export function ExpedienteEmpresa() {
 
             {modo === "revision" && (
               <button
-                onClick={() => documento && abrirDocumento(documento.id_documento_empresa)}
+                onClick={() => documento && abrirDocumento(documento.id_documento_empresa, documento.nombre_archivo)}
                 disabled={!documento}
                 className="border border-blue-200 text-[#1565c0] rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
               >
@@ -648,7 +645,7 @@ export function ExpedienteEmpresa() {
 
             {requisito.formato && (
               <button
-                onClick={() => abrirFormato(requisito.formato!.id_formato_empresa)}
+                onClick={() => abrirFormato(requisito.formato!.id_formato_empresa, requisito.formato!.nombre_archivo)}
                 className="border border-blue-200 text-[#1565c0] rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1"
               >
                 <Download className="w-3 h-3" />
@@ -1013,7 +1010,7 @@ export function ExpedienteEmpresa() {
                     <div className="flex flex-wrap gap-2">
                       {configurando.formato && (
                         <button
-                          onClick={() => abrirFormato(configurando.formato!.id_formato_empresa)}
+                          onClick={() => abrirFormato(configurando.formato!.id_formato_empresa, configurando.formato!.nombre_archivo)}
                           className="border border-blue-200 text-[#1565c0] rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2"
                         >
                           <Download className="w-4 h-4" />

@@ -7,6 +7,7 @@ from fastapi import HTTPException
 MAX_DOCUMENTO_MB = 2
 MAX_FORMATO_INSTITUCIONAL_MB = 2
 MAX_ARCHIVO_ABSOLUTO_MB = 2
+MAX_NOMBRE_ARCHIVO = 120
 BYTES_POR_MB = 1024 * 1024
 
 EXTENSIONES_BLOQUEADAS = {
@@ -80,7 +81,23 @@ def normalizar_nombre_archivo(filename: str | None, default: str) -> str:
     normalizado = re.sub(r"[^A-Za-z0-9._-]", "_", name).strip("._")
     if not normalizado:
         raise HTTPException(status_code=400, detail=MENSAJE_NOMBRE)
-    return normalizado
+    return _recortar_nombre_archivo(normalizado)
+
+
+def nombre_descarga_seguro(filename: str | None, default: str = "documento.pdf") -> str:
+    return normalizar_nombre_archivo(filename or default, default)
+
+
+def _recortar_nombre_archivo(nombre: str) -> str:
+    if len(nombre) <= MAX_NOMBRE_ARCHIVO:
+        return nombre
+
+    extension = Path(nombre).suffix
+    base = Path(nombre).stem
+    limite_base = MAX_NOMBRE_ARCHIVO - len(extension)
+    if limite_base < 12:
+        return nombre[:MAX_NOMBRE_ARCHIVO]
+    return f"{base[:limite_base]}{extension}"
 
 
 def validar_documento_usuario(contenido: bytes, filename: str | None, content_type: str | None) -> None:

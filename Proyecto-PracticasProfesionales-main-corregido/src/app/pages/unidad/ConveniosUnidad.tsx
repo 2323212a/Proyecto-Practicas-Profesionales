@@ -13,6 +13,7 @@ import {
 import { gestionDocumentacionEmpresaUseCase } from "../../dependencies";
 import type { DocumentacionEmpresaResponse, RequisitoEmpresa } from "../../../domain/empresa/DocumentacionEmpresa";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
+import { abrirVistaPreviaArchivo } from "../../../shared/utils/filePreview";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 type UsuarioSesion = {
@@ -133,13 +134,11 @@ export function ConveniosUnidad() {
     }
   }
 
-  async function abrirFormato(idFormatoEmpresa: number) {
+  async function abrirFormato(idFormatoEmpresa: number, nombreArchivo?: string | null) {
     try {
       setError("");
       const blob = await gestionDocumentacionEmpresaUseCase.descargarFormato(idFormatoEmpresa);
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      abrirVistaPreviaArchivo(blob, nombreArchivo ?? "formato_empresa.pdf");
     } catch (err) {
       console.error(err);
       setError(getApiErrorMessage(err, "No se pudo descargar el formato."));
@@ -205,7 +204,7 @@ export function ConveniosUnidad() {
           <div className="flex flex-wrap gap-2 xl:flex-col xl:w-48">
             {requisito.formato ? (
               <button
-                onClick={() => abrirFormato(requisito.formato!.id_formato_empresa)}
+                onClick={() => abrirFormato(requisito.formato!.id_formato_empresa, requisito.formato!.nombre_archivo)}
                 disabled={bloqueado}
                 className="flex items-center justify-center gap-2 px-4 py-2 border border-blue-200 text-[#1565c0] rounded-lg text-xs font-semibold hover:bg-blue-50 disabled:opacity-50"
               >

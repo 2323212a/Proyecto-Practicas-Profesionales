@@ -22,7 +22,12 @@ from app.services.documentacion_flujo_service import (
 )
 from app.services.documentacion_generada_service import generar_documento_oficial, precalentar_documentos_oficiales
 from app.services.convocatoria_rules_service import validar_etapa_actual
-from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_documento_usuario
+from app.services.upload_security import (
+    nombre_descarga_seguro,
+    normalizar_nombre_archivo,
+    resolver_archivo_en_uploads,
+    validar_documento_usuario,
+)
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
@@ -428,4 +433,8 @@ def descargar_archivo_documentacion_actual(
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     ruta = resolver_archivo_en_uploads(documento.ruta_archivo, UPLOADS_DIR)
     media_type = mimetypes.guess_type(documento.nombre_archivo or ruta.name)[0] or "application/octet-stream"
-    return FileResponse(ruta, media_type=media_type, filename=documento.nombre_archivo)
+    return FileResponse(
+        ruta,
+        media_type=media_type,
+        filename=nombre_descarga_seguro(documento.nombre_archivo, ruta.name),
+    )
