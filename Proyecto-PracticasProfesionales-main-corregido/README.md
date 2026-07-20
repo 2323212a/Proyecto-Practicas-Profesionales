@@ -61,13 +61,7 @@ No subas `.env` al repositorio.
 
 ## Base de datos
 
-El proyecto no ejecuta `create_all`, `ensure_runtime_schema` ni seeds automáticos. Primero carga el esquema limpio:
-
-```bash
-mysql -u TU_USUARIO -p < docs/database/schema_db_limpia.sql
-```
-
-El archivo `schema_db_limpia.sql` contiene solo estructura; no contiene datos de prueba ni usuarios.
+El proyecto no ejecuta `create_all`, `ensure_runtime_schema` ni seeds automáticos. Primero carga la DB limpia oficial en MySQL y configura la conexión en `.env`.
 
 ## Ejecutar backend
 
@@ -113,9 +107,8 @@ npm run typecheck
 
 ## Estructura de documentación
 
-- `docs/database/schema_db_limpia.sql`: esquema limpio sin seed.
+- `docs/ESTRUCTURA_PROYECTO.md`: estructura general del proyecto.
 - `docs/backend/ARQUITECTURA_BACKEND.md`: arquitectura del backend.
-- `docs/PENDIENTES_TECNICOS.md`: pendientes reales conocidos.
 
 ## Archivos generados
 
