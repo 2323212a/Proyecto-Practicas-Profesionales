@@ -74,6 +74,17 @@ def _estado_seleccion_api(seleccion: SeleccionEmpresaModel) -> str:
     return "Pendiente"
 
 
+def _mensaje_etapa_seleccion_no_disponible(convocatoria: ConvocatoriaModel | None, detalle: str | None = None) -> str:
+    if convocatoria is None:
+        return "La seleccion de vacantes aun no esta habilitada."
+    hoy = date.today()
+    if convocatoria.fecha_inicio_seleccion and hoy < convocatoria.fecha_inicio_seleccion:
+        return "La seleccion de vacantes aun no esta habilitada."
+    if convocatoria.fecha_cierre_seleccion and hoy > convocatoria.fecha_cierre_seleccion:
+        return "El periodo de seleccion de vacantes ha finalizado."
+    return detalle or "La seleccion de vacantes aun no esta habilitada."
+
+
 def _expediente_aprobado(db: Session, alumno: AlumnoModel, id_convocatoria: int | None) -> bool:
     query = db.query(ExpedienteModel).filter(
         ExpedienteModel.id_alumno == alumno.id_alumno,
@@ -233,7 +244,7 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
             validar_etapa_actual(convocatoria, "seleccion")
             ventana_seleccion_abierta = True
         except HTTPException as exc:
-            motivo_calendario = str(exc.detail)
+            motivo_calendario = _mensaje_etapa_seleccion_no_disponible(convocatoria, str(exc.detail))
     puede_seleccionar = bool(expediente_aprobado and elegibilidad["elegible"] and asignacion is None and ventana_seleccion_abierta)
     motivo_bloqueo = None
     if asignacion is not None:
@@ -355,7 +366,13 @@ def guardar_preferencias_alumno(
     convocatoria = expediente_actual.convocatoria if expediente_actual else None
     if convocatoria is None:
         raise HTTPException(status_code=400, detail="El expediente documental debe estar aprobado antes de guardar preferencias")
-    validar_etapa_actual(convocatoria, "seleccion")
+    try:
+        validar_etapa_actual(convocatoria, "seleccion")
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=_mensaje_etapa_seleccion_no_disponible(convocatoria, str(exc.detail)),
+        ) from exc
 
     elegibilidad = _validar_elegibilidad_practica(alumno)
     if not elegibilidad["elegible"]:

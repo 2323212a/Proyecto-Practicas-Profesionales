@@ -1,18 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
-  BarChart3,
   BriefcaseBusiness,
   Building2,
   CalendarDays,
-  Clock,
-  Database,
-  Download,
-  FileText,
+  Filter,
+  FilterX,
   GraduationCap,
-  History,
+  RefreshCw,
   Search,
-  Shield,
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -20,12 +17,10 @@ import type {
   AdminReporteTablaFila,
   AdminReportesFiltros,
   AdminReportesResponse,
-  ReporteAdminItem,
 } from "../../../domain/admin/AdminReportes";
 import { obtenerCarreras, obtenerTiposPractica } from "../../../infrastructure/catalogos/catalogosApi";
 import { obtenerRoles } from "../../../infrastructure/roles/rolesApi";
-import { descargarReporteAdminPdf, obtenerReportesAdmin } from "../../../infrastructure/admin/adminReportesApi";
-import type { ColoredStatCard } from "../../../shared/types/ui";
+import { obtenerReportesAdmin } from "../../../infrastructure/admin/adminReportesApi";
 
 type RolOpcion = {
   id_rol?: number;
@@ -58,20 +53,6 @@ const filtrosIniciales: Required<AdminReportesFiltros> = {
   tipo_tramite: "todos",
   tipo_periodo: "todos",
   estado_convocatoria: "todos",
-};
-
-const iconos: Record<string, LucideIcon> = {
-  usuarios: Users,
-  roles: Shield,
-  alumnos: GraduationCap,
-  empresas: Building2,
-  convocatorias: CalendarDays,
-  carreras: Database,
-  tipos_practica: BriefcaseBusiness,
-  horas: Clock,
-  documentos: FileText,
-  incidencias: AlertTriangle,
-  liberaciones: History,
 };
 
 function formatoFecha(fecha: string | null) {
@@ -116,20 +97,94 @@ function logErrorReportes(endpoint: string, err: unknown) {
   });
 }
 
-function ReporteCard({ reporte }: { reporte: ReporteAdminItem }) {
-  const Icon = iconos[reporte.clave] ?? BarChart3;
+function totalDistribucion(items: { total: number }[] = []) {
+  return items.reduce((total, item) => total + Number(item.total ?? 0), 0);
+}
+
+function DistribucionCompacta({ items }: { items: { nombre: string; total: number }[] }) {
+  const maximo = Math.max(...items.map((item) => item.total), 1);
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-      <Icon className="w-8 h-8 text-[#1565c0] mb-4" />
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-bold text-[#0d2b5e]">{reporte.titulo}</h3>
-          <p className="text-sm text-gray-500 mt-2">{reporte.descripcion}</p>
+    <div className="space-y-3">
+      {items.length === 0 && <div className="text-sm text-gray-400">Sin datos disponibles.</div>}
+      {items.slice(0, 5).map((item) => (
+        <div key={item.nombre} className="space-y-1">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="truncate text-gray-600">{item.nombre}</span>
+            <span className="font-bold text-[#0d2b5e]">{item.total}</span>
+          </div>
+          <div className="h-2 rounded-full bg-gray-100">
+            <div
+              className="h-2 rounded-full bg-[#0d2b5e]"
+              style={{ width: `${Math.max(8, (item.total / maximo) * 100)}%` }}
+            />
+          </div>
         </div>
-        <span className="bg-blue-50 text-[#1565c0] rounded-full px-3 py-1 text-sm font-bold">
-          {reporte.total}
-        </span>
+      ))}
+    </div>
+  );
+}
+
+function ListaDestacada({
+  filas,
+  tituloCampo,
+  subtituloCampos,
+  badgeCampo,
+}: {
+  filas: AdminReporteTablaFila[];
+  tituloCampo: string;
+  subtituloCampos: string[];
+  badgeCampo?: string;
+}) {
+  return (
+    <div className="space-y-3">
+      {filas.length === 0 && <div className="text-sm text-gray-400">Sin registros para mostrar.</div>}
+      {filas.slice(0, 5).map((fila, index) => (
+        <div key={`${tituloCampo}-${index}`} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-[#0d2b5e]">{valorCelda(fila[tituloCampo])}</div>
+              <div className="mt-0.5 truncate text-xs text-gray-500">
+                {subtituloCampos.map((campo) => valorCelda(fila[campo])).filter((valor) => valor !== "Sin dato").join(" Â· ") || "Sin detalle"}
+              </div>
+            </div>
+            {badgeCampo && (
+              <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 ring-1 ring-gray-200">
+                {valorCelda(fila[badgeCampo])}
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InsightCard({
+  titulo,
+  valor,
+  descripcion,
+  icono: Icon,
+  children,
+}: {
+  titulo: string;
+  valor: number | string;
+  descripcion: string;
+  icono: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold text-gray-500">{titulo}</div>
+          <div className="mt-1 text-3xl font-bold text-[#0d2b5e]">{valor}</div>
+          <div className="mt-1 text-xs text-gray-500">{descripcion}</div>
+        </div>
+        <div className="rounded-xl bg-blue-50 p-2 text-[#0d2b5e]">
+          <Icon className="h-5 w-5" />
+        </div>
       </div>
+      {children}
     </div>
   );
 }
@@ -183,6 +238,8 @@ export function AdminReportes() {
   const [tiposPractica, setTiposPractica] = useState<TipoPracticaOpcion[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [tab, setTab] = useState<"resumen" | "distribuciones" | "tablas" | "actividad">("resumen");
 
   const cargar = useCallback(async (filtrosAplicados: AdminReportesFiltros = filtros) => {
     try {
@@ -198,20 +255,6 @@ export function AdminReportes() {
     }
   }, [filtros]);
 
-  async function exportarPdf() {
-    if (error || !datos) {
-      setError("No se puede exportar porque el reporte no se cargo correctamente.");
-      return;
-    }
-
-    try {
-      await descargarReporteAdminPdf(filtros);
-    } catch (err) {
-      logErrorReportes("GET /admin/reportes/exportar", err);
-      setError("No se pudo generar el PDF del reporte.");
-    }
-  }
-
   useEffect(() => {
     void cargar(filtrosIniciales);
     Promise.all([obtenerRoles(), obtenerCarreras(), obtenerTiposPractica()])
@@ -225,20 +268,9 @@ export function AdminReportes() {
       });
   }, [cargar]);
 
-  const tarjetas = useMemo<ColoredStatCard[]>(() => {
-    const resumen = datos?.resumen ?? {};
-    return [
-      ["Usuarios", resumen.usuarios ?? 0, Users, "bg-blue-600"],
-      ["Alumnos elegibles", resumen.alumnos_elegibles ?? 0, GraduationCap, "bg-green-600"],
-      ["Empresas", resumen.empresas ?? 0, Building2, "bg-cyan-700"],
-      ["Solicitudes pendientes", resumen.solicitudes_pendientes ?? 0, AlertTriangle, "bg-orange-500"],
-      ["Convocatorias", resumen.convocatorias ?? 0, CalendarDays, "bg-indigo-600"],
-      ["Tipos de practica", resumen.tipos_practica ?? 0, BriefcaseBusiness, "bg-slate-700"],
-      ["Documentos pendientes", resumen.documentos_pendientes ?? 0, FileText, "bg-amber-600"],
-      ["Incidencias abiertas", resumen.incidencias_abiertas ?? 0, History, "bg-red-500"],
-    ];
-  }, [datos?.resumen]);
-
+  const empresasAceptadas = (datos?.tablas?.empresas_aceptadas ?? []) as AdminReporteTablaFila[];
+  const vacantesPublicadas = (datos?.tablas?.vacantes_publicadas ?? []) as AdminReporteTablaFila[];
+  const distribuciones = datos?.distribuciones ?? {};
   const filtrosActivos = Object.entries(filtros).filter(([clave, valor]) => {
     if (clave === "busqueda" || clave === "grupo") return valor.trim() !== "";
     return valor !== "todos";
@@ -263,14 +295,16 @@ export function AdminReportes() {
           </p>
         </div>
 
-        <button
-          onClick={exportarPdf}
-          disabled={Boolean(error) || !datos}
-          className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 w-fit disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Download className="w-4 h-4" />
-          Exportar PDF
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => cargar()}
+            disabled={cargando}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
@@ -279,12 +313,30 @@ export function AdminReportes() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-bold text-[#0d2b5e]">Filtros del reporte</h2>
-            <p className="text-sm text-gray-500">Los filtros se aplican al consultar y al exportar.</p>
+            <p className="text-sm text-gray-500">{filtrosActivos.length === 0 ? "Sin filtros aplicados." : `${filtrosActivos.length} filtros activos.`}</p>
           </div>
-          <div className="text-xs text-gray-500">{filtrosActivos.length} filtros activos</div>
+          <button
+            onClick={() => setMostrarFiltros((actual) => !actual)}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700"
+          >
+            <Filter className="h-4 w-4" />
+            {mostrarFiltros ? "Ocultar filtros" : "Mostrar filtros"}
+          </button>
         </div>
 
-        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="flex flex-wrap gap-2">
+          {filtrosActivos.length === 0 ? (
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-500">Sin filtros aplicados</span>
+          ) : (
+            filtrosActivos.map(([clave, valor]) => (
+              <span key={clave} className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-[#0d2b5e]">
+                {etiquetaClave(clave)}: {valor}
+              </span>
+            ))
+          )}
+        </div>
+
+        {mostrarFiltros && <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
           <label className="text-sm text-gray-600">
             Periodo de actividad
             <select value={filtros.periodo} onChange={(e) => actualizarFiltro("periodo", e.target.value)} className="mt-1 w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm">
@@ -422,27 +474,66 @@ export function AdminReportes() {
               <option value="Finalizada">Finalizada</option>
             </select>
           </label>
-        </div>
+        </div>}
 
-        <div className="flex flex-wrap gap-3">
+        {mostrarFiltros && <div className="flex flex-wrap gap-3">
           <button onClick={() => cargar()} className="bg-[#0d2b5e] text-white rounded-xl px-4 py-2 text-sm font-semibold">
             Generar reporte
           </button>
-          <button onClick={limpiarFiltros} className="bg-white border border-gray-200 text-gray-700 rounded-xl px-4 py-2 text-sm font-semibold">
+          <button onClick={limpiarFiltros} className="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-700 rounded-xl px-4 py-2 text-sm font-semibold">
+            <FilterX className="h-4 w-4" />
             Limpiar filtros
           </button>
-        </div>
+        </div>}
       </div>
 
       {!error && datos && (
-        <div className="grid md:grid-cols-4 gap-4">
-          {tarjetas.map(([titulo, valor, Icon, color]) => (
-            <div key={titulo} className={`${color} rounded-2xl p-5 text-white`}>
-              <Icon className="w-7 h-7 mb-3 opacity-80" />
-              <div className="text-2xl font-bold">{valor}</div>
-              <div className="text-white/80 text-sm">{titulo}</div>
-            </div>
-          ))}
+        <div className="grid gap-4 xl:grid-cols-4">
+          <InsightCard
+            titulo="Usuarios"
+            valor={datos.resumen.usuarios ?? 0}
+            descripcion={`${datos.resumen.usuarios_activos ?? 0} activos · ${datos.resumen.usuarios_inactivos ?? 0} inactivos`}
+            icono={Users}
+          >
+            <DistribucionCompacta items={distribuciones.usuarios_por_rol ?? []} />
+          </InsightCard>
+
+          <InsightCard
+            titulo="Alumnos"
+            valor={datos.resumen.alumnos ?? 0}
+            descripcion={`${datos.resumen.alumnos_elegibles ?? 0} elegibles · ${datos.resumen.alumnos_no_elegibles ?? 0} no elegibles`}
+            icono={GraduationCap}
+          >
+            <DistribucionCompacta items={distribuciones.alumnos_por_carrera ?? []} />
+          </InsightCard>
+
+          <InsightCard
+            titulo="Empresas aceptadas"
+            valor={empresasAceptadas.length}
+            descripcion={`${datos.resumen.empresas ?? 0} empresas registradas en total`}
+            icono={Building2}
+          >
+            <ListaDestacada
+              filas={empresasAceptadas}
+              tituloCampo="empresa"
+              subtituloCampos={["giro", "correo"]}
+              badgeCampo="tramite"
+            />
+          </InsightCard>
+
+          <InsightCard
+            titulo="Vacantes publicadas"
+            valor={datos.resumen.vacantes_activas ?? 0}
+            descripcion={`${datos.resumen.vacantes_prepadron ?? 0} en pre-padrón`}
+            icono={BriefcaseBusiness}
+          >
+            <ListaDestacada
+              filas={vacantesPublicadas}
+              tituloCampo="vacante"
+              subtituloCampos={["empresa", "tipo_practica"]}
+              badgeCampo="cupos"
+            />
+          </InsightCard>
         </div>
       )}
 
@@ -473,13 +564,80 @@ export function AdminReportes() {
         </div>
       ) : (
         <>
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-5">
-            {(datos?.reportes ?? []).map((reporte) => (
-              <ReporteCard key={reporte.clave} reporte={reporte} />
+          <div className="flex flex-wrap gap-2 border-b border-gray-200">
+            {[
+              ["resumen", "Resumen"],
+              ["distribuciones", "Distribuciones"],
+              ["tablas", "Tablas"],
+              ["actividad", "Actividad"],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setTab(id as typeof tab)}
+                className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === id ? "border-[#0d2b5e] text-[#0d2b5e]" : "border-transparent text-gray-500"}`}
+              >
+                {label}
+              </button>
             ))}
           </div>
 
-          <div className="grid lg:grid-cols-2 gap-5">
+          {tab === "resumen" && <div className="grid gap-5 lg:grid-cols-2">
+            <InsightCard
+              titulo="Estados de empresa"
+              valor={totalDistribucion(distribuciones.empresas_por_estado ?? [])}
+              descripcion="Distribución de unidades receptoras registradas"
+              icono={Building2}
+            >
+              <DistribucionCompacta items={distribuciones.empresas_por_estado ?? []} />
+            </InsightCard>
+
+            <InsightCard
+              titulo="Tipos de práctica"
+              valor={totalDistribucion(distribuciones.alumnos_por_tipo_practica ?? [])}
+              descripcion="Alumnos asociados por tipo de práctica"
+              icono={BriefcaseBusiness}
+            >
+              <DistribucionCompacta items={distribuciones.alumnos_por_tipo_practica ?? []} />
+            </InsightCard>
+
+            <InsightCard
+              titulo="Convocatorias"
+              valor={datos.resumen.convocatorias ?? 0}
+              descripcion={`${datos.contexto.convocatoria_activa ?? "Sin convocatoria activa"}`}
+              icono={CalendarDays}
+            >
+              <ListaDestacada
+                filas={(datos.tablas?.convocatorias ?? []) as AdminReporteTablaFila[]}
+                tituloCampo="nombre"
+                subtituloCampos={["tipo_periodo", "estado"]}
+                badgeCampo="fecha_inicio"
+              />
+            </InsightCard>
+
+            <InsightCard
+              titulo="Pendientes"
+              valor={(datos.resumen.solicitudes_pendientes ?? 0) + (datos.resumen.documentos_pendientes ?? 0)}
+              descripcion="Solicitudes, documentos e incidencias por atender"
+              icono={AlertTriangle}
+            >
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-gray-50 p-3">
+                  <div className="text-lg font-bold text-[#0d2b5e]">{datos.resumen.solicitudes_pendientes ?? 0}</div>
+                  <div className="text-[11px] text-gray-500">Solicitudes</div>
+                </div>
+                <div className="rounded-xl bg-gray-50 p-3">
+                  <div className="text-lg font-bold text-[#0d2b5e]">{datos.resumen.documentos_pendientes ?? 0}</div>
+                  <div className="text-[11px] text-gray-500">Documentos</div>
+                </div>
+                <div className="rounded-xl bg-gray-50 p-3">
+                  <div className="text-lg font-bold text-[#0d2b5e]">{datos.resumen.incidencias_abiertas ?? 0}</div>
+                  <div className="text-[11px] text-gray-500">Incidencias</div>
+                </div>
+              </div>
+            </InsightCard>
+          </div>}
+
+          {tab === "distribuciones" && <div className="grid lg:grid-cols-2 gap-5">
             {Object.entries(datos?.distribuciones ?? {}).map(([titulo, items]) => (
               <div key={titulo} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
                 <h3 className="font-bold text-[#0d2b5e] mb-4 capitalize">{etiquetaClave(titulo)}</h3>
@@ -494,15 +652,15 @@ export function AdminReportes() {
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
 
-          <div className="grid xl:grid-cols-2 gap-5">
+          {tab === "tablas" && <div className="grid xl:grid-cols-2 gap-5">
             {Object.entries(datos?.tablas ?? {}).map(([titulo, filas]) => (
               <TablaReporte key={titulo} titulo={titulo} filas={filas} />
             ))}
-          </div>
+          </div>}
 
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          {tab === "actividad" && <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
             <h3 className="font-bold text-[#0d2b5e] mb-5">Historial de actividad administrativa</h3>
 
             <div className="overflow-x-auto">
@@ -543,7 +701,7 @@ export function AdminReportes() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
         </>
       )}
     </div>

@@ -85,10 +85,10 @@ export function RegistroEmpresa() {
   const mensajeBloqueo =
     estadoSistema === "Mantenimiento"
       ? "El sistema esta en mantenimiento. Intenta mas tarde."
-      : estadoSistema === "Suspendido"
-        ? "El sistema se encuentra suspendido temporalmente. Contacta a la administracion."
+        : estadoSistema === "Suspendido"
+          ? "El sistema se encuentra suspendido temporalmente. Contacta a la administracion."
         : inscripcionEmpresasEstado === "Cerrada"
-          ? "El registro de nuevas empresas esta cerrado temporalmente. El padron empresarial se encuentra en preparacion."
+          ? "El registro de nuevas empresas esta cerrado por calendario de convocatoria."
           : "";
 
   const set =
@@ -114,7 +114,7 @@ export function RegistroEmpresa() {
     if (registroBloqueado) {
       setError(
         inscripcionEmpresasEstado === "Cerrada" && estadoSistema === "Activo"
-          ? "El registro de nuevas empresas esta cerrado temporalmente."
+          ? "El registro de nuevas empresas esta cerrado por calendario de convocatoria."
           : "El registro de solicitudes esta temporalmente deshabilitado.",
       );
       return;

@@ -1,4 +1,5 @@
 import re
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
@@ -13,6 +14,7 @@ from infrastructure.security.auth_dependencies import (
     requerir_roles,
 )
 from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
+from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
@@ -79,15 +81,21 @@ def validar_registro_publico_habilitado(db: Session):
             status_code=403,
             detail="El registro de solicitudes esta temporalmente deshabilitado.",
         )
-    inscripcion_estado = (
-        configuracion.inscripcion_empresas_estado
-        if configuracion is not None
-        else "Abierta"
+    hoy = date.today()
+    convocatoria_en_registro = (
+        db.query(ConvocatoriaModel)
+        .filter(
+            ConvocatoriaModel.estado == "Activa",
+            ConvocatoriaModel.fecha_inicio_empresas <= hoy,
+            ConvocatoriaModel.fecha_cierre_empresas >= hoy,
+        )
+        .order_by(ConvocatoriaModel.fecha_inicio_empresas.desc(), ConvocatoriaModel.id_convocatoria.desc())
+        .first()
     )
-    if inscripcion_estado == "Cerrada":
+    if convocatoria_en_registro is None:
         raise HTTPException(
             status_code=403,
-            detail="El registro de nuevas empresas esta cerrado temporalmente.",
+            detail="El registro de nuevas empresas esta cerrado por calendario de convocatoria.",
         )
 
 

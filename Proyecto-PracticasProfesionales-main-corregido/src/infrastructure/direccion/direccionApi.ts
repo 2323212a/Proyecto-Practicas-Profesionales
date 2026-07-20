@@ -16,7 +16,7 @@ export async function descargarDireccionPdf(filtros: DireccionFiltros = {}) {
 
   const contentType = String(headers["content-type"] ?? "");
   if (!contentType.includes("application/pdf")) {
-    throw new Error("La respuesta de Direccion no es un PDF valido.");
+    throw new Error("La respuesta de Dirección no es un PDF válido.");
   }
 
   const url = window.URL.createObjectURL(data);

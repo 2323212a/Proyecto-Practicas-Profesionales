@@ -449,12 +449,12 @@ def _obtener_indicadores(db: Session, filtros: dict[str, Any]):
 
     reportes = [
         {"tipo": "general", "titulo": "Reporte general institucional", "descripcion": "Indicadores globales de alumnos, empresas, convenios, vacantes y convocatorias.", "registros": int(_safe_scalar(db, alumnos_sql, alumnos_params))},
-        {"tipo": "alumnos", "titulo": "Reporte de alumnos", "descripcion": "Distribucion de alumnos por carrera, semestre, tipo de practica y asignacion.", "registros": int(_safe_scalar(db, alumnos_sql, alumnos_params))},
-        {"tipo": "empresas", "titulo": "Reporte de empresas / unidades receptoras", "descripcion": "Estado institucional de unidades receptoras y su participacion.", "registros": int(total_empresas or 0)},
-        {"tipo": "convenios", "titulo": "Reporte de convenios", "descripcion": "Convenios vigentes, vencidos y proximos a vencer.", "registros": int(total_convenios or 0)},
-        {"tipo": "vacantes", "titulo": "Reporte de vacantes / padron", "descripcion": "Vacantes pendientes, pre-padron, activas y por tipo de practica.", "registros": int(_safe_scalar(db, vacantes_sql, vacantes_params))},
-        {"tipo": "convocatorias", "titulo": "Reporte por convocatoria", "descripcion": "Historial institucional de convocatorias y participacion.", "registros": _conteo_tabla(db, "convocatoria")},
-        {"tipo": "carreras", "titulo": "Reporte por carrera", "descripcion": "Participacion de alumnos por carrera.", "registros": int(_safe_scalar(db, alumnos_sql, alumnos_params))},
+        {"tipo": "alumnos", "titulo": "Reporte de alumnos", "descripcion": "Distribución de alumnos por carrera, semestre, tipo de práctica y asignación.", "registros": int(_safe_scalar(db, alumnos_sql, alumnos_params))},
+        {"tipo": "empresas", "titulo": "Reporte de empresas / unidades receptoras", "descripcion": "Estado institucional de unidades receptoras y su participación.", "registros": int(total_empresas or 0)},
+        {"tipo": "convenios", "titulo": "Reporte de convenios", "descripcion": "Convenios vigentes, vencidos y próximos a vencer.", "registros": int(total_convenios or 0)},
+        {"tipo": "vacantes", "titulo": "Reporte de vacantes / padrón", "descripcion": "Vacantes pendientes, PrePadrón, activas y por tipo de práctica.", "registros": int(_safe_scalar(db, vacantes_sql, vacantes_params))},
+        {"tipo": "convocatorias", "titulo": "Reporte por convocatoria", "descripcion": "Historial institucional de convocatorias y participación.", "registros": _conteo_tabla(db, "convocatoria")},
+        {"tipo": "carreras", "titulo": "Reporte por carrera", "descripcion": "Participación de alumnos por carrera.", "registros": int(_safe_scalar(db, alumnos_sql, alumnos_params))},
     ]
 
     return {
@@ -545,8 +545,10 @@ def obtener_indicadores_direccion(
 
 
 def _texto_pdf(valor: Any) -> str:
-    if valor is None:
-        return ""
+    if valor is None or valor == "":
+        return "Sin dato"
+    if isinstance(valor, bool):
+        return "Si" if valor else "No"
     return escape(str(valor))
 
 
@@ -554,62 +556,294 @@ def _tabla_pdf(titulo: str, encabezados: list[str], filas: list[list[Any]], esti
     from reportlab.lib import colors
     from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
+    if not filas:
+        return _bloque_sin_datos(titulo, estilos)
+
     contenido = [[Paragraph(str(celda), estilos["table_header"]) for celda in encabezados]]
-    if filas:
-        for fila in filas:
-            contenido.append([Paragraph(_texto_pdf(celda), estilos["table_cell"]) for celda in fila])
-    else:
-        contenido.append([Paragraph("Sin datos disponibles.", estilos["table_cell"])] + [""] * (len(encabezados) - 1))
+    for fila in filas:
+        contenido.append([Paragraph(_texto_pdf(celda), estilos["table_cell"]) for celda in fila])
 
     tabla = Table(contenido, repeatRows=1, hAlign="LEFT")
     tabla.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d2b5e")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B2E63")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
+                ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor("#C9A227")),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9E2EC")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
     return KeepTogether([Paragraph(titulo, estilos["section"]), Spacer(1, 6), tabla, Spacer(1, 12)])
 
 
+def _bloque_sin_datos(titulo: str, estilos):
+    from reportlab.lib import colors
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+
+    tabla = Table([[Paragraph("Sin datos disponibles para esta sección.", estilos["small"])]], colWidths=[470])
+    tabla.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D9E2EC")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    return KeepTogether([Paragraph(titulo, estilos["section"]), Spacer(1, 6), tabla, Spacer(1, 12)])
+
+
+def _encabezado_reporte_pdf(facultad: str, tipo_reporte: str, usuario_nombre: str, estilos):
+    from reportlab.lib import colors
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+
+    logo = Paragraph("<b>UNACH</b><br/>FCA", estilos["logo"])
+    datos = [
+        Paragraph("Sistema de Prácticas Profesionales", estilos["title"]),
+        Paragraph(facultad, estilos["subtitle"]),
+        Paragraph(tipo_reporte, estilos["report_type"]),
+        Paragraph(f"Fecha de generación: {datetime.now().strftime('%d/%m/%Y %H:%M')}", estilos["meta"]),
+        Paragraph(f"Generado por: {usuario_nombre}", estilos["meta"]),
+    ]
+    tabla = Table([[logo, datos]], colWidths=[72, 420])
+    tabla.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF4FF")),
+                ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#D9E2EC")),
+                ("LINEBELOW", (0, 0), (-1, -1), 2, colors.HexColor("#C9A227")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 12),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+    )
+    return [tabla, Spacer(1, 14)]
+
+
+def _tabla_filtros_pdf(filtros: list[list[Any]], estilos):
+    from reportlab.lib import colors
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+
+    contenido = [[Paragraph("Filtro", estilos["table_header"]), Paragraph("Valor", estilos["table_header"])]]
+    if filtros:
+        contenido.extend([[Paragraph(_texto_pdf(f[0]), estilos["table_cell"]), Paragraph(_texto_pdf(f[1]), estilos["table_cell"])] for f in filtros])
+    else:
+        contenido.append([Paragraph("Sin filtros aplicados.", estilos["table_cell"]), Paragraph("Todos los registros", estilos["table_cell"])])
+    tabla = Table(contenido, colWidths=[160, 310], hAlign="LEFT")
+    tabla.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0B2E63")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9E2EC")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    return [Paragraph("Filtros aplicados", estilos["section"]), Spacer(1, 6), tabla, Spacer(1, 12)]
+
+
+def _tarjetas_resumen_pdf(items: list[tuple[str, int]], estilos):
+    from reportlab.lib import colors
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+
+    bloques = [Paragraph("Resumen ejecutivo", estilos["section"]), Spacer(1, 6)]
+    for indice in range(0, len(items), 4):
+        fila = []
+        grupo = items[indice: indice + 4]
+        col_width = 470 / len(grupo)
+        for etiqueta, valor in grupo:
+            fila.append(Paragraph(f"<font size='18'><b>{_texto_pdf(valor)}</b></font><br/><font size='7'>{_texto_pdf(etiqueta)}</font>", estilos["metric_card"]))
+        tabla = Table([fila], colWidths=[col_width] * len(fila), hAlign="LEFT")
+        tabla.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                    ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#D9E2EC")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D9E2EC")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        bloques.extend([tabla, Spacer(1, 5)])
+    bloques.append(Spacer(1, 7))
+    return KeepTogether(bloques)
+
+
+def _lectura_general_pdf(titulo: str, lineas: list[str], estilos):
+    from reportlab.lib import colors
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+
+    contenido = Paragraph(" &nbsp; ".join(_texto_pdf(linea) for linea in lineas), estilos["small"])
+    tabla = Table([[contenido]], colWidths=[470])
+    tabla.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF4FF")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#D9E2EC")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    return KeepTogether([Paragraph(titulo, estilos["section"]), Spacer(1, 6), tabla, Spacer(1, 12)])
+
+
+def _frase_cantidad(cantidad: int, singular: str, plural: str) -> str:
+    return f"Hay {cantidad} {singular if cantidad == 1 else plural}."
+
+
+def _puntos_atencion_direccion(datos: dict[str, Any]) -> list[str]:
+    resumen = datos.get("resumen") or {}
+    contexto = datos.get("contexto") or {}
+    puntos: list[str] = []
+    vacantes_no_publicadas = max(
+        int(resumen.get("vacantes") or 0) - int(resumen.get("vacantes_publicadas") or 0),
+        0,
+    )
+
+    if int(resumen.get("alumnos_sin_asignacion") or 0) > 0:
+        puntos.append(
+            _frase_cantidad(
+                int(resumen.get("alumnos_sin_asignacion") or 0),
+                "alumno sin asignación",
+                "alumnos sin asignación",
+            )
+        )
+    if int(resumen.get("empresas_pendientes") or 0) > 0:
+        puntos.append(
+            _frase_cantidad(
+                int(resumen.get("empresas_pendientes") or 0),
+                "empresa pendiente de revisión",
+                "empresas pendientes de revisión",
+            )
+        )
+    if int(resumen.get("vacantes_prepadron") or 0) > 0:
+        puntos.append(
+            _frase_cantidad(
+                int(resumen.get("vacantes_prepadron") or 0),
+                "vacante en PrePadrón lista para liberación",
+                "vacantes en PrePadrón listas para liberación",
+            )
+        )
+    if vacantes_no_publicadas > 0:
+        puntos.append(
+            _frase_cantidad(
+                vacantes_no_publicadas,
+                "vacante no publicada",
+                "vacantes no publicadas",
+            )
+        )
+    if int(resumen.get("convenios_por_vencer") or 0) > 0:
+        puntos.append(
+            _frase_cantidad(
+                int(resumen.get("convenios_por_vencer") or 0),
+                "convenio por vencer en los próximos 30 días",
+                "convenios por vencer en los próximos 30 días",
+            )
+        )
+    if int(resumen.get("convenios_vencidos") or 0) > 0:
+        puntos.append(
+            _frase_cantidad(
+                int(resumen.get("convenios_vencidos") or 0),
+                "convenio vencido",
+                "convenios vencidos",
+            )
+        )
+    if int(resumen.get("incidencias_abiertas") or 0) > 0:
+        puntos.append(
+            _frase_cantidad(
+                int(resumen.get("incidencias_abiertas") or 0),
+                "incidencia abierta o en seguimiento",
+                "incidencias abiertas o en seguimiento",
+            )
+        )
+    if not contexto.get("convocatoria_activa"):
+        puntos.append("No hay convocatoria activa registrada.")
+
+    return puntos
+
+
+def _recomendaciones_direccion(datos: dict[str, Any]) -> list[str]:
+    resumen = datos.get("resumen") or {}
+    contexto = datos.get("contexto") or {}
+    recomendaciones: list[str] = []
+
+    if int(resumen.get("alumnos_sin_asignacion") or 0) > 0:
+        recomendaciones.append("Priorizar asignaciones de alumnos sin empresa para evitar rezago operativo.")
+    if int(resumen.get("empresas_pendientes") or 0) > 0:
+        recomendaciones.append("Dar seguimiento a empresas pendientes para ampliar opciones del padrón.")
+    if int(resumen.get("vacantes_prepadron") or 0) > 0:
+        recomendaciones.append("Revisar liberación de vacantes en PrePadrón para publicarlas oportunamente.")
+    if int(resumen.get("convenios_por_vencer") or 0) > 0 or int(resumen.get("convenios_vencidos") or 0) > 0:
+        recomendaciones.append("Solicitar revisión documental de convenios próximos a vencer o vencidos.")
+    if int(resumen.get("incidencias_abiertas") or 0) > 0:
+        recomendaciones.append("Escalar incidencias abiertas con mayor antigüedad al área responsable.")
+    if not contexto.get("convocatoria_activa"):
+        recomendaciones.append("Confirmar el calendario de convocatoria antes de abrir nuevos procesos.")
+
+    return recomendaciones
+
+
+def _etiqueta_corta(valor: str) -> str:
+    reemplazos = {
+        "Coordinador de Practicas": "Coord. Prácticas",
+        "Coordinador de Prácticas": "Coord. Prácticas",
+        "Coordinador de Unidades Receptoras": "Coord. Unidades",
+    }
+    texto = reemplazos.get(valor, valor)
+    return texto if len(texto) <= 28 else f"{texto[:25]}..."
+
+
 def _grafico_barras(titulo: str, items: list[dict[str, Any]], estilos):
-    from reportlab.graphics.charts.barcharts import HorizontalBarChart
-    from reportlab.graphics.shapes import Drawing, String
+    from reportlab.graphics.shapes import Drawing, Rect, String
     from reportlab.lib import colors
     from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
-    if not items:
-        return KeepTogether([Paragraph(titulo, estilos["section"]), Paragraph("Sin datos disponibles.", estilos["small"]), Spacer(1, 10)])
+    if not items or sum(int(item.get("total") or 0) for item in items) == 0:
+        return _bloque_sin_datos(titulo, estilos)
 
     datos = items[:8]
     valores = [int(item.get("total") or 0) for item in datos]
     etiquetas = [str(item.get("nombre") or "Sin dato")[:30] for item in datos]
     maximo = max(valores) if valores else 0
+    if len(datos) <= 1:
+        return _tabla_pdf(titulo, ["Categoría", "Total"], [[etiquetas[0], valores[0]]] if datos else [], estilos)
 
-    drawing = Drawing(470, 170)
-    chart = HorizontalBarChart()
-    chart.x = 115
-    chart.y = 25
-    chart.height = 115
-    chart.width = 310
-    chart.data = [valores]
-    chart.categoryAxis.categoryNames = etiquetas
-    chart.categoryAxis.labels.fontSize = 7
-    chart.valueAxis.valueMin = 0
-    chart.valueAxis.valueMax = max(maximo, 1)
-    chart.valueAxis.valueStep = max(1, round(max(maximo, 1) / 4))
-    chart.valueAxis.labels.fontSize = 7
-    chart.bars[0].fillColor = colors.HexColor("#1565c0")
-    drawing.add(chart)
-    drawing.add(String(115, 148, titulo, fontName="Helvetica-Bold", fontSize=9, fillColor=colors.HexColor("#0d2b5e")))
+    alto = 28 + len(datos) * 18
+    drawing = Drawing(470, alto)
+    drawing.add(String(0, alto - 12, titulo, fontName="Helvetica-Bold", fontSize=9, fillColor=colors.HexColor("#0B2E63")))
+    y = alto - 30
+    for etiqueta, valor in zip(etiquetas, valores):
+        ancho = 250 * (valor / max(maximo, 1))
+        drawing.add(String(0, y + 3, _etiqueta_corta(etiqueta), fontName="Helvetica", fontSize=7, fillColor=colors.HexColor("#1F2937")))
+        drawing.add(Rect(145, y, 250, 8, fillColor=colors.HexColor("#EAF1FB"), strokeColor=colors.HexColor("#D9E2EC"), strokeWidth=0.3))
+        drawing.add(Rect(145, y, max(ancho, 2), 8, fillColor=colors.HexColor("#0B2E63"), strokeColor=None))
+        drawing.add(String(405, y + 1, str(valor), fontName="Helvetica-Bold", fontSize=7, fillColor=colors.HexColor("#1F2937")))
+        y -= 18
 
     return KeepTogether([drawing, Spacer(1, 8)])
 
@@ -620,7 +854,9 @@ def _footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(HexColor("#64748b"))
-    canvas.drawRightString(doc.pagesize[0] - 36, 24, f"Pagina {doc.page}")
+    canvas.drawString(36, 24, "Sistema de Prácticas Profesionales")
+    canvas.drawCentredString(doc.pagesize[0] / 2, 24, datetime.now().strftime("%d/%m/%Y"))
+    canvas.drawRightString(doc.pagesize[0] - 36, 24, f"Página {doc.page}")
     canvas.restoreState()
 
 
@@ -645,14 +881,18 @@ def _generar_pdf_direccion(datos: dict[str, Any], usuario_actual: UsuarioModel):
         leftMargin=36,
         topMargin=42,
         bottomMargin=42,
-        title="Reporte de Direccion",
+        title="Reporte de Dirección",
     )
     sample = getSampleStyleSheet()
     estilos = {
-        "title": ParagraphStyle("TitleDireccion", parent=sample["Title"], textColor=colors.HexColor("#0d2b5e"), fontSize=18, alignment=TA_CENTER, spaceAfter=8),
+        "title": ParagraphStyle("TitleDireccion", parent=sample["Title"], textColor=colors.HexColor("#0B2E63"), fontSize=16, alignment=TA_CENTER, spaceAfter=4),
+        "report_type": ParagraphStyle("ReportTypeDireccion", parent=sample["Heading2"], textColor=colors.HexColor("#0B2E63"), fontSize=13, alignment=TA_CENTER, spaceAfter=4),
         "subtitle": ParagraphStyle("SubtitleDireccion", parent=sample["Normal"], textColor=colors.HexColor("#475569"), fontSize=10, alignment=TA_CENTER, spaceAfter=3),
-        "section": ParagraphStyle("SectionDireccion", parent=sample["Heading2"], textColor=colors.HexColor("#0d2b5e"), fontSize=12, spaceBefore=10, spaceAfter=6),
-        "small": ParagraphStyle("SmallDireccion", parent=sample["Normal"], textColor=colors.HexColor("#475569"), fontSize=8, leading=10),
+        "meta": ParagraphStyle("MetaDireccion", parent=sample["Normal"], textColor=colors.HexColor("#475569"), fontSize=8, alignment=TA_CENTER, spaceAfter=2),
+        "logo": ParagraphStyle("LogoDireccion", parent=sample["Normal"], textColor=colors.HexColor("#0B2E63"), fontSize=11, leading=14, alignment=TA_CENTER),
+        "section": ParagraphStyle("SectionDireccion", parent=sample["Heading2"], textColor=colors.HexColor("#0B2E63"), fontSize=12, spaceBefore=10, spaceAfter=6),
+        "small": ParagraphStyle("SmallDireccion", parent=sample["Normal"], textColor=colors.HexColor("#475569"), fontSize=8, leading=11),
+        "metric_card": ParagraphStyle("MetricCardDireccion", parent=sample["Normal"], textColor=colors.HexColor("#1F2937"), fontSize=8, leading=13),
         "table_header": ParagraphStyle("TableHeaderDireccion", parent=sample["Normal"], textColor=colors.white, fontSize=8, leading=10),
         "table_cell": ParagraphStyle("TableCellDireccion", parent=sample["Normal"], textColor=colors.HexColor("#1e293b"), fontSize=7, leading=9),
     }
@@ -668,78 +908,98 @@ def _generar_pdf_direccion(datos: dict[str, Any], usuario_actual: UsuarioModel):
             getattr(usuario_actual, "apellido_materno", None),
         ]
         if parte
-    ) or getattr(usuario_actual, "correo", "Direccion")
+    ) or getattr(usuario_actual, "correo", "Dirección")
 
-    story = [
-        Paragraph(_texto_pdf(contexto.get("nombre_sistema") or "Sistema Integral de Practicas Profesionales"), estilos["title"]),
-        Paragraph(_texto_pdf(contexto.get("escuela_facultad") or "Institucion"), estilos["subtitle"]),
-        Paragraph("Reporte de Direccion", estilos["title"]),
-        Paragraph(f"Fecha de generacion: {datetime.now().strftime('%d/%m/%Y %H:%M')}", estilos["subtitle"]),
-        Paragraph(f"Generado por: {_texto_pdf(usuario_nombre)}", estilos["subtitle"]),
-        Spacer(1, 12),
-    ]
+    story = _encabezado_reporte_pdf(
+        _texto_pdf(contexto.get("escuela_facultad") or "Facultad de Contaduría y Administración"),
+        "Reporte de Dirección",
+        _texto_pdf(usuario_nombre),
+        estilos,
+    )
 
     filtros_activos = [
         [clave.replace("_", " ").title(), valor]
         for clave, valor in filtros.items()
         if _limpio(valor)
     ]
-    story.append(Paragraph("Filtros aplicados", estilos["section"]))
-    if filtros_activos:
-        tabla_filtros = Table(
-            [[Paragraph("Filtro", estilos["table_header"]), Paragraph("Valor", estilos["table_header"])]]
-            + [[Paragraph(_texto_pdf(f[0]), estilos["table_cell"]), Paragraph(_texto_pdf(f[1]), estilos["table_cell"])] for f in filtros_activos]
-        )
-        tabla_filtros.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d2b5e")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
-        )
-        story.extend([tabla_filtros, Spacer(1, 12)])
-    else:
-        story.extend([Paragraph("Sin filtros aplicados.", estilos["small"]), Spacer(1, 12)])
+    story.extend(_tabla_filtros_pdf(filtros_activos, estilos))
 
+    resumen_items = [
+        ("Alumnos", resumen.get("alumnos", 0)),
+        ("Alumnos en proceso", resumen.get("alumnos_en_proceso", 0)),
+        ("Alumnos asignados", resumen.get("alumnos_asignados", 0)),
+        ("Alumnos sin asignación", resumen.get("alumnos_sin_asignacion", 0)),
+        ("Empresas", resumen.get("empresas", 0)),
+        ("Convenios", resumen.get("convenios", 0)),
+        ("Vacantes", resumen.get("vacantes", 0)),
+        ("Convocatorias", resumen.get("convocatorias", 0)),
+        ("Incidencias abiertas", resumen.get("incidencias_abiertas", 0)),
+    ]
+    story.append(_tarjetas_resumen_pdf(resumen_items, estilos))
     story.append(
-        _tabla_pdf(
-            "Resumen general",
-            ["Indicador", "Total"],
+        _lectura_general_pdf(
+            "Estado general del proceso",
             [
-                ["Alumnos", resumen.get("alumnos", 0)],
-                ["Alumnos en proceso", resumen.get("alumnos_en_proceso", 0)],
-                ["Alumnos asignados", resumen.get("alumnos_asignados", 0)],
-                ["Alumnos sin asignacion", resumen.get("alumnos_sin_asignacion", 0)],
-                ["Empresas", resumen.get("empresas", 0)],
-                ["Convenios", resumen.get("convenios", 0)],
-                ["Vacantes", resumen.get("vacantes", 0)],
-                ["Convocatorias", resumen.get("convocatorias", 0)],
-                ["Incidencias abiertas", resumen.get("incidencias_abiertas", 0)],
+                _frase_cantidad(int(resumen.get("alumnos") or 0), "alumno registrado", "alumnos registrados"),
+                _frase_cantidad(int(resumen.get("alumnos_sin_asignacion") or 0), "alumno sin asignación", "alumnos sin asignación"),
+                _frase_cantidad(int(resumen.get("empresas") or 0), "empresa registrada", "empresas registradas"),
+                _frase_cantidad(int(resumen.get("vacantes_publicadas", resumen.get("vacantes", 0)) or 0), "vacante publicada o disponible en el padrón", "vacantes publicadas o disponibles en el padrón"),
+                (
+                    "No se registran incidencias abiertas."
+                    if int(resumen.get("incidencias_abiertas") or 0) == 0
+                    else f"Hay {resumen.get('incidencias_abiertas', 0)} incidencias abiertas."
+                ),
             ],
             estilos,
         )
     )
+    story.append(
+        _lectura_general_pdf(
+            "Puntos de atención",
+            _puntos_atencion_direccion(datos) or ["No hay puntos críticos con los filtros actuales."],
+            estilos,
+        )
+    )
+    story.append(
+        _lectura_general_pdf(
+            "Recomendaciones",
+            _recomendaciones_direccion(datos) or ["Mantener seguimiento ordinario del proceso."],
+            estilos,
+        )
+    )
 
-    story.append(Paragraph("Graficos", estilos["section"]))
+    story.append(Paragraph("Distribución general", estilos["section"]))
     for titulo, clave in [
         ("Alumnos por carrera", "alumnos_por_carrera"),
-        ("Alumnos por tipo de practica", "alumnos_por_tipo_practica"),
+        ("Alumnos por tipo de práctica", "alumnos_por_tipo_practica"),
         ("Empresas por estado", "empresas_por_estado"),
         ("Convenios por estado", "convenios_por_estado"),
         ("Vacantes por estado", "vacantes_por_estado"),
-        ("Vacantes por tipo de practica", "vacantes_por_tipo_practica"),
+        ("Vacantes por tipo de práctica", "vacantes_por_tipo_practica"),
     ]:
-        story.append(_grafico_barras(titulo, datos.get(clave, []), estilos))
+        items = datos.get(clave, [])
+        if clave == "alumnos_por_carrera":
+            items = [
+                {"nombre": item.get("carrera"), "total": item.get("alumnos")}
+                for item in items
+            ]
+        story.append(_grafico_barras(titulo, items, estilos))
 
     story.append(PageBreak())
-    story.append(_tabla_pdf("Alumnos por carrera", ["Carrera", "Total"], [[i.get("nombre"), i.get("total")] for i in datos.get("alumnos_por_carrera", [])], estilos))
-    story.append(_tabla_pdf("Alumnos por tipo de practica", ["Tipo de practica", "Total"], [[i.get("nombre"), i.get("total")] for i in datos.get("alumnos_por_tipo_practica", [])], estilos))
+    story.append(_tabla_pdf("Alumnos por carrera", ["Carrera", "Total"], [[i.get("carrera"), i.get("alumnos")] for i in datos.get("alumnos_por_carrera", [])], estilos))
+    story.append(_tabla_pdf("Alumnos por tipo de práctica", ["Tipo de práctica", "Total"], [[i.get("nombre"), i.get("total")] for i in datos.get("alumnos_por_tipo_practica", [])], estilos))
     story.append(_tabla_pdf("Empresas por estado", ["Estado", "Total"], [[i.get("nombre"), i.get("total")] for i in datos.get("empresas_por_estado", [])], estilos))
     story.append(_tabla_pdf("Convenios por estado", ["Estado", "Total"], [[i.get("nombre"), i.get("total")] for i in datos.get("convenios_por_estado", [])], estilos))
     story.append(_tabla_pdf("Vacantes por estado", ["Estado", "Total"], [[i.get("nombre"), i.get("total")] for i in datos.get("vacantes_por_estado", [])], estilos))
+    if int(resumen.get("incidencias_abiertas") or 0) > 0:
+        story.append(
+            _tabla_pdf(
+                "Incidencias",
+                ["Indicador", "Total"],
+                [["Abiertas o en seguimiento", resumen.get("incidencias_abiertas", 0)]],
+                estilos,
+            )
+        )
     story.append(
         _tabla_pdf(
             "Convocatorias",
@@ -773,7 +1033,7 @@ def exportar_reporte_direccion(
     usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     if formato != "pdf":
-        raise HTTPException(status_code=400, detail="Direccion solo permite exportar PDF.")
+        raise HTTPException(status_code=400, detail="Dirección solo permite exportar PDF.")
     datos = _obtener_indicadores(db, filtros)
     buffer = _generar_pdf_direccion(datos, usuario_actual)
     return StreamingResponse(

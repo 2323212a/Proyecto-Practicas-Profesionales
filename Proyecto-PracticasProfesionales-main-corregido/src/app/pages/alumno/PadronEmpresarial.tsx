@@ -212,6 +212,10 @@ export function PadronEmpresarial() {
   const opciones = seleccionadas
     .map((id) => vacantes.find((vacante) => vacante.id_vacante === id))
     .filter(Boolean) as VacantePadron[];
+  const mensajePadronVacio =
+    puedeSeleccionar && vacantes.length === 0
+      ? "El padron aun no ha sido publicado por Coordinacion de Unidades Receptoras."
+      : "No hay vacantes disponibles con los filtros seleccionados.";
 
   if (!cargando && estadoAlumno === "Asignado") {
     return (
@@ -352,7 +356,7 @@ export function PadronEmpresarial() {
 
           {!cargando && filtradas.length === 0 && (
             <div className="md:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
-              No hay vacantes disponibles con los filtros seleccionados.
+              {mensajePadronVacio}
             </div>
           )}
         </div>

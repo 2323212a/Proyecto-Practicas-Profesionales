@@ -147,6 +147,9 @@ type EtapaConvocatoria = {
   orden: number;
   nombre: string;
   descripcion: string;
+  habilita?: string;
+  fueraFecha?: string;
+  nota?: string;
   inicioCampo: keyof Convocatoria;
   cierreCampo: keyof Convocatoria;
 };
@@ -183,7 +186,12 @@ const etapasConvocatoria: EtapaConvocatoria[] = [
   {
     orden: 5,
     nombre: "Seleccion",
-    descripcion: "Eleccion de vacantes por alumnos.",
+    descripcion: "Periodo en el que los alumnos pueden elegir vacantes del padron publicado.",
+    habilita:
+      "Alumno puede seleccionar opciones de empresa/vacante unicamente si el padron ya fue liberado por Coordinacion de Unidades Receptoras.",
+    fueraFecha: "El alumno no puede registrar ni modificar su seleccion.",
+    nota:
+      "Las vacantes en PrePadron no son visibles para alumnos hasta que Coordinacion de Unidades Receptoras libere el padron.",
     inicioCampo: "fecha_inicio_seleccion",
     cierreCampo: "fecha_cierre_seleccion",
   },
@@ -1511,6 +1519,21 @@ export function AdminCatalogos() {
                                 <div className="font-bold text-sm text-[#0d2b5e]">{etapa.nombre}</div>
                               </div>
                               <p className="text-xs text-gray-500 mt-2 leading-relaxed">{etapa.descripcion}</p>
+                              {etapa.habilita && (
+                                <p className="text-xs text-[#0d2b5e] mt-2 leading-relaxed">
+                                  Habilita: {etapa.habilita}
+                                </p>
+                              )}
+                              {etapa.fueraFecha && (
+                                <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                                  Fuera de esta fecha: {etapa.fueraFecha}
+                                </p>
+                              )}
+                              {etapa.nota && (
+                                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                                  Nota: {etapa.nota}
+                                </p>
+                              )}
                             </div>
                             <span className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border ${estadoEtapa.clase}`}>
                               <IconoEstado className="w-3 h-3" />

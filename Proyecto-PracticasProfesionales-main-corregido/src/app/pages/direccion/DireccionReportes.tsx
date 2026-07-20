@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Briefcase,
   Building2,
-  CheckCircle2,
   Clock,
-  Database,
   Download,
   Eye,
   FileText,
@@ -26,18 +24,9 @@ import {
   obtenerIndicadoresDireccion,
 } from "../../../infrastructure/direccion/direccionApi";
 
-const iconos: Record<string, LucideIcon> = {
-  general: Database,
-  alumnos: Users,
-  empresas: Building2,
-  convenios: FileText,
-  vacantes: Briefcase,
-  convocatorias: Clock,
-  carreras: Users,
-};
-
 type ReporteDireccion = DireccionIndicadoresResponse["reportes"][number];
 type ConvocatoriaDireccion = DireccionIndicadoresResponse["convocatorias"][number];
+type TabDireccion = "resumen" | "alumnos" | "empresas" | "convocatorias" | "incidencias";
 
 function estadoColor(estado: string) {
   const normalizado = estado?.toLowerCase?.() ?? "";
@@ -76,6 +65,8 @@ export function DireccionReportes() {
   const [cargando, setCargando] = useState(true);
   const [exportando, setExportando] = useState(false);
   const [error, setError] = useState("");
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [tabActiva, setTabActiva] = useState<TabDireccion>("resumen");
 
   const cargar = useCallback(async (filtrosConsulta: DireccionFiltros = filtros) => {
     try {
@@ -93,23 +84,6 @@ export function DireccionReportes() {
       setCargando(false);
     }
   }, [filtros]);
-
-  async function exportarPdf(filtrosExportacion = filtros) {
-    try {
-      setExportando(true);
-      setError("");
-      await descargarDireccionPdf(filtrosExportacion);
-    } catch (err) {
-      console.error({
-        endpoint: "/direccion/reportes/exportar",
-        filtros: filtrosExportacion,
-        error: err,
-      });
-      setError("No se pudo generar el PDF de Dirección.");
-    } finally {
-      setExportando(false);
-    }
-  }
 
   useEffect(() => {
     void cargar();
@@ -133,6 +107,23 @@ export function DireccionReportes() {
     void cargar(filtrosIniciales);
   }
 
+  async function exportarPdf() {
+    try {
+      setExportando(true);
+      setError("");
+      await descargarDireccionPdf(filtros);
+    } catch (err) {
+      console.error({
+        endpoint: "/direccion/reportes/exportar",
+        filtros,
+        error: err,
+      });
+      setError("No se pudo exportar el PDF de Dirección.");
+    } finally {
+      setExportando(false);
+    }
+  }
+
   const catalogos = datos?.catalogos;
   const resumen = datos?.resumen;
 
@@ -144,53 +135,42 @@ export function DireccionReportes() {
     [filtros, tipoReporte, busqueda],
   );
 
-  const reportesFiltrados = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
+  const filtrosActivosDetalle = useMemo(() => {
+    const items = obtenerFiltrosActivos(filtros);
+    if (tipoReporte !== "Todos") items.push({ label: "Tipo de reporte", value: tipoReporte });
+    if (busqueda.trim()) items.push({ label: "Búsqueda", value: busqueda.trim() });
+    return items;
+  }, [filtros, tipoReporte, busqueda]);
 
-    return (datos?.reportes ?? []).filter((reporte) => {
-      const coincideTipo = tipoReporte === "Todos" || reporte.tipo === tipoReporte;
-      const coincideBusqueda =
-        !texto ||
-        reporte.titulo.toLowerCase().includes(texto) ||
-        reporte.descripcion.toLowerCase().includes(texto) ||
-        reporte.tipo.toLowerCase().includes(texto);
-
-      return coincideTipo && coincideBusqueda;
-    });
-  }, [datos, tipoReporte, busqueda]);
-
-  const puedeExportar = Boolean(datos) && !cargando && !error && !exportando;
+  const puntosAtencion = useMemo(() => obtenerPuntosAtencion(datos), [datos]);
+  const recomendaciones = useMemo(() => obtenerRecomendaciones(datos), [datos]);
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0d2b5e] via-[#123d7a] to-[#1565c0] p-6 text-white shadow-lg">
-        <div className="absolute -right-14 -top-14 h-44 w-44 rounded-full bg-white/10" />
-        <div className="absolute -bottom-20 left-20 h-56 w-56 rounded-full bg-[#d4af37]/20" />
-
-        <div className="relative flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-bold text-[#0d2b5e]">
               <FileText className="h-3.5 w-3.5" />
               Reportes institucionales
             </div>
 
-            <h1 className="text-2xl font-black tracking-tight lg:text-3xl">
-              Reportes Ejecutivos de Dirección
+            <h1 className="text-2xl font-bold tracking-tight text-[#0d2b5e] lg:text-3xl">
+              Reportes de Dirección
             </h1>
 
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-100">
-              Consulta y exportación de información histórica para Dirección y Secretaría.
-              Los reportes son de solo lectura y están orientados a seguimiento institucional.
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Consulta indicadores ejecutivos del proceso de prácticas profesionales.
             </p>
 
-            <div className="mt-4 flex flex-wrap gap-2 text-xs text-blue-100">
-              <span className="rounded-full bg-white/10 px-3 py-1">
+            <div className="mt-4 flex flex-wrap gap-2 text-xs text-gray-600">
+              <span className="rounded-full bg-gray-100 px-3 py-1">
                 Filtros activos: {filtrosActivos}
               </span>
-              <span className="rounded-full bg-white/10 px-3 py-1">
-                Reportes disponibles: {datos?.reportes?.length ?? 0}
+              <span className="rounded-full bg-gray-100 px-3 py-1">
+                Convocatoria activa: {datos?.contexto?.convocatoria_activa ?? "Sin convocatoria activa"}
               </span>
-              <span className="rounded-full bg-white/10 px-3 py-1">
+              <span className="rounded-full bg-gray-100 px-3 py-1">
                 Solo lectura
               </span>
             </div>
@@ -200,7 +180,7 @@ export function DireccionReportes() {
             <button
               onClick={() => void cargar()}
               disabled={cargando}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
               Actualizar
@@ -208,11 +188,11 @@ export function DireccionReportes() {
 
             <button
               onClick={() => void exportarPdf()}
-              disabled={!puedeExportar}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#d4af37] px-4 py-2 text-xs font-black text-[#0d2b5e] shadow-sm transition hover:bg-[#e2bf4a] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={cargando || exportando}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#0d2b5e] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Download className="h-4 w-4" />
-              {exportando ? "Generando..." : "Exportar PDF"}
+              {exportando ? "Exportando..." : "Exportar PDF"}
             </button>
           </div>
         </div>
@@ -224,20 +204,24 @@ export function DireccionReportes() {
         </div>
       )}
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <div className="rounded-xl bg-blue-50 p-2 text-[#1565c0]">
-            <Filter className="h-4 w-4" />
-          </div>
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="font-bold text-[#0d2b5e]">Filtros del reporte</h2>
             <p className="text-xs text-gray-500">
-              Los filtros aplican tanto a la consulta como al PDF exportado.
+              {filtrosActivos === 0 ? "Sin filtros aplicados." : `${filtrosActivos} filtros activos.`}
             </p>
           </div>
+          <button
+            onClick={() => setMostrarFiltros((actual) => !actual)}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700"
+          >
+            <Filter className="h-4 w-4" />
+            {mostrarFiltros ? "Ocultar filtros" : "Mostrar filtros"}
+          </button>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {mostrarFiltros && <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <CampoSelect
             label="Convocatoria"
             value={filtros.convocatoria ?? "todos"}
@@ -309,9 +293,9 @@ export function DireccionReportes() {
             defaultLabel="Semestral y cuatrimestral"
             disabled={cargando}
           />
-        </div>
+        </div>}
 
-        <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_1fr_auto_auto]">
+        {mostrarFiltros && <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_1fr_auto_auto]">
           <div>
             <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-400">
               Tipo de reporte
@@ -364,197 +348,167 @@ export function DireccionReportes() {
             <FilterX className="h-4 w-4" />
             Limpiar
           </button>
+        </div>}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {filtrosActivosDetalle.length > 0 ? (
+            filtrosActivosDetalle.map((item) => (
+              <span
+                key={`${item.label}-${item.value}`}
+                className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-[#1565c0]"
+              >
+                {item.label}: {item.value}
+              </span>
+            ))
+          ) : (
+            <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-500">
+              Sin filtros aplicados
+            </span>
+          )}
         </div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
-          titulo="Reportes disponibles"
-          valor={datos?.reportes?.length ?? 0}
-          detalle="Secciones institucionales"
-          icono={FileText}
+          titulo="Alumnos"
+          valor={resumen?.alumnos ?? 0}
+          detalle={`${numero(resumen?.alumnos_asignados ?? 0)} asignados`}
+          icono={Users}
           cargando={cargando}
         />
         <KpiCard
-          titulo="Convocatorias"
-          valor={datos?.convocatorias?.length ?? 0}
-          detalle="Historial disponible"
+          titulo="Empresas"
+          valor={resumen?.empresas ?? 0}
+          detalle={`${numero(resumen?.empresas_activas ?? 0)} activas`}
+          icono={Building2}
+          cargando={cargando}
+        />
+        <KpiCard
+          titulo="Vacantes"
+          valor={resumen?.vacantes ?? 0}
+          detalle={`${numero(resumen?.vacantes_publicadas ?? 0)} publicadas`}
+          icono={Briefcase}
+          cargando={cargando}
+        />
+        <KpiCard
+          titulo="Pendientes"
+          valor={
+            (resumen?.alumnos_sin_asignacion ?? 0) +
+            (resumen?.empresas_pendientes ?? 0) +
+            (resumen?.vacantes_prepadron ?? 0) +
+            (resumen?.incidencias_abiertas ?? 0)
+          }
+          detalle="Atención operativa"
           icono={Clock}
           cargando={cargando}
         />
-        <KpiCard
-          titulo="Registros institucionales"
-          valor={(resumen?.alumnos ?? 0) + (resumen?.empresas ?? 0)}
-          detalle="Alumnos + empresas"
-          icono={Database}
-          cargando={cargando}
-        />
-        <KpiCard
-          titulo="Alumnos asignados"
-          valor={resumen?.alumnos_asignados ?? 0}
-          detalle="Con empresa registrada"
-          icono={CheckCircle2}
-          cargando={cargando}
-        />
       </section>
 
-      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {cargando ? (
-          <>
-            <ReporteSkeleton />
-            <ReporteSkeleton />
-            <ReporteSkeleton />
-          </>
-        ) : reportesFiltrados.length > 0 ? (
-          reportesFiltrados.map((reporte) => {
-            const Icon = iconos[reporte.tipo] ?? FileText;
-
-            return (
-              <div
-                key={reporte.titulo}
-                className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <div className="mb-5 flex items-start justify-between gap-4">
-                  <div className="rounded-2xl bg-blue-50 p-3 text-[#1565c0]">
-                    <Icon className="h-6 w-6" />
-                  </div>
-
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">
-                    {numero(reporte.registros)} registros
-                  </span>
-                </div>
-
-                <h3 className="font-bold text-[#0d2b5e]">{reporte.titulo}</h3>
-                <p className="mt-2 min-h-12 text-sm leading-5 text-gray-500">
-                  {reporte.descripcion}
-                </p>
-
-                <div className="mt-5 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setReporteSeleccionado(reporte)}
-                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 py-2 text-xs font-bold text-[#1565c0] transition hover:bg-blue-100"
-                    title="Ver detalle del reporte"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Ver
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void exportarPdf(filtros)}
-                    disabled={!puedeExportar}
-                    className="inline-flex items-center justify-center gap-1 rounded-xl bg-[#1565c0] py-2 text-xs font-bold text-white transition hover:bg-[#0d2b5e] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    PDF
-                  </button>
-                </div>
-              </div>
-            );
-          })
-        ) : (
-          <div className="col-span-full rounded-3xl border border-dashed border-gray-200 bg-white p-10 text-center">
-            <p className="font-semibold text-gray-500">No hay reportes para los filtros seleccionados.</p>
-            <p className="mt-1 text-sm text-gray-400">
-              Limpia los filtros o selecciona otro tipo de reporte.
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-100 p-5">
-          <h3 className="font-bold text-[#0d2b5e]">Historial de convocatorias</h3>
-          <p className="mt-1 text-xs text-gray-500">
-            Resumen histórico para consulta institucional y exportación en PDF.
-          </p>
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex gap-2 overflow-x-auto border-b border-gray-100 px-4 pt-4">
+          {[
+            ["resumen", "Resumen"],
+            ["alumnos", "Alumnos"],
+            ["empresas", "Empresas"],
+            ["convocatorias", "Convocatorias"],
+            ["incidencias", "Incidencias"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTabActiva(id as TabDireccion)}
+              className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold transition ${
+                tabActiva === id
+                  ? "border-[#1565c0] text-[#0d2b5e]"
+                  : "border-transparent text-gray-500 hover:text-[#0d2b5e]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-400">
-                <th className="px-4 py-3">Convocatoria</th>
-                <th className="px-4 py-3">Periodo</th>
-                <th className="px-4 py-3 text-right">Alumnos</th>
-                <th className="px-4 py-3 text-right">Empresas</th>
-                <th className="px-4 py-3 text-right">Convenios</th>
-                <th className="px-4 py-3 text-right">Incidencias</th>
-                <th className="px-4 py-3 text-right">Concluidas</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3 text-right">Acción</th>
-              </tr>
-            </thead>
+        <div className="p-5">
+          {cargando ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <ReporteSkeleton />
+              <ReporteSkeleton />
+            </div>
+          ) : tabActiva === "resumen" ? (
+            <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+              <div className="space-y-5">
+                <PanelTitulo
+                  titulo="Estado general del proceso"
+                  descripcion="Lectura rápida de participación, publicación de vacantes y seguimiento."
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <MiniIndicador label="Alumnos en proceso" value={resumen?.alumnos_en_proceso ?? 0} />
+                  <MiniIndicador label="Alumnos sin asignación" value={resumen?.alumnos_sin_asignacion ?? 0} />
+                  <MiniIndicador label="Empresas activas" value={resumen?.empresas_activas ?? 0} />
+                  <MiniIndicador label="Convenios vigentes" value={resumen?.convenios_vigentes ?? 0} />
+                  <MiniIndicador label="Vacantes en PrePadrón" value={resumen?.vacantes_prepadron ?? 0} />
+                  <MiniIndicador label="Horas registradas" value={resumen?.horas_registradas ?? 0} />
+                </div>
+                <BarList titulo="Vacantes por estado" datos={datos?.vacantes_por_estado ?? []} />
+              </div>
 
-            <tbody>
-              {cargando ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8">
-                    <div className="space-y-3">
-                      <div className="h-4 w-full animate-pulse rounded bg-gray-100" />
-                      <div className="h-4 w-4/5 animate-pulse rounded bg-gray-100" />
-                      <div className="h-4 w-3/5 animate-pulse rounded bg-gray-100" />
-                    </div>
-                  </td>
-                </tr>
-              ) : (datos?.convocatorias ?? []).length > 0 ? (
-                (datos?.convocatorias ?? []).map((row) => (
-                  <tr key={`${row.convocatoria}-${row.periodo}`} className="border-b last:border-0">
-                    <td className="px-4 py-3 font-semibold text-[#0d2b5e]">
-                      {row.convocatoria}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{row.periodo}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{numero(row.alumnos)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{numero(row.empresas)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{numero(row.convenios)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">
-                      {numero(row.incidencias)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-gray-700">{numero(row.concluidas)}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`${estadoColor(
-                          row.estado,
-                        )} rounded-full border px-2 py-1 text-xs font-bold`}
-                      >
-                        {row.estado}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setConvocatoriaSeleccionada(row)}
-                          className="text-xs font-bold text-[#1565c0] hover:underline"
-                        >
-                          Ver
-                        </button>
-                        <button
-                          onClick={() =>
-                            void exportarPdf({
-                              ...filtros,
-                              convocatoria: row.convocatoria,
-                            })
-                          }
-                          disabled={!puedeExportar}
-                          className="text-xs font-bold text-[#1565c0] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          PDF
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
-                    No hay convocatorias registradas.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              <div className="space-y-5">
+                <ListaEjecutiva
+                  titulo="Puntos de atención"
+                  items={puntosAtencion}
+                  vacio="No hay puntos críticos con los filtros actuales."
+                />
+                <ListaEjecutiva
+                  titulo="Recomendaciones"
+                  items={recomendaciones}
+                  vacio="Mantener seguimiento ordinario del proceso."
+                />
+              </div>
+            </div>
+          ) : tabActiva === "alumnos" ? (
+            <div className="grid gap-5 xl:grid-cols-2">
+              <BarList titulo="Alumnos por carrera" datos={(datos?.alumnos_por_carrera ?? []).map((item) => ({ nombre: item.carrera, total: item.alumnos }))} />
+              <BarList titulo="Alumnos por tipo de práctica" datos={datos?.alumnos_por_tipo_practica ?? []} />
+              <DetalleTabla
+                titulo="Alumnos por estado"
+                columnas={["Estado", "Alumnos"]}
+                filas={(datos?.alumnos_por_estado ?? []).map((item) => [item.nombre, numero(item.total)])}
+              />
+            </div>
+          ) : tabActiva === "empresas" ? (
+            <div className="grid gap-5 xl:grid-cols-2">
+              <BarList titulo="Empresas por estado" datos={datos?.empresas_por_estado ?? []} />
+              <BarList titulo="Empresas por tipo de trámite" datos={datos?.empresas_por_tipo_tramite ?? []} />
+              <DetalleTabla
+                titulo="Convenios por estado"
+                columnas={["Estado", "Convenios"]}
+                filas={(datos?.convenios_por_estado ?? []).map((item) => [item.nombre, numero(item.total)])}
+              />
+            </div>
+          ) : tabActiva === "convocatorias" ? (
+            <div className="space-y-5">
+              <HistorialConvocatorias
+                convocatorias={datos?.convocatorias ?? []}
+                onVer={setConvocatoriaSeleccionada}
+              />
+              <div className="grid gap-5 xl:grid-cols-2">
+                <BarList titulo="Convocatorias por tipo de periodo" datos={datos?.convocatorias_por_tipo_periodo ?? []} />
+                <BarList titulo="Vacantes por periodo" datos={datos?.vacantes_por_periodo ?? []} />
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-2">
+              <ListaEjecutiva
+                titulo="Incidencias y pendientes"
+                items={puntosAtencion}
+                vacio="No hay incidencias abiertas ni pendientes relevantes."
+              />
+              <BarList
+                titulo="Horas registradas por mes"
+                datos={(datos?.horas_por_mes ?? []).map((item) => ({ nombre: item.mes, total: item.horas }))}
+              />
+            </div>
+          )}
         </div>
       </section>
 
@@ -570,9 +524,7 @@ export function DireccionReportes() {
           reporte={reporteSeleccionado}
           datos={datos}
           filtros={filtros}
-          exportando={exportando}
           onClose={() => setReporteSeleccionado(null)}
-          onExportPdf={() => void exportarPdf(filtros)}
         />
       )}
 
@@ -580,16 +532,167 @@ export function DireccionReportes() {
         <ConvocatoriaDetalleModal
           convocatoria={convocatoriaSeleccionada}
           filtros={filtros}
-          exportando={exportando}
           onClose={() => setConvocatoriaSeleccionada(null)}
-          onExportPdf={() =>
-            void exportarPdf({
-              ...filtros,
-              convocatoria: convocatoriaSeleccionada.convocatoria,
-            })
-          }
         />
       )}
+    </div>
+  );
+}
+
+function PanelTitulo({ titulo, descripcion }: { titulo: string; descripcion: string }) {
+  return (
+    <div>
+      <h3 className="font-bold text-[#0d2b5e]">{titulo}</h3>
+      <p className="mt-1 text-sm text-gray-500">{descripcion}</p>
+    </div>
+  );
+}
+
+function MiniIndicador({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-2 text-2xl font-black text-[#0d2b5e]">{numero(value)}</p>
+    </div>
+  );
+}
+
+function ListaEjecutiva({
+  titulo,
+  items,
+  vacio,
+}: {
+  titulo: string;
+  items: string[];
+  vacio: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      <h3 className="font-bold text-[#0d2b5e]">{titulo}</h3>
+      <div className="mt-4 space-y-3">
+        {items.length > 0 ? (
+          items.map((item) => (
+            <div key={item} className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              {item}
+            </div>
+          ))
+        ) : (
+          <p className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-500">
+            {vacio}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BarList({
+  titulo,
+  datos,
+}: {
+  titulo: string;
+  datos: Array<{ nombre: string; total: number }>;
+}) {
+  const maximo = Math.max(...datos.map((item) => Number(item.total) || 0), 0);
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      <h3 className="font-bold text-[#0d2b5e]">{titulo}</h3>
+      <div className="mt-4 space-y-3">
+        {datos.length > 0 ? (
+          datos.slice(0, 8).map((item) => {
+            const total = Number(item.total) || 0;
+            const ancho = maximo > 0 ? Math.max((total / maximo) * 100, 4) : 0;
+
+            return (
+              <div key={`${titulo}-${item.nombre}`} className="space-y-1">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="truncate font-semibold text-gray-600">{item.nombre}</span>
+                  <span className="font-bold text-[#0d2b5e]">{numero(total)}</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-full rounded-full bg-[#1565c0]" style={{ width: `${ancho}%` }} />
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <p className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
+            Sin datos disponibles.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HistorialConvocatorias({
+  convocatorias,
+  onVer,
+}: {
+  convocatorias: ConvocatoriaDireccion[];
+  onVer: (convocatoria: ConvocatoriaDireccion) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-gray-200">
+      <div className="border-b border-gray-100 bg-gray-50 px-4 py-3">
+        <h3 className="font-bold text-[#0d2b5e]">Historial de convocatorias</h3>
+        <p className="mt-1 text-xs text-gray-500">Resumen histórico para consulta institucional.</p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-white text-left text-xs uppercase tracking-wide text-gray-400">
+              <th className="px-4 py-3">Convocatoria</th>
+              <th className="px-4 py-3">Periodo</th>
+              <th className="px-4 py-3 text-right">Alumnos</th>
+              <th className="px-4 py-3 text-right">Empresas</th>
+              <th className="px-4 py-3 text-right">Convenios</th>
+              <th className="px-4 py-3 text-right">Incidencias</th>
+              <th className="px-4 py-3 text-right">Concluidas</th>
+              <th className="px-4 py-3">Estado</th>
+              <th className="px-4 py-3 text-right">Acción</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {convocatorias.length > 0 ? (
+              convocatorias.map((row) => (
+                <tr key={`${row.convocatoria}-${row.periodo}`} className="border-b last:border-0">
+                  <td className="px-4 py-3 font-semibold text-[#0d2b5e]">{row.convocatoria}</td>
+                  <td className="px-4 py-3 text-gray-600">{row.periodo}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{numero(row.alumnos)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{numero(row.empresas)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{numero(row.convenios)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{numero(row.incidencias)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700">{numero(row.concluidas)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`${estadoColor(row.estado)} rounded-full border px-2 py-1 text-xs font-bold`}>
+                      {row.estado}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onVer(row)}
+                      className="text-xs font-bold text-[#1565c0] hover:underline"
+                    >
+                      Ver
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
+                  No hay convocatorias registradas.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -598,16 +701,12 @@ function ReporteDetalleModal({
   reporte,
   datos,
   filtros,
-  exportando,
   onClose,
-  onExportPdf,
 }: {
   reporte: ReporteDireccion;
   datos: DireccionIndicadoresResponse;
   filtros: DireccionFiltros;
-  exportando: boolean;
   onClose: () => void;
-  onExportPdf: () => void;
 }) {
   const resumen = datos.resumen;
   const filtrosActivos = obtenerFiltrosActivos(filtros);
@@ -699,7 +798,7 @@ function ReporteDetalleModal({
               ))
             ) : (
               <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-sm text-gray-500">
-                Sin datos disponibles para esta seccion.
+                Sin datos disponibles para esta sección.
               </div>
             )}
           </section>
@@ -713,15 +812,6 @@ function ReporteDetalleModal({
           >
             Cerrar
           </button>
-          <button
-            type="button"
-            onClick={onExportPdf}
-            disabled={exportando}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#0d2b5e] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Download className="h-4 w-4" />
-            {exportando ? "Generando..." : "Exportar PDF"}
-          </button>
         </div>
       </div>
     </div>
@@ -731,15 +821,11 @@ function ReporteDetalleModal({
 function ConvocatoriaDetalleModal({
   convocatoria,
   filtros,
-  exportando,
   onClose,
-  onExportPdf,
 }: {
   convocatoria: ConvocatoriaDireccion;
   filtros: DireccionFiltros;
-  exportando: boolean;
   onClose: () => void;
-  onExportPdf: () => void;
 }) {
   const filtrosActivos = obtenerFiltrosActivos({
     ...filtros,
@@ -817,15 +903,6 @@ function ConvocatoriaDetalleModal({
             className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600 transition hover:bg-white"
           >
             Cerrar
-          </button>
-          <button
-            type="button"
-            onClick={onExportPdf}
-            disabled={exportando}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#0d2b5e] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Download className="h-4 w-4" />
-            {exportando ? "Generando..." : "Exportar PDF"}
           </button>
         </div>
       </div>
@@ -926,14 +1003,14 @@ function obtenerFiltrosActivos(filtros: DireccionFiltros) {
   const etiquetas: Partial<Record<keyof DireccionFiltros, string>> = {
     convocatoria: "Convocatoria",
     carrera: "Carrera",
-    tipo_practica: "Tipo de practica",
-    periodo_practica: "Periodo de practica",
+    tipo_practica: "Tipo de práctica",
+    periodo_practica: "Periodo de práctica",
     semestre: "Semestre",
     grupo: "Grupo",
     estado_empresa: "Estado de empresa",
     estado_vacante: "Estado de vacante",
     estado_convenio: "Estado de convenio",
-    tipo_tramite: "Tipo de tramite",
+    tipo_tramite: "Tipo de trámite",
     tipo_periodo: "Tipo de periodo",
   };
 
@@ -945,6 +1022,70 @@ function obtenerFiltrosActivos(filtros: DireccionFiltros) {
     }));
 }
 
+function obtenerPuntosAtencion(datos: DireccionIndicadoresResponse | null): string[] {
+  if (!datos) return [];
+  const resumen = datos.resumen;
+  const puntos: string[] = [];
+  const vacantesNoPublicadas = Math.max(
+    (resumen.vacantes ?? 0) - (resumen.vacantes_publicadas ?? 0),
+    0,
+  );
+
+  if (resumen.alumnos_sin_asignacion > 0) {
+    puntos.push(`${numero(resumen.alumnos_sin_asignacion)} alumnos sin asignación.`);
+  }
+  if (resumen.empresas_pendientes > 0) {
+    puntos.push(`${numero(resumen.empresas_pendientes)} empresas pendientes de revisión.`);
+  }
+  if (resumen.vacantes_prepadron > 0) {
+    puntos.push(`${numero(resumen.vacantes_prepadron)} vacantes en PrePadrón listas para liberación.`);
+  }
+  if (vacantesNoPublicadas > 0) {
+    puntos.push(`${numero(vacantesNoPublicadas)} vacantes todavía no publicadas.`);
+  }
+  if (resumen.convenios_por_vencer > 0) {
+    puntos.push(`${numero(resumen.convenios_por_vencer)} convenios por vencer en los próximos 30 días.`);
+  }
+  if (resumen.convenios_vencidos > 0) {
+    puntos.push(`${numero(resumen.convenios_vencidos)} convenios vencidos.`);
+  }
+  if (resumen.incidencias_abiertas > 0) {
+    puntos.push(`${numero(resumen.incidencias_abiertas)} incidencias abiertas o en seguimiento.`);
+  }
+  if (!datos.contexto.convocatoria_activa) {
+    puntos.push("No hay convocatoria activa registrada.");
+  }
+
+  return puntos;
+}
+
+function obtenerRecomendaciones(datos: DireccionIndicadoresResponse | null): string[] {
+  if (!datos) return [];
+  const resumen = datos.resumen;
+  const recomendaciones: string[] = [];
+
+  if (resumen.alumnos_sin_asignacion > 0) {
+    recomendaciones.push("Priorizar asignaciones de alumnos sin empresa para evitar rezago operativo.");
+  }
+  if (resumen.empresas_pendientes > 0) {
+    recomendaciones.push("Dar seguimiento a empresas pendientes para ampliar opciones del padrón.");
+  }
+  if (resumen.vacantes_prepadron > 0) {
+    recomendaciones.push("Revisar liberación de vacantes en PrePadrón para publicarlas oportunamente.");
+  }
+  if (resumen.convenios_por_vencer > 0 || resumen.convenios_vencidos > 0) {
+    recomendaciones.push("Solicitar revisión documental de convenios próximos a vencer o vencidos.");
+  }
+  if (resumen.incidencias_abiertas > 0) {
+    recomendaciones.push("Escalar incidencias abiertas con mayor antigüedad al área responsable.");
+  }
+  if (!datos.contexto.convocatoria_activa) {
+    recomendaciones.push("Confirmar el calendario de convocatoria antes de abrir nuevos procesos.");
+  }
+
+  return recomendaciones;
+}
+
 function obtenerIndicadoresReporte(tipo: string, datos: DireccionIndicadoresResponse): Array<[string, number]> {
   const resumen = datos.resumen;
 
@@ -952,7 +1093,7 @@ function obtenerIndicadoresReporte(tipo: string, datos: DireccionIndicadoresResp
     return [
       ["Alumnos", resumen.alumnos],
       ["Asignados", resumen.alumnos_asignados],
-      ["Sin asignacion", resumen.alumnos_sin_asignacion],
+      ["Sin asignación", resumen.alumnos_sin_asignacion],
       ["En proceso", resumen.alumnos_en_proceso],
     ];
   }
@@ -979,7 +1120,7 @@ function obtenerIndicadoresReporte(tipo: string, datos: DireccionIndicadoresResp
     return [
       ["Vacantes", resumen.vacantes],
       ["Publicadas", resumen.vacantes_publicadas],
-      ["Pre-padron", resumen.vacantes_prepadron],
+      ["PrePadrón", resumen.vacantes_prepadron],
       ["Empresas activas", resumen.empresas_activas],
     ];
   }
@@ -1014,7 +1155,7 @@ function obtenerSeccionesReporte(tipo: string, datos: DireccionIndicadoresRespon
     return [
       { titulo: "Alumnos por carrera", columnas: ["Carrera", "Alumnos"], filas: alumnosCarrera },
       { titulo: "Alumnos por estado", columnas: ["Estado", "Alumnos"], filas: serie(datos.alumnos_por_estado) },
-      { titulo: "Alumnos por tipo de practica", columnas: ["Tipo", "Alumnos"], filas: serie(datos.alumnos_por_tipo_practica) },
+      { titulo: "Alumnos por tipo de práctica", columnas: ["Tipo", "Alumnos"], filas: serie(datos.alumnos_por_tipo_practica) },
       { titulo: "Alumnos por semestre", columnas: ["Semestre", "Alumnos"], filas: serie(datos.alumnos_por_semestre) },
     ];
   }
@@ -1022,8 +1163,8 @@ function obtenerSeccionesReporte(tipo: string, datos: DireccionIndicadoresRespon
   if (tipo === "empresas") {
     return [
       { titulo: "Empresas por estado", columnas: ["Estado", "Empresas"], filas: serie(datos.empresas_por_estado) },
-      { titulo: "Empresas por tipo de tramite", columnas: ["Tipo de tramite", "Empresas"], filas: serie(datos.empresas_por_tipo_tramite) },
-      { titulo: "Empresas por periodo de participacion", columnas: ["Periodo", "Empresas"], filas: serie(datos.empresas_por_periodo) },
+      { titulo: "Empresas por tipo de trámite", columnas: ["Tipo de trámite", "Empresas"], filas: serie(datos.empresas_por_tipo_tramite) },
+      { titulo: "Empresas por periodo", columnas: ["Periodo", "Empresas"], filas: serie(datos.empresas_por_periodo) },
     ];
   }
 
@@ -1036,7 +1177,7 @@ function obtenerSeccionesReporte(tipo: string, datos: DireccionIndicadoresRespon
   if (tipo === "vacantes") {
     return [
       { titulo: "Vacantes por estado", columnas: ["Estado", "Vacantes"], filas: serie(datos.vacantes_por_estado) },
-      { titulo: "Vacantes por tipo de practica", columnas: ["Tipo", "Vacantes"], filas: serie(datos.vacantes_por_tipo_practica) },
+      { titulo: "Vacantes por tipo de práctica", columnas: ["Tipo", "Vacantes"], filas: serie(datos.vacantes_por_tipo_practica) },
       { titulo: "Vacantes por periodo", columnas: ["Periodo", "Vacantes"], filas: serie(datos.vacantes_por_periodo) },
     ];
   }
@@ -1063,13 +1204,13 @@ function obtenerSeccionesReporte(tipo: string, datos: DireccionIndicadoresRespon
 
   if (tipo === "carreras") {
     return [
-      { titulo: "Participacion por carrera", columnas: ["Carrera", "Alumnos"], filas: alumnosCarrera },
+      { titulo: "Participación por carrera", columnas: ["Carrera", "Alumnos"], filas: alumnosCarrera },
     ];
   }
 
   return [
     { titulo: "Alumnos por carrera", columnas: ["Carrera", "Alumnos"], filas: alumnosCarrera },
-    { titulo: "Alumnos por tipo de practica", columnas: ["Tipo", "Alumnos"], filas: serie(datos.alumnos_por_tipo_practica) },
+    { titulo: "Alumnos por tipo de práctica", columnas: ["Tipo", "Alumnos"], filas: serie(datos.alumnos_por_tipo_practica) },
     { titulo: "Empresas por estado", columnas: ["Estado", "Empresas"], filas: serie(datos.empresas_por_estado) },
     { titulo: "Convenios por estado", columnas: ["Estado", "Convenios"], filas: serie(datos.convenios_por_estado) },
     { titulo: "Vacantes por estado", columnas: ["Estado", "Vacantes"], filas: serie(datos.vacantes_por_estado) },
@@ -1115,7 +1256,7 @@ function DetalleTabla({
             ) : (
               <tr>
                 <td colSpan={columnas.length} className="px-4 py-8 text-center text-gray-400">
-                  Sin datos disponibles para esta seccion.
+                  Sin datos disponibles para esta sección.
                 </td>
               </tr>
             )}

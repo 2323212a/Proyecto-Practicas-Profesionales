@@ -32,6 +32,8 @@ type ConvocatoriaCatalogo = {
   tipo_periodo: string;
   fecha_inicio_general: string | null;
   fecha_cierre_general: string | null;
+  fecha_inicio_empresas: string | null;
+  fecha_cierre_empresas: string | null;
   estado: string;
 };
 
@@ -49,6 +51,8 @@ const CONFIG_INICIAL: ConfiguracionSistema = {
   convocatoria_nombre: "Sin convocatoria principal",
   convocatoria_inicio: null,
   convocatoria_cierre: null,
+  convocatoria_empresas_inicio: null,
+  convocatoria_empresas_cierre: null,
   convocatoria_periodo: null,
   convocatoria_estado: "Pendiente",
   soporte_telefono: "(961) 619-1200",
@@ -64,6 +68,25 @@ function formatearFecha(fecha?: string | null) {
   }).format(date);
 }
 
+function calcularEstadoInscripcionEmpresas(
+  convocatoria: {
+    estado?: string | null;
+    fecha_inicio_empresas?: string | null;
+    fecha_cierre_empresas?: string | null;
+  } | null,
+) {
+  if (!convocatoria || convocatoria.estado !== "Activa") return "Cerrada";
+  if (!convocatoria.fecha_inicio_empresas || !convocatoria.fecha_cierre_empresas) return "Cerrada";
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const inicio = new Date(`${convocatoria.fecha_inicio_empresas}T00:00:00`);
+  const cierre = new Date(`${convocatoria.fecha_cierre_empresas}T00:00:00`);
+
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(cierre.getTime())) return "Cerrada";
+  return inicio <= hoy && hoy <= cierre ? "Abierta" : "Cerrada";
+}
+
 export function AdminConfiguracion() {
   const [configuracion, setConfiguracion] = useState<ConfiguracionSistema>(CONFIG_INICIAL);
   const [estadisticas, setEstadisticas] = useState<EstadisticasAdmin | null>(null);
@@ -72,11 +95,7 @@ export function AdminConfiguracion() {
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState("");
   const [estadoSistemaOriginal, setEstadoSistemaOriginal] = useState(CONFIG_INICIAL.estado_sistema);
-  const [inscripcionEmpresasOriginal, setInscripcionEmpresasOriginal] = useState(
-    CONFIG_INICIAL.inscripcion_empresas_estado,
-  );
   const [mostrarConfirmacionEstado, setMostrarConfirmacionEstado] = useState(false);
-  const [mostrarConfirmacionInscripcion, setMostrarConfirmacionInscripcion] = useState(false);
 
   useEffect(() => {
     void cargarDatos();
@@ -93,7 +112,6 @@ export function AdminConfiguracion() {
       ]);
       setConfiguracion(configData);
       setEstadoSistemaOriginal(configData.estado_sistema);
-      setInscripcionEmpresasOriginal(configData.inscripcion_empresas_estado);
       setEstadisticas(estadisticasData);
       setConvocatorias(convocatoriasData);
     } catch (error) {
@@ -124,8 +142,12 @@ export function AdminConfiguracion() {
       convocatoria_nombre: convocatoria?.nombre ?? actual.convocatoria_nombre,
       convocatoria_inicio: convocatoria?.fecha_inicio_general ?? actual.convocatoria_inicio,
       convocatoria_cierre: convocatoria?.fecha_cierre_general ?? actual.convocatoria_cierre,
+      convocatoria_empresas_inicio: convocatoria?.fecha_inicio_empresas ?? actual.convocatoria_empresas_inicio,
+      convocatoria_empresas_cierre: convocatoria?.fecha_cierre_empresas ?? actual.convocatoria_empresas_cierre,
       convocatoria_periodo: convocatoria?.tipo_periodo ?? actual.convocatoria_periodo,
       convocatoria_estado: convocatoria?.estado ?? actual.convocatoria_estado,
+      inscripcion_empresas_estado: calcularEstadoInscripcionEmpresas(convocatoria ?? null),
+      inscripcion_empresas_motivo: null,
     }));
   }
 
@@ -136,9 +158,7 @@ export function AdminConfiguracion() {
       const guardada = await gestionConfiguracionUseCase.guardar(configuracion);
       setConfiguracion(guardada);
       setEstadoSistemaOriginal(guardada.estado_sistema);
-      setInscripcionEmpresasOriginal(guardada.inscripcion_empresas_estado);
       setMostrarConfirmacionEstado(false);
-      setMostrarConfirmacionInscripcion(false);
       setMensaje("Configuracion guardada correctamente.");
     } catch (error) {
       console.error(error);
@@ -154,21 +174,11 @@ export function AdminConfiguracion() {
       return;
     }
 
-    if (inscripcionEmpresasOriginal !== configuracion.inscripcion_empresas_estado) {
-      setMostrarConfirmacionInscripcion(true);
-      return;
-    }
-
     void guardarConfirmado();
   }
 
   function confirmarCambioEstado() {
     setMostrarConfirmacionEstado(false);
-    if (inscripcionEmpresasOriginal !== configuracion.inscripcion_empresas_estado) {
-      setMostrarConfirmacionInscripcion(true);
-      return;
-    }
-
     void guardarConfirmado();
   }
 
@@ -247,39 +257,16 @@ export function AdminConfiguracion() {
 
   const inscripcionVisual = {
     Abierta: {
-      texto: "Las empresas pueden enviar solicitudes publicas de registro.",
+      texto: configuracion.inscripcion_empresas_motivo ?? "La convocatoria esta dentro del periodo de registro de empresas.",
       clase: "bg-green-50 border-green-200 text-green-700",
     },
     Cerrada: {
-      texto:
-        "El registro publico de nuevas empresas esta cerrado. Coordinacion puede seguir revisando solicitudes existentes.",
+      texto: configuracion.inscripcion_empresas_motivo ?? "Fuera del periodo de registro de empresas de la convocatoria.",
       clase: "bg-yellow-50 border-yellow-200 text-yellow-800",
     },
   }[configuracion.inscripcion_empresas_estado] ?? {
     texto: "Estado de inscripcion sin descripcion configurada.",
     clase: "bg-gray-50 border-gray-200 text-gray-600",
-  };
-
-  const confirmacionInscripcion = {
-    Abierta: {
-      titulo: "Reabrir inscripcion de empresas",
-      mensaje:
-        "Al reabrir la inscripcion, nuevas empresas podran enviar solicitudes publicas de registro.",
-      confirmar: "Reabrir inscripcion",
-      clase: "bg-green-50 border-green-200 text-green-700",
-    },
-    Cerrada: {
-      titulo: "Cerrar inscripcion de empresas",
-      mensaje:
-        "Al cerrar la inscripcion, nuevas empresas ya no podran enviar solicitudes publicas. Las solicitudes existentes podran seguir revisandose desde Coordinacion de Unidades.",
-      confirmar: "Cerrar inscripcion",
-      clase: "bg-yellow-50 border-yellow-200 text-yellow-800",
-    },
-  }[configuracion.inscripcion_empresas_estado] ?? {
-    titulo: "Confirmar cambio",
-    mensaje: "El estado de inscripcion de empresas cambio. Confirma antes de guardar.",
-    confirmar: "Confirmar cambio",
-    clase: "bg-gray-50 border-gray-200 text-gray-700",
   };
 
   return (
@@ -365,19 +352,14 @@ export function AdminConfiguracion() {
 
           <label className="block">
             <span className="text-sm font-semibold text-gray-700">Inscripcion de nuevas empresas</span>
-            <select
-              className="mt-2 w-full border rounded-xl px-3 py-2 text-sm bg-white"
-              value={configuracion.inscripcion_empresas_estado}
-              onChange={(e) => actualizarCampo("inscripcion_empresas_estado", e.target.value)}
-            >
-              <option>Abierta</option>
-              <option>Cerrada</option>
-            </select>
+            <div className="mt-2 w-full border rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-700">
+              {configuracion.inscripcion_empresas_estado}
+            </div>
             <div className={`mt-2 rounded-xl border px-3 py-2 text-xs ${inscripcionVisual.clase}`}>
               {inscripcionVisual.texto}
             </div>
             <p className="mt-2 text-xs text-gray-500">
-              Controla si nuevas empresas pueden enviar solicitudes publicas de registro.
+              Se calcula con las fechas de Registro de empresas configuradas en la convocatoria.
             </p>
           </label>
         </div>
@@ -529,6 +511,33 @@ export function AdminConfiguracion() {
               </div>
             </div>
 
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="rounded-xl border border-gray-200 p-4">
+                <div className="text-xs text-gray-500">Inicio registro empresas</div>
+                <div className="font-semibold text-[#0d2b5e]">
+                  {formatearFecha(
+                    convocatoriaSeleccionada?.fecha_inicio_empresas ??
+                      configuracion.convocatoria_empresas_inicio,
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4">
+                <div className="text-xs text-gray-500">Cierre registro empresas</div>
+                <div className="font-semibold text-[#0d2b5e]">
+                  {formatearFecha(
+                    convocatoriaSeleccionada?.fecha_cierre_empresas ??
+                      configuracion.convocatoria_empresas_cierre,
+                  )}
+                </div>
+              </div>
+
+              <div className={`rounded-xl border p-4 ${inscripcionVisual.clase}`}>
+                <div className="text-xs">Registro empresas</div>
+                <div className="font-semibold">{configuracion.inscripcion_empresas_estado}</div>
+              </div>
+            </div>
+
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
               <p className="text-sm text-[#0d2b5e]">
                 Las fechas y el nombre vienen de Catalogos &gt; Convocatorias. Aqui eliges cual se publica en la pagina principal y en el calendario.
@@ -642,47 +651,6 @@ export function AdminConfiguracion() {
         </div>
       )}
 
-      {mostrarConfirmacionInscripcion && (
-        <div
-          className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
-          onClick={() => setMostrarConfirmacionInscripcion(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className={`rounded-xl border p-4 ${confirmacionInscripcion.clase}`}>
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="font-bold text-lg">{confirmacionInscripcion.titulo}</h3>
-                  <p className="text-sm mt-2">{confirmacionInscripcion.mensaje}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm text-gray-600">
-              Cambio pendiente: {inscripcionEmpresasOriginal} {"->"} {configuracion.inscripcion_empresas_estado}
-            </div>
-
-            <div className="flex flex-col sm:flex-row justify-end gap-3 mt-6">
-              <button
-                onClick={() => setMostrarConfirmacionInscripcion(false)}
-                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => void guardarConfirmado()}
-                disabled={guardando}
-                className="px-4 py-2.5 rounded-xl bg-[#1565c0] text-white text-sm font-semibold hover:bg-[#0d2b5e] disabled:opacity-60"
-              >
-                {guardando ? "Guardando..." : confirmacionInscripcion.confirmar}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

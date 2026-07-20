@@ -20,9 +20,12 @@ class ConfiguracionSistemaUpdate(BaseModel):
 
 class ConfiguracionSistemaResponse(ConfiguracionSistemaUpdate):
     id_configuracion: int
+    inscripcion_empresas_motivo: str | None = None
     convocatoria_nombre: str
     convocatoria_inicio: date | None = None
     convocatoria_cierre: date | None = None
+    convocatoria_empresas_inicio: date | None = None
+    convocatoria_empresas_cierre: date | None = None
     convocatoria_periodo: str | None = None
     convocatoria_estado: str | None = None
     ultima_actualizacion: datetime | None = None

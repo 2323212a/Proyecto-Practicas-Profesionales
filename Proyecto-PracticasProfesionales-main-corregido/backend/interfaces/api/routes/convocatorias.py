@@ -54,6 +54,8 @@ def calcular_fase_actual(convocatoria) -> str:
         inicio = getattr(convocatoria, campo_inicio)
         cierre = getattr(convocatoria, campo_cierre)
         if inicio and cierre and inicio <= hoy <= cierre:
+            if campo_inicio == "fecha_inicio_seleccion":
+                return "Seleccion"
             return nombre
 
     ultima_fecha = max(fechas)
