@@ -6,6 +6,10 @@ from domain.ports.repositories import UsuarioRepositoryPort
 from domain.ports.security import PasswordHasherPort
 
 
+ROLES_CORREO_INSTITUCIONAL = {1, 2, 3, 4, 6, 7}
+DOMINIO_INSTITUCIONAL = "@unach.mx"
+
+
 class UsuarioService:
     def __init__(
         self,
@@ -25,6 +29,7 @@ class UsuarioService:
 
     def crear(self, usuario):
         self._validar_rol(usuario.id_rol)
+        self._validar_correo_institucional(usuario.correo, usuario.id_rol)
         self._validar_correo_disponible(usuario.correo)
 
         nuevo_usuario = self.repository.nuevo({
@@ -59,6 +64,8 @@ class UsuarioService:
 
         if datos.id_rol is not None:
             self._validar_rol(datos.id_rol)
+        id_rol_objetivo = datos.id_rol if datos.id_rol is not None else usuario.id_rol
+        self._validar_correo_institucional(datos.correo, id_rol_objetivo)
         self._validar_correo_disponible(datos.correo, id_usuario)
 
         if datos.id_rol is not None and usuario.id_rol != datos.id_rol and self.perfil_service.usuario_tiene_perfil(id_usuario):
@@ -83,3 +90,10 @@ class UsuarioService:
         usuario = self.repository.obtener_por_correo(correo)
         if usuario and usuario.id_usuario != id_usuario_actual:
             raise HTTPException(status_code=400, detail="El correo ya está registrado")
+
+    def _validar_correo_institucional(self, correo: str, id_rol: int):
+        if id_rol in ROLES_CORREO_INSTITUCIONAL and not correo.lower().endswith(DOMINIO_INSTITUCIONAL):
+            raise HTTPException(
+                status_code=400,
+                detail="El correo de alumnos y personal debe terminar en @unach.mx",
+            )

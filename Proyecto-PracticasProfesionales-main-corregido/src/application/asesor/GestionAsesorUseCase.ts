@@ -39,6 +39,10 @@ export class GestionAsesorUseCase {
     return this.repository.cambiarEstadoReporte(idAsesor, idReporte, estado, observacion, calificacion);
   }
 
+  descargarReporte(idReporte: number): Promise<Blob> {
+    return this.repository.descargarReporte(idReporte);
+  }
+
   listarEvaluaciones(idAsesor: number): Promise<EvaluacionesAsesorResponse> {
     return this.repository.listarEvaluaciones(idAsesor);
   }

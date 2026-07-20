@@ -11,6 +11,13 @@ const estadoConfig = (doc: DocumentoFlujoAlumno) => {
   if (doc.estado === "Observado" || doc.estado === "Rechazado") return { label: "Correccion", color: "bg-orange-100 text-orange-700", icon: AlertCircle };
   return { label: "Pendiente", color: "bg-gray-100 text-gray-500", icon: Clock };
 };
+const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
+const ACCEPT_DOCUMENTOS = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+
+function esArchivoDocumentoPermitido(file: File) {
+  return ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    /\.(pdf|jpe?g|png|webp)$/i.test(file.name);
+}
 
 const fecha = (value?: string | null) => {
   if (!value) return "Sin fecha";
@@ -81,8 +88,12 @@ export function CargaDocumentos() {
 
   const subir = async (doc: DocumentoFlujoAlumno, file?: File) => {
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setError("Solo se permiten archivos PDF.");
+    if (file.size > MAX_DOCUMENTO_BYTES) {
+      setError("El archivo excede el límite máximo de 2 MB.");
+      return;
+    }
+    if (!esArchivoDocumentoPermitido(file)) {
+      setError("Tipo de archivo no permitido.");
       return;
     }
     try {
@@ -91,7 +102,7 @@ export function CargaDocumentos() {
       setError("");
     } catch (err: unknown) {
       console.error(err);
-      setError(getApiErrorMessage(err, "No se pudo subir el PDF."));
+      setError(getApiErrorMessage(err, "No se pudo subir el archivo."));
     } finally {
       setUploading(null);
     }
@@ -182,7 +193,7 @@ export function CargaDocumentos() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold text-[#0d2b5e]">Carga de Documentos</h1>
-        <p className="text-gray-500 text-[11px] mt-0.5">Carga tu expediente en PDF siguiendo el flujo por bloques.</p>
+        <p className="text-gray-500 text-[11px] mt-0.5">Carga tu expediente siguiendo el flujo por bloques. Máximo 2 MB por archivo.</p>
       </div>
 
       {data.convocatoria && (
@@ -241,7 +252,7 @@ export function CargaDocumentos() {
           <div className="divide-y divide-gray-100">{porEtapa.asignacion.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}</div>
           <div className="border-t border-blue-100 bg-[#e3f0ff] px-4 py-3">
             <h3 className="font-bold text-[#0d2b5e] text-base">Subir Documentos Firmados</h3>
-            <p className="text-[11px] text-blue-700 mt-0.5">Descarga los documentos enviados por coordinacion, llenalos y subelos nuevamente en formato PDF.</p>
+            <p className="text-[11px] text-blue-700 mt-0.5">Descarga los documentos enviados por coordinacion, llenalos y subelos nuevamente. Máximo 2 MB por archivo.</p>
           </div>
           <div className="divide-y divide-gray-100">{porEtapa.firmados.map((doc) => <DocumentoAlumno key={doc.id_documento} doc={doc} uploading={uploading} downloading={downloading} onUpload={subir} onOpen={abrir} onDownloadGenerated={descargarGenerado} />)}</div>
         </section>
@@ -342,7 +353,7 @@ function DocumentoAlumno({ doc, uploading, downloading, onUpload, onOpen, onDown
           <label className="inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-[#0d2b5e] text-white rounded-xl text-[11px] font-semibold hover:bg-[#1565c0] cursor-pointer">
             {uploading === doc.id_documento ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
             {doc.nombre_archivo ? "Reemplazar" : "Seleccionar archivo"}
-            <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(event) => onUpload(doc, event.target.files?.[0])} />
+            <input type="file" accept={ACCEPT_DOCUMENTOS} className="hidden" onChange={(event) => onUpload(doc, event.target.files?.[0])} />
           </label>
         )}
       </div>

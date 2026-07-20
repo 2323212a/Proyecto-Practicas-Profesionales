@@ -20,7 +20,7 @@ import type {
   SubirReporteAlumnoInput,
   TipoReporteAlumno,
 } from "../../../domain/alumno/ReporteAlumno";
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 type UsuarioSesion = {
@@ -34,6 +34,13 @@ const estadoColor: Record<EstadoReporteAlumno, string> = {
   Pendiente: "bg-yellow-100 text-yellow-700",
   Rechazado: "bg-red-100 text-red-700",
 };
+const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
+const ACCEPT_DOCUMENTOS = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+
+function esArchivoDocumentoPermitido(archivo: File) {
+  return ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(archivo.type) ||
+    /\.(pdf|jpe?g|png|webp)$/i.test(archivo.name);
+}
 
 function obtenerIdAlumno() {
   const raw = localStorage.getItem("usuario");
@@ -53,10 +60,6 @@ function formatearFecha(fecha: string) {
     month: "short",
     year: "numeric",
   }).format(new Date(`${fecha}T00:00:00`));
-}
-
-function archivoUrl(url: string) {
-  return resolveApiUrl(url);
 }
 
 function archivoABase64(file: File): Promise<string> {
@@ -113,6 +116,14 @@ export function AlumnoReportes() {
   const subirReporte = async (espacio: EspacioReporteAlumno) => {
     const archivo = archivos[espacio.tipo_reporte];
     if (!idAlumno || !archivo || !espacio.puede_enviar) return;
+    if (archivo.size > MAX_DOCUMENTO_BYTES) {
+      setError("El archivo excede el límite máximo de 2 MB.");
+      return;
+    }
+    if (!esArchivoDocumentoPermitido(archivo)) {
+      setError("Tipo de archivo no permitido.");
+      return;
+    }
 
     try {
       setSubiendo(espacio.tipo_reporte);
@@ -131,11 +142,24 @@ export function AlumnoReportes() {
       await cargarReportes();
     } catch (err) {
       console.error(err);
-      setError("No se pudo subir el reporte. Revisa que sea un PDF valido y que el espacio este habilitado.");
+      setError(getApiErrorMessage(err, "No se pudo subir el reporte."));
     } finally {
       setSubiendo(null);
     }
   };
+
+  async function abrirReporte(idReporte: number) {
+    try {
+      setError("");
+      const blob = await gestionReportesAlumnoUseCase.descargar(idReporte);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo abrir el reporte."));
+    }
+  }
 
   const resumen = datos?.resumen ?? {
     total: 0,
@@ -317,7 +341,7 @@ export function AlumnoReportes() {
                     <div className="space-y-3">
                       {reporte && (
                         <button
-                          onClick={() => window.open(archivoUrl(reporte.url), "_blank")}
+                          onClick={() => abrirReporte(reporte.id_reporte)}
                           className="w-full bg-[#1565c0] text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center justify-center gap-2"
                         >
                           <Eye className="w-4 h-4" />
@@ -345,7 +369,7 @@ export function AlumnoReportes() {
                             <span className="sr-only">Archivo PDF</span>
                             <input
                               type="file"
-                              accept="application/pdf"
+                              accept={ACCEPT_DOCUMENTOS}
                               onChange={seleccionarArchivo(espacio.tipo_reporte)}
                               disabled={bloqueado}
                               className="w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-[#1565c0] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white disabled:cursor-not-allowed disabled:rounded-lg disabled:bg-amber-100/70 disabled:p-2 disabled:text-amber-800 disabled:file:bg-amber-200 disabled:file:text-amber-700"
@@ -357,6 +381,7 @@ export function AlumnoReportes() {
                               Seleccionado: {archivo.name}
                             </div>
                           )}
+                          <div className="text-[11px] text-gray-500">Máximo 2 MB por archivo.</div>
 
                           <button
                             onClick={() => subirReporte(espacio)}

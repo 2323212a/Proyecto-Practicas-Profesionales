@@ -22,4 +22,12 @@ export class LiberacionHttpRepository implements LiberacionRepository {
     const { data } = await apiClient.get<LiberacionAlumnoResponse>("/coordinador/liberacion/alumno/me");
     return data;
   }
+
+  async descargarDocumento(idLiberacion: number): Promise<Blob> {
+    const { data } = await apiClient.get<Blob>(
+      `/coordinador/liberacion/documentos/${idLiberacion}/archivo`,
+      { responseType: "blob" },
+    );
+    return data;
+  }
 }

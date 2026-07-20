@@ -36,6 +36,9 @@ router = APIRouter(
     dependencies=[Depends(requerir_roles(["Administrador"]))]
 )
 
+ROLES_CORREO_INSTITUCIONAL = {1, 2, 3, 4, 6, 7}
+DOMINIO_INSTITUCIONAL = "@unach.mx"
+
 
 def _obtener_usuario_model(db: Session, id_usuario: int):
     usuario = db.query(UsuarioModel).filter(
@@ -126,6 +129,14 @@ def _validar_correo_disponible(db: Session, correo: str, id_usuario_actual: int)
     )
     if existente is not None:
         raise HTTPException(status_code=400, detail="El correo ya esta registrado")
+
+
+def _validar_correo_institucional(correo: str, id_rol: int):
+    if id_rol in ROLES_CORREO_INSTITUCIONAL and not correo.lower().endswith(DOMINIO_INSTITUCIONAL):
+        raise HTTPException(
+            status_code=400,
+            detail="El correo de alumnos y personal debe terminar en @unach.mx",
+        )
 
 
 def _datos_personales_usuario(usuario: UsuarioModel):
@@ -494,6 +505,7 @@ def actualizar_perfil_usuario(
         correo = _limpiar_texto(payload["correo"])
         if not correo:
             raise HTTPException(status_code=400, detail="El correo es obligatorio")
+        _validar_correo_institucional(correo, usuario.id_rol)
         _validar_correo_disponible(db, correo, id_usuario)
         usuario.correo = correo
 

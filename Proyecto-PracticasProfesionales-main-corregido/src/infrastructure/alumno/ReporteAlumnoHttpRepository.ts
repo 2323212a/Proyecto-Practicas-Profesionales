@@ -16,4 +16,12 @@ export class ReporteAlumnoHttpRepository implements ReporteAlumnoRepository {
     const { data } = await apiClient.post<ReporteAlumno>("/alumno/reportes/me/subir", datos);
     return data;
   }
+
+  async descargar(idReporte: number): Promise<Blob> {
+    const { data } = await apiClient.get<Blob>(
+      `/alumno/reportes/reportes/${idReporte}/archivo`,
+      { responseType: "blob" },
+    );
+    return data;
+  }
 }

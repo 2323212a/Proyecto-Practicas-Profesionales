@@ -54,6 +54,22 @@ export class DocumentacionEmpresaHttpRepository implements DocumentacionEmpresaR
     return data;
   }
 
+  async descargarDocumento(idDocumentoEmpresa: number): Promise<Blob> {
+    const { data } = await apiClient.get<Blob>(
+      `/empresa/documentos/documentos/${idDocumentoEmpresa}/archivo`,
+      { responseType: "blob" },
+    );
+    return data;
+  }
+
+  async descargarFormato(idFormatoEmpresa: number): Promise<Blob> {
+    const { data } = await apiClient.get<Blob>(
+      `/empresa/documentos/formatos/${idFormatoEmpresa}/archivo`,
+      { responseType: "blob" },
+    );
+    return data;
+  }
+
   async configurarRequisito(
     idTipoDocumentoEmpresa: number,
     datos: ConfigurarRequisitoEmpresaInput,

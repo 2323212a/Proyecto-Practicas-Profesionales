@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle, Download, FileText, Search, Upload, XCircle } from "lucide-react";
 import { gestionLiberacionUseCase } from "../../dependencies";
 import type { AlumnoLiberacion, LiberacionResponse } from "../../../domain/coordinador/Liberacion";
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 
 const requisitoLabel: Record<string, string> = {
@@ -14,6 +14,7 @@ const requisitoLabel: Record<string, string> = {
   evaluacion_alumno_empresa: "Evaluacion alumno a empresa",
   incidencias_cerradas: "Incidencias cerradas",
 };
+const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
 
 function archivoABase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -65,6 +66,10 @@ export function CoordinadorLiberacion() {
       setError("Selecciona el documento de liberacion antes de continuar.");
       return;
     }
+    if (archivo.size > MAX_DOCUMENTO_BYTES) {
+      setError("El archivo excede el límite máximo de 2 MB.");
+      return;
+    }
 
     const permitidos = [
       "application/pdf",
@@ -72,7 +77,7 @@ export function CoordinadorLiberacion() {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
     if (!permitidos.includes(archivo.type)) {
-      setError("Solo se permiten archivos PDF, DOC o DOCX.");
+      setError("Tipo de archivo no permitido.");
       return;
     }
 
@@ -92,6 +97,19 @@ export function CoordinadorLiberacion() {
       setError("No se pudo anexar el documento de liberacion. Revisa los requisitos faltantes.");
     } finally {
       setAnexando(null);
+    }
+  }
+
+  async function descargarLiberacion(idLiberacion: number) {
+    try {
+      setError("");
+      const blob = await gestionLiberacionUseCase.descargarDocumento(idLiberacion);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo descargar la liberacion."));
     }
   }
 
@@ -170,10 +188,10 @@ export function CoordinadorLiberacion() {
                 <div className="mt-5 bg-purple-50 border border-purple-100 rounded-xl p-4 text-sm text-purple-700 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <span>Liberacion emitida el {alumno.liberacion.fecha_liberacion ?? "sin fecha"} - Documento: {alumno.liberacion.documento_nombre ?? "Sin archivo"}</span>
                   {alumno.liberacion.documento_url && (
-                    <a href={resolveApiUrl(alumno.liberacion.documento_url)} target="_blank" rel="noreferrer" className="bg-purple-600 text-white rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-2 w-fit">
+                    <button onClick={() => descargarLiberacion(alumno.liberacion!.id_liberacion)} className="bg-purple-600 text-white rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-2 w-fit">
                       <Download className="w-4 h-4" />
                       Descargar
-                    </a>
+                    </button>
                   )}
                 </div>
               )}
@@ -195,6 +213,7 @@ export function CoordinadorLiberacion() {
                         onChange={(event) => setArchivos((actuales) => ({ ...actuales, [alumno.id_asignacion]: event.target.files?.[0] ?? null }))}
                       />
                     </label>
+                    <div className="text-[11px] text-gray-500 self-center">Máximo 2 MB por archivo.</div>
                     <button onClick={() => anexarDocumento(alumno)} disabled={anexando === alumno.id_asignacion || !archivos[alumno.id_asignacion]} className="bg-green-600 text-white rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 disabled:opacity-50">
                       <CheckCircle className="w-4 h-4" />
                       {anexando === alumno.id_asignacion ? "Anexando..." : "Anexar y liberar"}

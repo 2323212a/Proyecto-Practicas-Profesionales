@@ -69,6 +69,7 @@ export interface DocumentacionEmpresaResponse {
 export interface ArchivoBase64Input {
   nombre_archivo: string;
   contenido_base64: string;
+  mime_type?: string | null;
 }
 
 export interface SubirDocumentoEmpresaInput extends ArchivoBase64Input {

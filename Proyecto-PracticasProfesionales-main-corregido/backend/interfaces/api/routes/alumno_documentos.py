@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import logging
+import mimetypes
 import re
+import unicodedata
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,6 +22,7 @@ from app.services.documentacion_flujo_service import (
 )
 from app.services.documentacion_generada_service import generar_documento_oficial, precalentar_documentos_oficiales
 from app.services.convocatoria_rules_service import validar_etapa_actual
+from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_documento_usuario
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
@@ -36,7 +39,8 @@ router = APIRouter(
     tags=["Alumno - Documentos"],
     dependencies=[Depends(requerir_alumno_actual_o_roles(["Administrador"]))],
 )
-UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "documentos"
+UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
+UPLOAD_DIR = UPLOADS_DIR / "expedientes"
 
 
 class SubirDocumentoAlumnoRequest(BaseModel):
@@ -71,8 +75,29 @@ def _convocatoria_vigente(db: Session, alumno: AlumnoModel):
 
 
 def _safe_filename(filename: str) -> str:
-    name = Path(filename).name.strip() or "documento.pdf"
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return normalizar_nombre_archivo(filename, "documento.pdf")
+
+
+def _slug_carpeta(valor: str | None, fallback: str) -> str:
+    texto = valor or fallback
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
+    return texto or fallback
+
+
+def _carpeta_documento_alumno_legacy(alumno: AlumnoModel, expediente: ExpedienteModel, tipo: TipoDocumentoModel) -> Path:
+    nombre_alumno = "_".join(
+        parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno, alumno.matricula] if parte
+    )
+    tipo_practica = alumno.tipo_practica.nombre if alumno.tipo_practica else "practica"
+    return (
+        UPLOAD_DIR
+        / "alumnos"
+        / _slug_carpeta(nombre_alumno, f"alumno_{alumno.id_alumno}")
+        / _slug_carpeta(tipo_practica, "practica")
+        / f"convocatoria_{expediente.id_convocatoria}"
+        / _slug_carpeta(tipo.etapa, "documentos")
+    )
 
 
 def _decode_base64(content: str) -> bytes:
@@ -106,7 +131,7 @@ def _documento_response(documento: DocumentoModel):
         "id_tipo_documento": documento.id_tipo_documento,
         "nombre_archivo": documento.nombre_archivo,
         "ruta_archivo": documento.ruta_archivo,
-        "url": f"/uploads/documentos/{Path(documento.ruta_archivo).name}" if documento.ruta_archivo else None,
+        "url": f"/alumno/documentos/documentos/{documento.id_documento}/archivo" if documento.ruta_archivo else None,
         "estado_documento": documento.estado_documento,
         "fecha_carga": documento.fecha_carga.isoformat(),
         "generado_por_sistema": documento.generado_por_sistema,
@@ -253,19 +278,15 @@ def subir_documento_alumno(
     if tipo is None:
         raise HTTPException(status_code=404, detail="Tipo de documento no encontrado")
 
-    if datos.mime_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 8 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El documento no debe superar 8 MB")
+    validar_documento_usuario(contenido, datos.nombre_archivo, datos.mime_type)
 
     expediente = _asegurar_expediente(db, alumno)
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     safe_name = _safe_filename(datos.nombre_archivo)
-    stored_name = f"{alumno.matricula}_{uuid4().hex}_{safe_name}"
-    ruta = UPLOAD_DIR / stored_name
+    carpeta = _carpeta_documento_alumno_legacy(alumno, expediente, tipo)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / f"{datos.id_tipo_documento}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
     requiere_auto = _requiere_prevalidacion(tipo)
@@ -368,6 +389,7 @@ def descargar_documento_generado_actual(
         )
 
     ruta, filename, media_type = generar_documento_oficial(codigo, alumno)
+    ruta = resolver_archivo_en_uploads(str(ruta), UPLOADS_DIR)
     return FileResponse(ruta, media_type=media_type, filename=filename)
 
 
@@ -404,7 +426,6 @@ def descargar_archivo_documentacion_actual(
     )
     if documento is None or not documento.ruta_archivo:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    ruta = Path(documento.ruta_archivo)
-    if not ruta.exists():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(ruta, media_type="application/pdf", filename=documento.nombre_archivo)
+    ruta = resolver_archivo_en_uploads(documento.ruta_archivo, UPLOADS_DIR)
+    media_type = mimetypes.guess_type(documento.nombre_archivo or ruta.name)[0] or "application/octet-stream"
+    return FileResponse(ruta, media_type=media_type, filename=documento.nombre_archivo)

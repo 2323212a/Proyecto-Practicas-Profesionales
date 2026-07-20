@@ -47,6 +47,14 @@ export class GestionDocumentacionEmpresaUseCase {
     return this.repository.editarDocumento(idDocumentoEmpresa, datos);
   }
 
+  descargarDocumento(idDocumentoEmpresa: number): Promise<Blob> {
+    return this.repository.descargarDocumento(idDocumentoEmpresa);
+  }
+
+  descargarFormato(idFormatoEmpresa: number): Promise<Blob> {
+    return this.repository.descargarFormato(idFormatoEmpresa);
+  }
+
   configurarRequisito(
     idTipoDocumentoEmpresa: number,
     datos: ConfigurarRequisitoEmpresaInput,

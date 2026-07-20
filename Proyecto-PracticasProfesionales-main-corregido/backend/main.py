@@ -4,7 +4,6 @@ import os
 
 from app.services.auditoria_service import registrar_bitacora
 from fastapi import Depends, FastAPI
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import requerir_roles
@@ -90,13 +89,19 @@ from infrastructure.persistence.models.vinculacion_empresa import VinculacionEmp
 # La estructura oficial se crea con los SQL de la DB limpia.
 # No crear ni reparar esquema en runtime para evitar tablas antiguas.
 
+api_docs_enabled = os.getenv("API_DOCS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
 app = FastAPI(
     title="Sistema Integral de Prácticas Profesionales",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs" if api_docs_enabled else None,
+    redoc_url="/redoc" if api_docs_enabled else None,
+    openapi_url="/openapi.json" if api_docs_enabled else None,
 )
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+# Los archivos sensibles se sirven solamente por endpoints autenticados.
+# No montar /uploads como StaticFiles para evitar acceso publico por ruta.
 
 cors_origins = [
     origin.strip()
@@ -106,6 +111,8 @@ cors_origins = [
     ).split(",")
     if origin.strip()
 ]
+if "*" in cors_origins:
+    cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 app.add_middleware(
     CORSMiddleware,

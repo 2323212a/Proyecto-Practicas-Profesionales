@@ -22,7 +22,7 @@ import type {
   ResumenReportesAsesor,
 } from "../../../domain/asesor/Asesor";
 
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 import type { StatCard } from "../../../shared/types/ui";
 const RESUMEN_INICIAL: ResumenReportesAsesor = {
   total: 0,
@@ -56,14 +56,6 @@ function formatearFecha(fecha: string) {
     month: "short",
     year: "numeric",
   }).format(new Date(`${fecha}T00:00:00`));
-}
-
-function urlArchivo(archivo: string, url?: string | null) {
-  const ruta = url ?? archivo;
-  if (ruta.startsWith("http")) return ruta;
-  if (ruta.startsWith("/uploads")) return resolveApiUrl(ruta);
-  if (ruta.startsWith("uploads")) return resolveApiUrl(ruta);
-  return null;
 }
 
 export function AsesorReportes() {
@@ -169,6 +161,19 @@ export function AsesorReportes() {
     }
   };
 
+  async function abrirReporte(idReporte: number) {
+    try {
+      setError("");
+      const blob = await gestionAsesorUseCase.descargarReporte(idReporte);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo abrir el reporte."));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -266,8 +271,6 @@ export function AsesorReportes() {
 
         {!cargando &&
           filtrados.map((reporte) => {
-            const archivo = urlArchivo(reporte.archivo, reporte.url);
-
             return (
               <div
                 key={reporte.id_reporte}
@@ -338,8 +341,7 @@ export function AsesorReportes() {
 
                 <div className="flex flex-wrap gap-2 mt-5">
                   <button
-                    onClick={() => archivo && window.open(archivo, "_blank")}
-                    disabled={!archivo}
+                    onClick={() => abrirReporte(reporte.id_reporte)}
                     className="border border-blue-200 text-[#1565c0] rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2 disabled:opacity-50"
                   >
                     <Eye className="w-4 h-4" />

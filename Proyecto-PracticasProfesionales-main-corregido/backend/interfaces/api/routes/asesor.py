@@ -1,23 +1,27 @@
 from __future__ import annotations
 
+import mimetypes
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.notificacion_service import crear_notificacion
+from app.services.upload_security import resolver_archivo_en_uploads
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import obtener_id_asesor_actual, requerir_asesor_actual_o_roles
+from infrastructure.security.auth_dependencies import obtener_id_asesor_actual, obtener_usuario_actual, requerir_asesor_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.evaluacion import EvaluacionModel
 from infrastructure.persistence.models.horas import HorasModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from infrastructure.persistence.models.reporte import ReporteModel
+from infrastructure.persistence.models.usuario import UsuarioModel
 
 
 router = APIRouter(
@@ -28,6 +32,7 @@ router = APIRouter(
 
 HORAS_META = 480
 REPORTES_META = 2
+UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
 
 
 class CambiarEstadoReporteAsesorRequest(BaseModel):
@@ -79,12 +84,15 @@ def calcular_estado(horas_aprobadas: Decimal, reportes_pendientes: int, reportes
 
 
 def tipo_reporte(reporte: ReporteModel) -> str | None:
+    if reporte.tipo_reporte in {"Parcial", "Final"}:
+        return reporte.tipo_reporte
     titulo = (reporte.titulo or "").lower()
     if "final" in titulo:
         return "Final"
     if "parcial" in titulo:
         return "Parcial"
     return None
+
 
 def serializar_asignacion(db: Session, asignacion: AsignacionModel):
     horas_aprobadas = (
@@ -168,13 +176,38 @@ def serializar_reporte(reporte: ReporteModel) -> dict:
         "titulo": reporte.titulo,
         "descripcion": reporte.descripcion,
         "archivo": Path(reporte.archivo).name,
-        "url": f"/uploads/reportes/{Path(reporte.archivo).name}",
+        "url": f"/asesor/me/reportes/{reporte.id_reporte}/archivo" if reporte.archivo else None,
         "fecha_entrega": reporte.fecha_entrega.isoformat(),
         "estado": reporte.estado_reporte,
         "calificacion": float(reporte.calificacion) if reporte.calificacion is not None else None,
         "observacion_asesor": reporte.observacion_asesor,
         "fecha_revision": reporte.fecha_revision.isoformat() if reporte.fecha_revision else None,
     }
+
+
+def _es_admin(usuario: UsuarioModel) -> bool:
+    return usuario.rol is not None and usuario.rol.nombre == "Administrador"
+
+
+def _asegurar_permiso_reporte_asesor(usuario: UsuarioModel, reporte: ReporteModel) -> None:
+    if _es_admin(usuario):
+        return
+    asignacion = reporte.asignacion
+    if (
+        usuario.rol is not None
+        and usuario.rol.nombre == "Asesor Interno"
+        and usuario.personal_interno is not None
+        and asignacion is not None
+        and asignacion.id_asesor == usuario.personal_interno.id_personal
+    ):
+        return
+    raise HTTPException(status_code=403, detail="No tienes permisos para ver este reporte")
+
+
+def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None):
+    ruta = resolver_archivo_en_uploads(ruta_archivo, UPLOADS_DIR)
+    media_type = mimetypes.guess_type(nombre_archivo or ruta.name)[0] or "application/octet-stream"
+    return FileResponse(ruta, media_type=media_type, filename=nombre_archivo or ruta.name)
 
 
 def serializar_evaluacion_asesor(db: Session, asignacion: AsignacionModel) -> dict:
@@ -354,6 +387,24 @@ def listar_mis_reportes_asesor(
     db: Session = Depends(obtener_db),
 ):
     return listar_reportes_asesor(id_asesor, db)
+
+
+@router.get("/me/reportes/{id_reporte}/archivo")
+def descargar_reporte_asesor_seguro(
+    id_reporte: int,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    reporte = (
+        db.query(ReporteModel)
+        .options(joinedload(ReporteModel.asignacion))
+        .filter(ReporteModel.id_reporte == id_reporte)
+        .first()
+    )
+    if reporte is None or not reporte.archivo:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    _asegurar_permiso_reporte_asesor(usuario_actual, reporte)
+    return _file_response_segura(reporte.archivo, Path(reporte.archivo).name)
 
 
 @router.patch("/{id_asesor:int}/reportes/{id_reporte:int}/estado")

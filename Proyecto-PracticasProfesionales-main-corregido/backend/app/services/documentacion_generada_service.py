@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import re
+import unicodedata
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -27,7 +29,6 @@ from infrastructure.persistence.models.vacante import VacanteModel  # noqa: F401
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = BASE_DIR / "templates" / "documentos"
-GENERATED_DIR = BASE_DIR / "uploads" / "documentos_generados"
 CACHE_VERSION = "relleno-v1"
 
 DOCUMENTOS_GENERADOS = {
@@ -94,6 +95,42 @@ def _nombre_completo(alumno: AlumnoModel) -> str:
     ) or "Alumno"
 
 
+def _slug_carpeta(valor: str | None, fallback: str) -> str:
+    texto = valor or fallback
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
+    return texto or fallback
+
+
+def _expediente_reciente(alumno: AlumnoModel):
+    if not alumno.expedientes:
+        return None
+    return sorted(
+        alumno.expedientes,
+        key=lambda expediente: expediente.fecha_creacion,
+        reverse=True,
+    )[0]
+
+
+def _carpeta_generados_alumno(alumno: AlumnoModel) -> Path:
+    expediente = _expediente_reciente(alumno)
+    nombre_alumno = "_".join(
+        parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno, alumno.matricula] if parte
+    )
+    tipo_practica = alumno.tipo_practica.nombre if alumno.tipo_practica else "practica"
+    convocatoria = f"convocatoria_{expediente.id_convocatoria}" if expediente is not None else "sin_convocatoria"
+    return (
+        BASE_DIR
+        / "uploads"
+        / "expedientes"
+        / "alumnos"
+        / _slug_carpeta(nombre_alumno, f"alumno_{alumno.id_alumno}")
+        / _slug_carpeta(tipo_practica, "practica")
+        / convocatoria
+        / "generados"
+    )
+
+
 def _fecha_larga(hoy: date) -> str:
     return f"{hoy.day} de {MESES[hoy.month - 1]} de {hoy.year}"
 
@@ -106,13 +143,8 @@ def _contexto(alumno: AlumnoModel) -> dict[str, str]:
     hoy = date.today()
     usuario = alumno.usuario
     carrera = alumno.carrera.nombre if alumno.carrera else ""
-    convocatoria = None
-    if alumno.expedientes:
-        convocatoria = sorted(
-            alumno.expedientes,
-            key=lambda expediente: expediente.fecha_creacion,
-            reverse=True,
-        )[0].convocatoria
+    expediente = _expediente_reciente(alumno)
+    convocatoria = expediente.convocatoria if expediente is not None else None
     return {
         "fecha_larga": _fecha_larga(hoy),
         "fecha_corta": _fecha_corta(hoy),
@@ -236,9 +268,10 @@ def generar_documento_oficial(codigo: str, alumno: AlumnoModel) -> tuple[Path, s
     if not template_path.exists():
         raise HTTPException(status_code=500, detail="Plantilla oficial no encontrada")
 
-    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    generated_dir = _carpeta_generados_alumno(alumno)
+    generated_dir.mkdir(parents=True, exist_ok=True)
     filename = config["filename"].format(matricula=alumno.matricula)
-    output_path = GENERATED_DIR / filename
+    output_path = generated_dir / filename
     meta_path = output_path.with_suffix(output_path.suffix + ".meta")
     cache_key = _cache_key(codigo, alumno)
     if (
@@ -252,7 +285,7 @@ def generar_documento_oficial(codigo: str, alumno: AlumnoModel) -> tuple[Path, s
     soffice = shutil.which("libreoffice") or shutil.which("soffice")
     if soffice is None:
         filename = config["fallback_filename"].format(matricula=alumno.matricula)
-        output_path = GENERATED_DIR / filename
+        output_path = generated_dir / filename
         _crear_docx_rellenado(template_path, output_path, codigo, alumno)
         return (
             output_path,

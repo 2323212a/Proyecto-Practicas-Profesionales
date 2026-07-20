@@ -18,7 +18,14 @@ def _frontend_url() -> str:
     return os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
 
+def _correo_habilitado() -> bool:
+    return os.getenv("EMAIL_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _smtp_config() -> dict[str, str | int]:
+    if not _correo_habilitado():
+        raise EmailConfigError("El envio de correo esta deshabilitado.")
+
     host = os.getenv("SMTP_HOST")
     port = os.getenv("SMTP_PORT", "587")
     user = os.getenv("SMTP_USER")

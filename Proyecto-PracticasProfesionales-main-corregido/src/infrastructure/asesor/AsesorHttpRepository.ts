@@ -47,6 +47,14 @@ export class AsesorHttpRepository implements AsesorRepository {
     return response.data;
   }
 
+  async descargarReporte(idReporte: number): Promise<Blob> {
+    const response = await apiClient.get<Blob>(
+      `/asesor/me/reportes/${idReporte}/archivo`,
+      { responseType: "blob" },
+    );
+    return response.data;
+  }
+
   async listarEvaluaciones(_idAsesor: number): Promise<EvaluacionesAsesorResponse> {
     const response = await apiClient.get<EvaluacionesAsesorResponse>(
       "/asesor/me/evaluaciones"

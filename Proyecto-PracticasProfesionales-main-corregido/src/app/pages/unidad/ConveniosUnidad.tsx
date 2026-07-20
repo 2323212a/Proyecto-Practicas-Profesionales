@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
 import type { ChangeEvent } from "react";
 import {
   AlertCircle,
@@ -13,6 +12,7 @@ import {
 
 import { gestionDocumentacionEmpresaUseCase } from "../../dependencies";
 import type { DocumentacionEmpresaResponse, RequisitoEmpresa } from "../../../domain/empresa/DocumentacionEmpresa";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 type UsuarioSesion = {
@@ -27,6 +27,13 @@ const estadoColor: Record<string, string> = {
   Rechazado: "bg-red-100 text-red-700",
   Faltante: "bg-gray-100 text-gray-600",
 };
+const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
+const ACCEPT_DOCUMENTOS = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+
+function esArchivoDocumentoPermitido(archivo: File) {
+  return ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(archivo.type) ||
+    /\.(pdf|jpe?g|png|webp)$/i.test(archivo.name);
+}
 
 function obtenerIdEmpresa() {
   const raw = localStorage.getItem("usuario");
@@ -47,10 +54,6 @@ function archivoABase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
-}
-
-function urlArchivo(url: string) {
-  return resolveApiUrl(url);
 }
 
 function esRequisitoConvenio(requisito: RequisitoEmpresa) {
@@ -99,6 +102,16 @@ export function ConveniosUnidad() {
   async function subirDocumento(requisito: RequisitoEmpresa, event: ChangeEvent<HTMLInputElement>) {
     const archivo = event.target.files?.[0];
     if (!archivo || !idEmpresa) return;
+    if (archivo.size > MAX_DOCUMENTO_BYTES) {
+      setError("El archivo excede el límite máximo de 2 MB.");
+      event.target.value = "";
+      return;
+    }
+    if (!esArchivoDocumentoPermitido(archivo)) {
+      setError("Tipo de archivo no permitido.");
+      event.target.value = "";
+      return;
+    }
 
     try {
       setSubiendo(requisito.id_tipo_documento_empresa);
@@ -108,14 +121,28 @@ export function ConveniosUnidad() {
         id_tipo_documento_empresa: requisito.id_tipo_documento_empresa,
         nombre_archivo: archivo.name,
         contenido_base64: contenido,
+        mime_type: archivo.type || null,
       });
       await cargar();
     } catch (err) {
       console.error(err);
-      setError("No se pudo subir el documento. Revisa que sea un PDF valido.");
+      setError(getApiErrorMessage(err, "No se pudo subir el documento."));
     } finally {
       setSubiendo(null);
       event.target.value = "";
+    }
+  }
+
+  async function abrirFormato(idFormatoEmpresa: number) {
+    try {
+      setError("");
+      const blob = await gestionDocumentacionEmpresaUseCase.descargarFormato(idFormatoEmpresa);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo descargar el formato."));
     }
   }
 
@@ -178,7 +205,7 @@ export function ConveniosUnidad() {
           <div className="flex flex-wrap gap-2 xl:flex-col xl:w-48">
             {requisito.formato ? (
               <button
-                onClick={() => window.open(urlArchivo(requisito.formato!.url), "_blank")}
+                onClick={() => abrirFormato(requisito.formato!.id_formato_empresa)}
                 disabled={bloqueado}
                 className="flex items-center justify-center gap-2 px-4 py-2 border border-blue-200 text-[#1565c0] rounded-lg text-xs font-semibold hover:bg-blue-50 disabled:opacity-50"
               >
@@ -193,15 +220,16 @@ export function ConveniosUnidad() {
 
             <label className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold ${bloqueado ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-[#0d2b5e] text-white hover:bg-[#1565c0] cursor-pointer"}`}>
               <Upload className="w-3.5 h-3.5" />
-              {subiendo === requisito.id_tipo_documento_empresa ? "Subiendo..." : "Subir PDF"}
+              {subiendo === requisito.id_tipo_documento_empresa ? "Subiendo..." : "Subir archivo"}
               <input
                 type="file"
-                accept="application/pdf"
+                accept={ACCEPT_DOCUMENTOS}
                 className="hidden"
                 disabled={bloqueado || subiendo === requisito.id_tipo_documento_empresa}
                 onChange={(event) => subirDocumento(requisito, event)}
               />
             </label>
+            <div className="text-[11px] text-gray-500 text-center">Máximo 2 MB por archivo.</div>
           </div>
         </div>
       </div>

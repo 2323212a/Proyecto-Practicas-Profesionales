@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import re
-import shutil
 import unicodedata
 
 from fastapi import HTTPException, UploadFile
@@ -14,6 +13,7 @@ from app.services.convocatoria_rules_service import (
     validar_etapa_actual,
 )
 from app.services.documentacion_generada_service import codigo_generacion_por_nombre
+from app.services.upload_security import leer_uploadfile_validado_documento, normalizar_nombre_archivo
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
@@ -328,7 +328,7 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
                 "puede_descargar_generado": bool(codigo_generacion and habilitado),
                 "habilitado": habilitado,
                 "nomenclatura": generar_nomenclatura(tipo.nombre_documento or "documento", alumno.matricula),
-                "url_archivo": f"/alumno/documentos/{documento.id_documento}/archivo" if documento.ruta_archivo else None,
+                "url_archivo": f"/alumno/documentos/documentos/{documento.id_documento}/archivo" if documento.ruta_archivo else None,
             }
         )
 
@@ -431,8 +431,8 @@ def subir_archivo_alumno(db: Session, alumno: AlumnoModel, id_documento: int, ar
         raise HTTPException(status_code=403, detail="Este documento aun no esta habilitado para carga")
     if info_documento["estado"] == "Aprobado":
         raise HTTPException(status_code=400, detail="El documento ya fue aprobado y no puede reemplazarse")
-    if not archivo.filename or not archivo.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
+    contenido = leer_uploadfile_validado_documento(archivo)
+    normalizar_nombre_archivo(archivo.filename, "documento.pdf")
 
     documento = db.query(DocumentoModel).filter(DocumentoModel.id_documento == id_documento).first()
     if documento is None:
@@ -443,10 +443,11 @@ def subir_archivo_alumno(db: Session, alumno: AlumnoModel, id_documento: int, ar
     validar_etapa_actual(expediente.convocatoria, "documentos")
     carpeta = _carpeta_documento_alumno(alumno, expediente, info_documento.get("etapa") or "documentos")
     carpeta.mkdir(parents=True, exist_ok=True)
-    nombre_archivo = generar_nomenclatura(info_documento["nombre"], alumno.matricula)
+    extension = Path(archivo.filename or "documento.pdf").suffix.lower()
+    nombre_base = Path(generar_nomenclatura(info_documento["nombre"], alumno.matricula)).stem
+    nombre_archivo = f"{nombre_base}{extension}"
     destino = carpeta / f"{id_documento}_{nombre_archivo}"
-    with destino.open("wb") as buffer:
-        shutil.copyfileobj(archivo.file, buffer)
+    destino.write_bytes(contenido)
 
     documento.nombre_archivo = nombre_archivo
     documento.ruta_archivo = str(destino)
@@ -464,7 +465,7 @@ def habilitar_documentacion_asignacion(db: Session, alumno: AlumnoModel) -> dict
 
     expediente = asegurar_documentos_expediente(db, alumno)
     filas = documentos_del_flujo(db, expediente)
-    carpeta = UPLOAD_DIR / str(expediente.id_expediente)
+    carpeta = _carpeta_documento_alumno(alumno, expediente, "generados") / "asignacion"
     for documento, tipo in filas:
         if tipo.etapa != "Asignacion":
             continue

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle, Download, FileText, XCircle } from "lucide-react";
 import { gestionLiberacionUseCase } from "../../dependencies";
 import type { AlumnoLiberacion as AlumnoLiberacionData } from "../../../domain/coordinador/Liberacion";
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
+import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 
 type UsuarioSesion = { perfil?: { id_alumno?: number } };
@@ -54,6 +54,19 @@ export function AlumnoLiberacion() {
     }
     void cargar();
   }, [idAlumno]);
+
+  async function descargarLiberacion(idLiberacion: number) {
+    try {
+      setError("");
+      const blob = await gestionLiberacionUseCase.descargarDocumento(idLiberacion);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo descargar la constancia."));
+    }
+  }
 
   if (cargando) {
     return <div className="bg-white rounded-2xl border p-10 text-center text-gray-500">Cargando liberacion...</div>;
@@ -122,15 +135,14 @@ export function AlumnoLiberacion() {
               <p className="text-sm text-green-700 mt-1">Fecha: {alumno.liberacion.fecha_liberacion ?? "Sin fecha"}</p>
               <p className="text-sm text-green-700 mt-1">Documento: {alumno.liberacion.documento_nombre ?? "Sin archivo"}</p>
             </div>
-            <a
-              href={alumno.liberacion.documento_url ? resolveApiUrl(alumno.liberacion.documento_url) : undefined}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              onClick={() => descargarLiberacion(alumno.liberacion!.id_liberacion)}
+              disabled={!alumno.liberacion.documento_url}
               className={`rounded-xl px-4 py-2 text-sm font-semibold flex items-center gap-2 ${alumno.liberacion.documento_url ? "bg-green-600 text-white" : "bg-gray-200 text-gray-500 pointer-events-none"}`}
             >
               <Download className="w-4 h-4" />
               Descargar constancia
-            </a>
+            </button>
           </div>
         </div>
       ) : (

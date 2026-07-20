@@ -20,6 +20,7 @@ export interface AsesorRepository {
     observacion?: string,
     calificacion?: number,
   ): Promise<ReporteAsesor>;
+  descargarReporte(idReporte: number): Promise<Blob>;
   listarEvaluaciones(idAsesor: number): Promise<EvaluacionesAsesorResponse>;
   guardarEvaluacion(
     idAsesor: number,

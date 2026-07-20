@@ -109,12 +109,12 @@ export function VigenciaDerechos() {
           </p>
 
           <p className="text-xs text-gray-500 mb-5">
-            Formato permitido: PDF
+            Formatos permitidos: PDF, JPG, PNG o WEBP. Máximo 2 MB.
           </p>
 
           <input
             type="file"
-            accept=".pdf"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
             onChange={(e) => {
               setArchivo(e.target.files?.[0] || null);
               setEstado("sin_archivo");

@@ -10,6 +10,8 @@ if not SECRET_KEY:
     raise RuntimeError(
         "JWT_SECRET_KEY no esta configurada. Copia .env.example a .env y define una clave segura."
     )
+if len(SECRET_KEY) < 32 or SECRET_KEY.startswith("reemplaza-por-una-clave"):
+    raise RuntimeError("JWT_SECRET_KEY debe tener al menos 32 caracteres y no puede ser el valor de ejemplo.")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8

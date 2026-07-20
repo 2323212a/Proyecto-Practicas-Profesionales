@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ArrowLeft,
@@ -9,26 +9,12 @@ import {
 
 import logoInstitucional from "../../../assets/Logo1.png";
 import { loginUseCase } from "../../dependencies";
-import type { Rol } from "../../../domain/rol/Rol";
-import { obtenerRoles } from "../../../infrastructure/roles/rolesApi";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 import { obtenerRutaInicioPorRol, obtenerRutaInicioSesionGuardada } from "../../routes/authSession";
-
-const ROLES_RESPALDO: Rol[] = [
-  { id_rol: 1, nombre: "Alumno" },
-  { id_rol: 2, nombre: "Administrador" },
-  { id_rol: 3, nombre: "Coordinador de Practicas" },
-  { id_rol: 4, nombre: "Coordinador de Unidades Receptoras" },
-  { id_rol: 5, nombre: "Unidad Receptora" },
-  { id_rol: 6, nombre: "Asesor Interno" },
-  { id_rol: 7, nombre: "Direccion" },
-];
 
 export function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-  const [roles, setRoles] = useState<Rol[]>(ROLES_RESPALDO);
-  const [idRolSeleccionado, setIdRolSeleccionado] = useState("1");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showRecovery, setShowRecovery] = useState(false);
@@ -43,21 +29,7 @@ export function LoginPage() {
       navigate(rutaSesion, { replace: true });
       return;
     }
-
-    obtenerRoles()
-      .then((data: Rol[]) => {
-        if (data.length > 0) {
-          setRoles(data);
-          setIdRolSeleccionado(String(data[0].id_rol));
-        }
-      })
-      .catch((err) => console.error(err));
   }, [navigate]);
-
-  const rolSeleccionado = useMemo(
-    () => roles.find((item) => String(item.id_rol) === idRolSeleccionado),
-    [idRolSeleccionado, roles],
-  );
 
   const handleLogin = async () => {
     try {
@@ -68,11 +40,6 @@ export function LoginPage() {
         correo: email,
         password,
       });
-
-      if (rolSeleccionado && rolSeleccionado.id_rol !== response.id_rol) {
-        setError("Las credenciales no corresponden al rol seleccionado");
-        return;
-      }
 
       localStorage.setItem("token", response.access_token);
       localStorage.setItem("usuario", JSON.stringify(response));
@@ -184,24 +151,6 @@ export function LoginPage() {
                       {error}
                     </div>
                   )}
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Rol / Perfil
-                    </label>
-
-                    <select
-                      value={idRolSeleccionado}
-                      onChange={(e) => setIdRolSeleccionado(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-[#1565c0] text-sm bg-white transition-colors"
-                    >
-                      {roles.map((rol) => (
-                        <option key={rol.id_rol} value={rol.id_rol}>
-                          {rol.nombre}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
 
                   <button
                     onClick={handleLogin}

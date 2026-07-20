@@ -5,4 +5,5 @@ export interface LiberacionRepository {
   emitir(idAsignacion: number): Promise<AlumnoLiberacion>;
   anexarDocumento(idAsignacion: number, payload: AnexarLiberacionPayload): Promise<AlumnoLiberacion>;
   obtenerAlumno(idAlumno: number): Promise<LiberacionAlumnoResponse>;
+  descargarDocumento(idLiberacion: number): Promise<Blob>;
 }

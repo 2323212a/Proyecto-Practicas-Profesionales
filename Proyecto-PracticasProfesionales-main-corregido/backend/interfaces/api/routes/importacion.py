@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.upload_security import leer_uploadfile_validado_importacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.email.email_service import EmailError, enviar_credenciales_login
 from infrastructure.persistence.models.alumno import AlumnoModel
@@ -65,6 +66,13 @@ def generar_password_segura(longitud: int = 12):
     return "".join(secrets.choice(caracteres) for _ in range(longitud))
 
 
+DOMINIO_INSTITUCIONAL = "@unach.mx"
+
+
+def _correo_institucional_valido(correo: str):
+    return correo.lower().endswith(DOMINIO_INSTITUCIONAL)
+
+
 def _normalizar_excel_con_secciones(df_raw, columnas_requeridas):
     encabezado_index = None
     encabezados = []
@@ -107,6 +115,7 @@ def _normalizar_excel_con_secciones(df_raw, columnas_requeridas):
 
 
 def _leer_archivo(archivo: UploadFile, hoja: str | None = None, columnas_requeridas=None):
+    leer_uploadfile_validado_importacion(archivo)
     extension = Path(archivo.filename or "").suffix.lower()
     if extension == ".csv":
         return pd.read_csv(archivo.file)
@@ -177,6 +186,8 @@ def _validar_alumnos_df(df, db: Session):
 
         if correo in correos:
             errores.append({"fila": numero_fila, "error": f"Correo duplicado en archivo: {correo}"})
+        if correo and not _correo_institucional_valido(correo):
+            errores.append({"fila": numero_fila, "error": "El correo de alumnos debe terminar en @unach.mx"})
         if matricula in matriculas:
             errores.append({"fila": numero_fila, "error": f"Matricula duplicada en archivo: {matricula}"})
 
@@ -258,6 +269,8 @@ def _validar_personal_df(df, db: Session):
 
         if correo in correos:
             errores.append({"fila": numero_fila, "error": f"Correo duplicado en archivo: {correo}"})
+        if correo and not _correo_institucional_valido(correo):
+            errores.append({"fila": numero_fila, "error": "El correo de personal debe terminar en @unach.mx"})
         correos.add(correo)
 
         if correo and db.query(UsuarioModel).filter(UsuarioModel.correo == correo).first():

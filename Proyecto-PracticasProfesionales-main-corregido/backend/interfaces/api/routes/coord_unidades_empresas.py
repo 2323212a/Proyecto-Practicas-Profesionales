@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -702,6 +702,7 @@ def cambiar_estado_empresa(
     id_empresa: int,
     datos: CambiarEstadoEmpresaRequest,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     estados_validos = {"Solicitante", "Pendiente", "Rechazada", "Activa", "Suspendida", "Inactiva"}
     if datos.estado_empresa not in estados_validos:
@@ -711,11 +712,52 @@ def cambiar_estado_empresa(
     if empresa is None:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
+    estado_anterior = empresa.estado_empresa
+    if estado_anterior == "Rechazada" and datos.estado_empresa != "Rechazada":
+        if datos.estado_empresa != "Pendiente":
+            raise HTTPException(status_code=400, detail="Una empresa rechazada solo puede volver a Pendiente")
+        solicitud = _ultima_solicitud(db, id_empresa)
+        if solicitud is None or solicitud.estado_solicitud != "Rechazada" or solicitud.fecha_revision is None:
+            raise HTTPException(status_code=400, detail="No hay rechazo reciente para deshacer")
+        if datetime.now() - solicitud.fecha_revision > timedelta(minutes=10):
+            raise HTTPException(status_code=400, detail="Solo se puede deshacer el rechazo durante los primeros 10 minutos")
+        if _usuario_empresa(db, id_empresa) is not None:
+            raise HTTPException(status_code=400, detail="No se puede deshacer el rechazo porque la empresa ya tiene cuenta")
+        if db.query(VacanteModel).filter(VacanteModel.id_empresa == id_empresa).count() > 0:
+            raise HTTPException(status_code=400, detail="No se puede deshacer el rechazo porque la empresa ya tiene vacantes")
+        if (
+            db.query(ParticipacionEmpresaConvocatoriaModel)
+            .filter(
+                ParticipacionEmpresaConvocatoriaModel.id_empresa == id_empresa,
+                ParticipacionEmpresaConvocatoriaModel.estado == "Aceptada",
+            )
+            .count()
+            > 0
+        ):
+            raise HTTPException(status_code=400, detail="No se puede deshacer el rechazo porque la empresa ya avanzo en convocatorias")
+        if obtener_convenio_vigente_actual(db, id_empresa) is not None or obtener_vinculacion_aprobada_actual(db, id_empresa) is not None:
+            raise HTTPException(status_code=400, detail="No se puede deshacer el rechazo porque la empresa ya avanzo a otra etapa")
+        solicitud.estado_solicitud = "En revision"
+        solicitud.observaciones = (
+            f"{solicitud.observaciones or ''}\nRechazo deshecho por usuario {usuario_actual.id_usuario}."
+        ).strip()
+        solicitud.revisada_por = usuario_actual.id_usuario
+        solicitud.fecha_revision = datetime.now()
+
     if datos.estado_empresa == "Activa":
         _validar_documentacion_empresa_aprobada(db, id_empresa)
         validar_habilitacion_empresa_para_vacantes(db, empresa)
 
     empresa.estado_empresa = datos.estado_empresa
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Deshacer rechazo de empresa" if estado_anterior == "Rechazada" and datos.estado_empresa == "Pendiente" else "Cambiar estado de empresa",
+        "empresas",
+        f"Empresa {id_empresa} cambio de {estado_anterior} a {datos.estado_empresa}.",
+        "empresa",
+        id_empresa,
+    )
     db.commit()
     db.refresh(empresa)
 

@@ -24,7 +24,6 @@ import type {
   RequisitoEmpresa,
 } from "../../../domain/empresa/DocumentacionEmpresa";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
-import { resolveApiUrl } from "../../../shared/utils/apiUrl";
 
 import type { StatCard } from "../../../shared/types/ui";
 type ConfiguracionRequisitoForm = {
@@ -42,6 +41,18 @@ const estadoColor: Record<string, string> = {
   Suspendida: "bg-red-100 text-red-700",
   Inactiva: "bg-gray-100 text-gray-600",
 };
+const MAX_FORMATO_BYTES = 2 * 1024 * 1024;
+const ACCEPT_FORMATOS = ".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function esFormatoPermitido(archivo: File) {
+  return [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ].includes(archivo.type) || /\.(pdf|docx?|xlsx?)$/i.test(archivo.name);
+}
 
 function archivoABase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -50,10 +61,6 @@ function archivoABase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
-}
-
-function urlArchivo(url: string) {
-  return resolveApiUrl(url);
 }
 
 function textoFormatoPorEtapa(etapa: string) {
@@ -183,6 +190,16 @@ export function ExpedienteEmpresa() {
   async function subirFormato(requisito: RequisitoEmpresa, event: ChangeEvent<HTMLInputElement>) {
     const archivo = event.target.files?.[0];
     if (!archivo) return;
+    if (archivo.size > MAX_FORMATO_BYTES) {
+      setError("El archivo excede el límite máximo de 2 MB.");
+      event.target.value = "";
+      return;
+    }
+    if (!esFormatoPermitido(archivo)) {
+      setError("Tipo de archivo no permitido.");
+      event.target.value = "";
+      return;
+    }
 
     try {
       setFormatoTipo(requisito.id_tipo_documento_empresa);
@@ -193,12 +210,13 @@ export function ExpedienteEmpresa() {
         id_tipo_documento_empresa: requisito.id_tipo_documento_empresa,
         nombre_archivo: archivo.name,
         contenido_base64: contenido,
+        mime_type: archivo.type || null,
       });
       setExito(`Formato oficial actualizado para ${requisito.nombre}.`);
       await cargar();
     } catch (err) {
       console.error(err);
-      setError("No se pudo subir el formato. Revisa que sea PDF, DOC o DOCX valido.");
+      setError(getApiErrorMessage(err, "No se pudo subir el formato."));
     } finally {
       setFormatoTipo(null);
       event.target.value = "";
@@ -349,6 +367,32 @@ export function ExpedienteEmpresa() {
     }
   }
 
+  async function abrirFormato(idFormatoEmpresa: number) {
+    try {
+      setError("");
+      const blob = await gestionDocumentacionEmpresaUseCase.descargarFormato(idFormatoEmpresa);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo descargar el formato."));
+    }
+  }
+
+  async function abrirDocumento(idDocumentoEmpresa: number) {
+    try {
+      setError("");
+      const blob = await gestionDocumentacionEmpresaUseCase.descargarDocumento(idDocumentoEmpresa);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo abrir el documento."));
+    }
+  }
+
   function renderRequisito(requisito: RequisitoEmpresa, modo: "revision" | "configuracion") {
     const documento = requisito.documento;
     const estado = documento?.estado_documento ?? "Faltante";
@@ -398,7 +442,7 @@ export function ExpedienteEmpresa() {
                   <div className="flex flex-wrap gap-2 mt-3">
                     {requisito.formato && (
                       <button
-                        onClick={() => window.open(urlArchivo(requisito.formato!.url), "_blank")}
+                        onClick={() => abrirFormato(requisito.formato!.id_formato_empresa)}
                         className="border border-blue-200 bg-white text-[#1565c0] rounded-lg px-3 py-2 text-xs font-semibold flex items-center gap-1"
                       >
                         <Download className="w-3 h-3" />
@@ -424,7 +468,7 @@ export function ExpedienteEmpresa() {
                           : "Subir formato"}
                       <input
                         type="file"
-                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        accept={ACCEPT_FORMATOS}
                         className="hidden"
                         onChange={(event) => subirFormato(requisito, event)}
                       />
@@ -493,7 +537,7 @@ export function ExpedienteEmpresa() {
 
             {modo === "revision" && (
               <button
-                onClick={() => documento && window.open(urlArchivo(documento.url), "_blank")}
+                onClick={() => documento && abrirDocumento(documento.id_documento_empresa)}
                 disabled={!documento}
                 className="border border-blue-200 text-[#1565c0] rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
               >
@@ -504,7 +548,7 @@ export function ExpedienteEmpresa() {
 
             {requisito.formato && (
               <button
-                onClick={() => window.open(urlArchivo(requisito.formato!.url), "_blank")}
+                onClick={() => abrirFormato(requisito.formato!.id_formato_empresa)}
                 className="border border-blue-200 text-[#1565c0] rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1"
               >
                 <Download className="w-3 h-3" />
@@ -840,7 +884,7 @@ export function ExpedienteEmpresa() {
                     <div className="flex flex-wrap gap-2">
                       {configurando.formato && (
                         <button
-                          onClick={() => window.open(urlArchivo(configurando.formato!.url), "_blank")}
+                          onClick={() => abrirFormato(configurando.formato!.id_formato_empresa)}
                           className="border border-blue-200 text-[#1565c0] rounded-xl px-4 py-2 text-xs font-semibold flex items-center gap-2"
                         >
                           <Download className="w-4 h-4" />
@@ -868,7 +912,7 @@ export function ExpedienteEmpresa() {
                             : "Subir formato"}
                         <input
                           type="file"
-                          accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          accept={ACCEPT_FORMATOS}
                           className="hidden"
                           onChange={(event) => subirFormato(configurando, event)}
                         />

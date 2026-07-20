@@ -23,4 +23,8 @@ export class GestionLiberacionUseCase {
   obtenerAlumno(idAlumno: number) {
     return this.repository.obtenerAlumno(idAlumno);
   }
+
+  descargarDocumento(idLiberacion: number) {
+    return this.repository.descargarDocumento(idLiberacion);
+  }
 }

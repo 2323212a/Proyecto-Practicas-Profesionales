@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import mimetypes
 import re
+import unicodedata
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -9,13 +11,15 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.notificacion_service import crear_notificacion
+from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_documento_liberacion
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles, requerir_roles
+from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, obtener_usuario_actual, requerir_alumno_actual_o_roles, requerir_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.evaluacion import EvaluacionModel
@@ -25,6 +29,7 @@ from infrastructure.persistence.models.horas import HorasModel
 from infrastructure.persistence.models.incidencia_practica import IncidenciaPracticaModel
 from infrastructure.persistence.models.liberacion import LiberacionModel
 from infrastructure.persistence.models.reporte import ReporteModel
+from infrastructure.persistence.models.usuario import UsuarioModel
 
 
 router = APIRouter(
@@ -32,7 +37,8 @@ router = APIRouter(
     tags=["Coordinador - Liberacion"],
 )
 HORAS_META = 480
-UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "liberaciones"
+UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
+UPLOAD_DIR = UPLOADS_DIR / "expedientes"
 MIMES_PERMITIDOS = {
     "application/pdf": ".pdf",
     "application/msword": ".doc",
@@ -47,8 +53,38 @@ class AnexarLiberacionRequest(BaseModel):
 
 
 def _safe_filename(filename: str) -> str:
-    name = Path(filename).name.strip() or "liberacion.pdf"
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return normalizar_nombre_archivo(filename, "liberacion.pdf")
+
+
+def _slug_carpeta(valor: str | None, fallback: str) -> str:
+    texto = valor or fallback
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
+    return texto or fallback
+
+
+def _carpeta_liberacion_alumno(asignacion: AsignacionModel) -> Path:
+    alumno = asignacion.alumno
+    if alumno is None:
+        return UPLOAD_DIR / "alumnos" / "sin_alumno" / f"convocatoria_{asignacion.id_convocatoria}" / "liberacion"
+    nombre_alumno = "_".join(
+        parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno, alumno.matricula] if parte
+    )
+    tipo_practica = (
+        asignacion.tipo_practica.nombre
+        if asignacion.tipo_practica
+        else alumno.tipo_practica.nombre
+        if alumno.tipo_practica
+        else "practica"
+    )
+    return (
+        UPLOAD_DIR
+        / "alumnos"
+        / _slug_carpeta(nombre_alumno, f"alumno_{alumno.id_alumno}")
+        / _slug_carpeta(tipo_practica, "practica")
+        / f"convocatoria_{asignacion.id_convocatoria}"
+        / "liberacion"
+    )
 
 
 def _decode_base64(content: str) -> bytes:
@@ -59,15 +95,41 @@ def _decode_base64(content: str) -> bytes:
         raise HTTPException(status_code=400, detail="Archivo base64 invalido") from exc
 
 
-def _archivo_liberacion_response(ruta_archivo: Optional[str]):
-    if not ruta_archivo:
+def _archivo_liberacion_response(liberacion: Optional[LiberacionModel]):
+    if liberacion is None or not liberacion.documento_liberacion:
         return {"documento_liberacion": None, "documento_nombre": None, "documento_url": None}
+    ruta_archivo = liberacion.documento_liberacion
     nombre = Path(ruta_archivo).name
     return {
         "documento_liberacion": ruta_archivo,
         "documento_nombre": nombre,
-        "documento_url": f"/uploads/liberaciones/{nombre}",
+        "documento_url": f"/coordinador/liberacion/documentos/{liberacion.id_liberacion}/archivo",
     }
+
+
+def _nombre_rol(usuario: UsuarioModel) -> str | None:
+    return usuario.rol.nombre if usuario.rol is not None else None
+
+
+def _asegurar_permiso_liberacion(usuario: UsuarioModel, liberacion: LiberacionModel) -> None:
+    rol = _nombre_rol(usuario)
+    if rol in {"Administrador", "Coordinador de Practicas", "Direccion"}:
+        return
+    asignacion = liberacion.asignacion
+    if (
+        rol == "Alumno"
+        and usuario.alumno is not None
+        and asignacion is not None
+        and asignacion.id_alumno == usuario.alumno.id_alumno
+    ):
+        return
+    raise HTTPException(status_code=403, detail="No tienes permisos para ver esta liberacion")
+
+
+def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None):
+    ruta = resolver_archivo_en_uploads(ruta_archivo, UPLOADS_DIR)
+    media_type = mimetypes.guess_type(nombre_archivo or ruta.name)[0] or "application/octet-stream"
+    return FileResponse(ruta, media_type=media_type, filename=nombre_archivo or ruta.name)
 
 
 def _nombre_perfil(perfil) -> str:
@@ -199,7 +261,7 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
                 "id_liberacion": liberacion.id_liberacion,
                 "estado_liberacion": liberacion.estado_liberacion,
                 "fecha_liberacion": liberacion.fecha_liberacion.isoformat() if liberacion.fecha_liberacion else None,
-                **_archivo_liberacion_response(liberacion.documento_liberacion),
+                **_archivo_liberacion_response(liberacion),
                 "observaciones": liberacion.observaciones,
             }
             if liberacion
@@ -233,6 +295,24 @@ def listar_candidatos_liberacion(db: Session = Depends(obtener_db)):
         },
         "alumnos": alumnos,
     }
+
+
+@router.get("/documentos/{id_liberacion}/archivo")
+def descargar_liberacion_segura(
+    id_liberacion: int,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    liberacion = (
+        db.query(LiberacionModel)
+        .options(joinedload(LiberacionModel.asignacion))
+        .filter(LiberacionModel.id_liberacion == id_liberacion)
+        .first()
+    )
+    if liberacion is None or not liberacion.documento_liberacion:
+        raise HTTPException(status_code=404, detail="Liberacion no encontrada")
+    _asegurar_permiso_liberacion(usuario_actual, liberacion)
+    return _file_response_segura(liberacion.documento_liberacion, Path(liberacion.documento_liberacion).name)
 
 
 @router.get(
@@ -349,20 +429,19 @@ def anexar_documento_liberacion(
         raise HTTPException(status_code=400, detail={"mensaje": "El alumno aun no cumple requisitos", "faltantes": estado["faltantes"]})
 
     if datos.mime_type not in MIMES_PERMITIDOS:
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF, DOC o DOCX")
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido.")
 
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
+    validar_documento_liberacion(contenido, datos.nombre_archivo, datos.mime_type)
 
     safe_name = _safe_filename(datos.nombre_archivo)
     extension = MIMES_PERMITIDOS[datos.mime_type]
     if not safe_name.lower().endswith(extension):
         safe_name = f"{safe_name}{extension}"
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    stored_name = f"liberacion_asignacion_{id_asignacion}_{uuid4().hex}_{safe_name}"
-    ruta = UPLOAD_DIR / stored_name
+    carpeta = _carpeta_liberacion_alumno(asignacion)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / f"liberacion_asignacion_{id_asignacion}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
     liberacion = asignacion.liberacion

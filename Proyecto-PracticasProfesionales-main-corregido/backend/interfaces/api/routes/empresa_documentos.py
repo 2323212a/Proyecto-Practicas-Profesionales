@@ -2,42 +2,61 @@ from __future__ import annotations
 
 import base64
 import logging
+import mimetypes
 import re
+import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.auditoria_service import registrar_bitacora
 from app.services.convenio_empresa_service import activar_convenio_actual, obtener_convenio_actual
+from app.services.empresa_reglas_service import obtener_convenio_vigente_actual, obtener_vinculacion_aprobada_actual
 from app.services.notificacion_service import crear_notificacion, notificar_roles
+from app.services.upload_security import (
+    normalizar_nombre_archivo,
+    resolver_archivo_en_uploads,
+    validar_documento_usuario,
+    validar_formato_institucional,
+)
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, requerir_empresa_actual_o_roles, requerir_roles
+from infrastructure.security.auth_dependencies import obtener_id_empresa_actual, obtener_usuario_actual, requerir_empresa_actual_o_roles, requerir_roles
 from infrastructure.persistence.models.convenio import ConvenioModel
+from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.formato_empresa import FormatoEmpresaModel
+from infrastructure.persistence.models.participacion_empresa_convocatoria import ParticipacionEmpresaConvocatoriaModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
+from infrastructure.persistence.models.usuario import UsuarioModel
+from infrastructure.persistence.models.vacante import VacanteModel
 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Documentacion de Empresas"])
-UPLOAD_DOCUMENTOS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "documentos_empresa"
-UPLOAD_FORMATOS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "formatos_empresa"
+UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
+UPLOAD_EMPRESAS_DIR = Path(__file__).resolve().parents[3] / "uploads" / "empresas"
+UPLOAD_DOCUMENTOS_DIR = UPLOAD_EMPRESAS_DIR
+UPLOAD_FORMATOS_DIR = UPLOAD_EMPRESAS_DIR / "formatos"
 class SubirDocumentoEmpresaRequest(BaseModel):
     id_tipo_documento_empresa: int
     nombre_archivo: str
     contenido_base64: str
+    mime_type: str | None = None
 
 
 class SubirFormatoEmpresaRequest(BaseModel):
     id_tipo_documento_empresa: int
     nombre_archivo: str
     contenido_base64: str
+    mime_type: str | None = None
     version: str | None = None
 
 
@@ -51,6 +70,7 @@ class RevisarDocumentoEmpresaRequest(BaseModel):
 class EditarDocumentoEmpresaRequest(BaseModel):
     nombre_archivo: str
     contenido_base64: str
+    mime_type: str | None = None
     observaciones: str | None = None
 
 
@@ -73,8 +93,48 @@ TIPOS_BASE_EMPRESA = [
 
 
 def _safe_filename(filename: str) -> str:
-    name = Path(filename).name.strip() or "documento.pdf"
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return normalizar_nombre_archivo(filename, "documento.pdf")
+
+
+def _slug_carpeta(valor: str | None, fallback: str) -> str:
+    texto = valor or fallback
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
+    return texto or fallback
+
+
+def _convocatoria_carpeta_empresa(db: Session, id_empresa: int) -> str:
+    participacion = (
+        db.query(ParticipacionEmpresaConvocatoriaModel)
+        .join(ConvocatoriaModel, ConvocatoriaModel.id_convocatoria == ParticipacionEmpresaConvocatoriaModel.id_convocatoria)
+        .filter(ParticipacionEmpresaConvocatoriaModel.id_empresa == id_empresa)
+        .order_by(
+            ConvocatoriaModel.fecha_inicio_general.desc().nullslast(),
+            ParticipacionEmpresaConvocatoriaModel.fecha_solicitud.desc(),
+        )
+        .first()
+    )
+    if participacion is None:
+        return "sin_convocatoria"
+    return f"convocatoria_{participacion.id_convocatoria}"
+
+
+def _carpeta_documento_empresa(db: Session, empresa: EmpresaModel, tipo: TipoDocumentoEmpresaModel) -> Path:
+    empresa_slug = _slug_carpeta(
+        "_".join(parte for parte in [empresa.nombre_empresa, empresa.rfc] if parte),
+        f"empresa_{empresa.id_empresa}",
+    )
+    return (
+        UPLOAD_DOCUMENTOS_DIR
+        / empresa_slug
+        / _convocatoria_carpeta_empresa(db, empresa.id_empresa)
+        / "documentacion"
+        / _slug_carpeta(tipo.etapa, "documentacion")
+    )
+
+
+def _carpeta_formato_empresa(tipo: TipoDocumentoEmpresaModel) -> Path:
+    return UPLOAD_FORMATOS_DIR / _slug_carpeta(tipo.etapa, "documentacion") / f"requisito_{tipo.id_tipo_documento_empresa}"
 
 
 def _decode_base64(content: str) -> bytes:
@@ -123,7 +183,7 @@ def _formato_response(formato: FormatoEmpresaModel | None):
     return {
         "id_formato_empresa": formato.id_formato_empresa,
         "nombre_archivo": formato.nombre_archivo,
-        "url": f"/uploads/formatos_empresa/{Path(formato.ruta_archivo).name}",
+        "url": f"/empresa/documentos/formatos/{formato.id_formato_empresa}/archivo",
         "version": formato.version,
         "formato_activo": formato.activo,
         "fecha_subida": formato.fecha_subida.isoformat() if formato.fecha_subida else None,
@@ -138,12 +198,41 @@ def _documento_response(documento: DocumentoEmpresaModel | None):
         "id_empresa": documento.id_empresa,
         "id_tipo_documento_empresa": documento.id_tipo_documento_empresa,
         "nombre_archivo": documento.nombre_archivo,
-        "url": f"/uploads/documentos_empresa/{Path(documento.ruta_archivo).name}",
+        "url": f"/empresa/documentos/documentos/{documento.id_documento_empresa}/archivo" if documento.ruta_archivo else None,
         "estado_documento": documento.estado_documento,
         "observaciones": documento.observaciones,
         "fecha_subida": documento.fecha_subida.isoformat() if documento.fecha_subida else None,
         "fecha_revision": documento.fecha_revision.isoformat() if documento.fecha_revision else None,
     }
+
+
+def _nombre_rol(usuario: UsuarioModel) -> str | None:
+    return usuario.rol.nombre if usuario.rol is not None else None
+
+
+def _asegurar_permiso_documento_empresa(usuario: UsuarioModel, documento: DocumentoEmpresaModel) -> None:
+    rol = _nombre_rol(usuario)
+    if rol in {"Administrador", "Coordinador de Unidades Receptoras", "Direccion"}:
+        return
+    if (
+        rol == "Unidad Receptora"
+        and usuario.responsable_empresa is not None
+        and usuario.responsable_empresa.id_empresa == documento.id_empresa
+    ):
+        return
+    raise HTTPException(status_code=403, detail="No tienes permisos para ver este documento")
+
+
+def _asegurar_permiso_formato_empresa(usuario: UsuarioModel) -> None:
+    if _nombre_rol(usuario) in {"Administrador", "Coordinador de Unidades Receptoras", "Unidad Receptora", "Direccion"}:
+        return
+    raise HTTPException(status_code=403, detail="No tienes permisos para ver este formato")
+
+
+def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None):
+    ruta = resolver_archivo_en_uploads(ruta_archivo, UPLOADS_DIR)
+    media_type = mimetypes.guess_type(nombre_archivo or ruta.name)[0] or "application/octet-stream"
+    return FileResponse(ruta, media_type=media_type, filename=nombre_archivo or ruta.name)
 
 
 def _puede_eliminar_requisito(db: Session, id_tipo_documento_empresa: int) -> bool:
@@ -475,13 +564,12 @@ def subir_documento_empresa(
             detail="El convenio se habilita cuando la documentacion legal obligatoria esta aprobada",
         )
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
+    validar_documento_usuario(contenido, datos.nombre_archivo, datos.mime_type)
 
-    UPLOAD_DOCUMENTOS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(datos.nombre_archivo)
-    stored_name = f"empresa_{id_empresa}_{uuid4().hex}_{safe_name}"
-    ruta = UPLOAD_DOCUMENTOS_DIR / stored_name
+    carpeta = _carpeta_documento_empresa(db, empresa, tipo)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / f"{datos.id_tipo_documento_empresa}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
     documento = (
@@ -520,6 +608,40 @@ def subir_documento_empresa(
     db.commit()
     db.refresh(documento)
     return _documento_response(documento)
+
+
+@router.get("/empresa/documentos/documentos/{id_documento_empresa}/archivo")
+def descargar_documento_empresa_seguro(
+    id_documento_empresa: int,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    documento = (
+        db.query(DocumentoEmpresaModel)
+        .filter(DocumentoEmpresaModel.id_documento_empresa == id_documento_empresa)
+        .first()
+    )
+    if documento is None or not documento.ruta_archivo:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    _asegurar_permiso_documento_empresa(usuario_actual, documento)
+    return _file_response_segura(documento.ruta_archivo, documento.nombre_archivo)
+
+
+@router.get("/empresa/documentos/formatos/{id_formato_empresa}/archivo")
+def descargar_formato_empresa_seguro(
+    id_formato_empresa: int,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    formato = (
+        db.query(FormatoEmpresaModel)
+        .filter(FormatoEmpresaModel.id_formato_empresa == id_formato_empresa)
+        .first()
+    )
+    if formato is None or not formato.ruta_archivo:
+        raise HTTPException(status_code=404, detail="Formato no encontrado")
+    _asegurar_permiso_formato_empresa(usuario_actual)
+    return _file_response_segura(formato.ruta_archivo, formato.nombre_archivo)
 
 
 @router.get(
@@ -577,13 +699,12 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
     if not tipo.requiere_formato:
         raise HTTPException(status_code=400, detail="El requisito no esta configurado para usar formato")
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El formato no debe superar 10 MB")
+    validar_formato_institucional(contenido, datos.nombre_archivo, datos.mime_type)
 
-    UPLOAD_FORMATOS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(datos.nombre_archivo)
-    stored_name = f"formato_empresa_{tipo.id_tipo_documento_empresa}_{uuid4().hex}_{safe_name}"
-    ruta = UPLOAD_FORMATOS_DIR / stored_name
+    carpeta = _carpeta_formato_empresa(tipo)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / f"formato_{tipo.id_tipo_documento_empresa}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
     db.query(FormatoEmpresaModel).filter(
@@ -829,6 +950,7 @@ def revisar_documento_empresa(
     id_documento_empresa: int,
     datos: RevisarDocumentoEmpresaRequest,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     if datos.estado_documento not in {"Aprobado", "Rechazado", "Pendiente", "Con observaciones"}:
         raise HTTPException(status_code=400, detail="Estado de documento no valido")
@@ -842,9 +964,49 @@ def revisar_documento_empresa(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == documento.id_empresa).first()
+    estado_anterior = documento.estado_documento
+    ahora = datetime.now()
+
+    if datos.estado_documento == "Pendiente" and estado_anterior != "Pendiente":
+        if documento.fecha_revision is None:
+            raise HTTPException(status_code=400, detail="No hay revision reciente para deshacer")
+        if ahora - documento.fecha_revision > timedelta(minutes=10):
+            raise HTTPException(status_code=400, detail="Solo se puede deshacer la revision durante los primeros 10 minutos")
+        if empresa is not None:
+            tiene_vacantes = db.query(VacanteModel).filter(VacanteModel.id_empresa == empresa.id_empresa).first() is not None
+            tiene_participacion_aceptada = (
+                db.query(ParticipacionEmpresaConvocatoriaModel)
+                .filter(
+                    ParticipacionEmpresaConvocatoriaModel.id_empresa == empresa.id_empresa,
+                    ParticipacionEmpresaConvocatoriaModel.estado == "Aceptada",
+                )
+                .first()
+                is not None
+            )
+            if (
+                empresa.estado_empresa == "Activa"
+                or tiene_vacantes
+                or tiene_participacion_aceptada
+                or obtener_convenio_vigente_actual(db, empresa.id_empresa) is not None
+                or obtener_vinculacion_aprobada_actual(db, empresa.id_empresa) is not None
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="No se puede deshacer la revision porque la empresa ya avanzo a otra etapa",
+                )
+
     documento.estado_documento = datos.estado_documento
-    documento.observaciones = datos.observaciones
-    documento.fecha_revision = datetime.now()
+    if datos.estado_documento == "Pendiente":
+        marca = f"Revision deshecha por usuario {usuario_actual.id_usuario}."
+        documento.observaciones = "\n".join(
+            parte for parte in [documento.observaciones, marca, datos.observaciones] if parte
+        )
+        documento.fecha_revision = None
+        documento.revisado_por = None
+    else:
+        documento.observaciones = datos.observaciones
+        documento.fecha_revision = ahora
+        documento.revisado_por = usuario_actual.id_usuario
     if empresa is not None:
         _recalcular_estado_empresa(db, empresa)
         _sincronizar_convenio_desde_documento(
@@ -869,6 +1031,15 @@ def revisar_documento_empresa(
                 + (f" Observaciones: {datos.observaciones}" if datos.observaciones else ""),
             )
 
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Deshacer revision documental" if datos.estado_documento == "Pendiente" and estado_anterior != "Pendiente" else "Revisar documento de empresa",
+        "documentos",
+        f"Documento de empresa {documento.id_documento_empresa} cambio de {estado_anterior} a {datos.estado_documento}.",
+        "documento_empresa",
+        documento.id_documento_empresa,
+    )
     db.commit()
     db.refresh(documento)
     return _documento_response(documento)
@@ -891,14 +1062,20 @@ def reemplazar_documento_empresa_por_coordinacion(
     if documento is None:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El documento no debe superar 10 MB")
+    validar_documento_usuario(contenido, datos.nombre_archivo, datos.mime_type)
 
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == documento.id_empresa).first()
-    UPLOAD_DOCUMENTOS_DIR.mkdir(parents=True, exist_ok=True)
+    tipo = (
+        db.query(TipoDocumentoEmpresaModel)
+        .filter(TipoDocumentoEmpresaModel.id_tipo_documento_empresa == documento.id_tipo_documento_empresa)
+        .first()
+    )
+    if empresa is None or tipo is None:
+        raise HTTPException(status_code=404, detail="Empresa o tipo de documento no encontrado")
     safe_name = _safe_filename(datos.nombre_archivo)
-    stored_name = f"coord_empresa_{documento.id_empresa}_{uuid4().hex}_{safe_name}"
-    ruta = UPLOAD_DOCUMENTOS_DIR / stored_name
+    carpeta = _carpeta_documento_empresa(db, empresa, tipo)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / f"coord_{documento.id_documento_empresa}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
     documento.nombre_archivo = safe_name

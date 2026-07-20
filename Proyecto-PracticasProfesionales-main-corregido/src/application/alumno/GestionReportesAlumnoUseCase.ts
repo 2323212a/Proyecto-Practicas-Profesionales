@@ -19,4 +19,8 @@ export class GestionReportesAlumnoUseCase {
   subir(idAlumno: number, datos: SubirReporteAlumnoInput): Promise<ReporteAlumno> {
     return this.repository.subir(idAlumno, datos);
   }
+
+  descargar(idReporte: number): Promise<Blob> {
+    return this.repository.descargar(idReporte);
+  }
 }

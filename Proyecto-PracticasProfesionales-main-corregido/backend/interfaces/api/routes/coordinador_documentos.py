@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import base64
-import re
+import mimetypes
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,11 +12,13 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from app.services.auditoria_service import registrar_bitacora
 from app.services.notificacion_service import crear_notificacion, notificar_roles
 from app.services.convocatoria_rules_service import validar_etapa_actual
 from app.services.documentacion_flujo_service import habilitar_documentacion_asignacion, listar_alumnos_revision, serializar_documentacion
+from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_formato_institucional
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import requerir_roles
+from infrastructure.security.auth_dependencies import obtener_usuario_actual, requerir_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.documento import DocumentoModel
@@ -34,6 +37,7 @@ router = APIRouter(
     tags=["Coordinador - Documentos"],
 )
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "formatos"
+UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
 
 
 class TipoDocumentoResumen(BaseModel):
@@ -142,8 +146,15 @@ def _nombre_perfil(perfil, fallback: str = "Sin nombre") -> str:
 
 
 def _safe_filename(filename: str) -> str:
-    name = Path(filename).name.strip() or "formato"
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return normalizar_nombre_archivo(filename, "formato")
+
+
+def _tipo_observacion_revision(estado: str) -> str:
+    if estado == "Rechazado":
+        return "Documento rechazado"
+    if estado == "Observado":
+        return "Documento observado"
+    return "RevisiÃ³n manual"
 
 
 def _decode_base64(content: str) -> bytes:
@@ -162,7 +173,7 @@ def _formato_response(formato: FormatoDocumentoModel) -> FormatoDocumentoRespons
         tipo_documento=tipo.nombre_documento,
         etapa=tipo.etapa,
         nombre_archivo=formato.nombre_archivo,
-        url=f"/uploads/formatos/{Path(formato.ruta_archivo).name}",
+        url=f"/coordinador/documentos/formatos/{formato.id_formato}/archivo",
         mime_type=formato.mime_type,
         descripcion=formato.descripcion,
         activo=formato.activo,
@@ -196,7 +207,7 @@ def _documento_response(db: Session, documento: DocumentoModel) -> DocumentoRevi
         etapa=documento.tipo_documento.etapa,
         nombre_archivo=documento.nombre_archivo,
         ruta_archivo=documento.ruta_archivo,
-        url=f"/uploads/documentos/{Path(documento.ruta_archivo).name}",
+        url=f"/coordinador/documentos/flujo/{documento.id_documento}/archivo" if documento.ruta_archivo else None,
         estado_documento=documento.estado_documento,
         fecha_carga=documento.fecha_carga.isoformat(),
         validacion_automatica_estado=documento.validacion_automatica_estado,
@@ -209,6 +220,12 @@ def _documento_response(db: Session, documento: DocumentoModel) -> DocumentoRevi
         estado_alumno=alumno.estado_alumno,
         ultima_observacion=ultima_observacion.descripcion if ultima_observacion else None,
     )
+
+
+def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None, media_type: str | None = None):
+    ruta = resolver_archivo_en_uploads(ruta_archivo, UPLOADS_DIR)
+    tipo = media_type or mimetypes.guess_type(nombre_archivo or ruta.name)[0] or "application/octet-stream"
+    return FileResponse(ruta, media_type=tipo, filename=nombre_archivo or ruta.name)
 
 
 def _alumno_revision_response(alumno: AlumnoModel, tipos: list[TipoDocumentoModel]) -> AlumnoRevisionResponse:
@@ -608,6 +625,17 @@ def listar_formatos_documento(db: Session = Depends(obtener_db)):
     return _listar_formatos(db)
 
 
+@router.get(
+    "/formatos/{id_formato}/archivo",
+    dependencies=[Depends(requerir_roles(["Alumno", "Coordinador de Practicas", "Administrador", "Direccion"]))],
+)
+def descargar_formato_documento_seguro(id_formato: int, db: Session = Depends(obtener_db)):
+    formato = db.query(FormatoDocumentoModel).filter(FormatoDocumentoModel.id_formato == id_formato).first()
+    if formato is None or not formato.ruta_archivo:
+        raise HTTPException(status_code=404, detail="Formato no encontrado")
+    return _file_response_segura(formato.ruta_archivo, formato.nombre_archivo, formato.mime_type)
+
+
 @router.post(
     "/formatos",
     response_model=FormatoDocumentoResponse,
@@ -622,16 +650,8 @@ def subir_formato_documento(datos: SubirFormatoRequest, db: Session = Depends(ob
     if not tipo.requiere_formato:
         tipo.requiere_formato = True
 
-    if datos.mime_type not in {
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    }:
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF o Word")
-
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 8 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El formato no debe superar 8 MB")
+    validar_formato_institucional(contenido, datos.nombre_archivo, datos.mime_type)
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(datos.nombre_archivo)
@@ -672,6 +692,7 @@ def subir_formato_documento(datos: SubirFormatoRequest, db: Session = Depends(ob
 def cambiar_estado_documento(
     id_documento: int,
     datos: CambiarEstadoDocumentoRequest,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
     db: Session = Depends(obtener_db),
 ):
     estados_validos = {"Pendiente", "Aprobado", "Observado", "Rechazado"}
@@ -685,14 +706,35 @@ def cambiar_estado_documento(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     validar_etapa_actual(documento.expediente.convocatoria, "validacion")
 
+    estado_anterior = documento.estado_documento
+    ahora = datetime.now()
+    if datos.estado == "Pendiente" and estado_anterior != "Pendiente":
+        if documento.fecha_revision is None:
+            raise HTTPException(status_code=400, detail="No hay revision reciente para deshacer")
+        if ahora - documento.fecha_revision > timedelta(minutes=10):
+            raise HTTPException(status_code=400, detail="Solo se puede deshacer la revision durante los primeros 10 minutos")
+        seleccion_posterior = (
+            db.query(SeleccionEmpresaModel)
+            .filter(
+                SeleccionEmpresaModel.id_alumno == documento.expediente.id_alumno,
+                SeleccionEmpresaModel.fecha_seleccion > documento.fecha_revision,
+                SeleccionEmpresaModel.estado == "Registrada",
+            )
+            .first()
+        )
+        if seleccion_posterior is not None:
+            raise HTTPException(status_code=400, detail="No se puede deshacer porque el alumno ya avanzo a seleccion de empresa")
+
     documento.estado_documento = datos.estado
+    documento.fecha_revision = None if datos.estado == "Pendiente" else ahora
+    documento.revisado_por = None if datos.estado == "Pendiente" else usuario_actual.id_usuario
     if datos.comentario:
         db.add(
             ObservacionModel(
                 id_documento=documento.id_documento,
-                id_usuario=datos.id_usuario,
+                id_usuario=usuario_actual.id_usuario,
                 descripcion=datos.comentario,
-                tipo_observacion=datos.estado,
+                tipo_observacion=_tipo_observacion_revision(datos.estado),
             )
         )
 #####################################3333
@@ -729,6 +771,16 @@ def cambiar_estado_documento(
                 "Ya puedes seleccionar empresas desde el padrón."
             ),
         )
+
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Deshacer revision documental" if datos.estado == "Pendiente" and estado_anterior != "Pendiente" else "Revisar documento de alumno",
+        "documentos",
+        f"Documento {documento.id_documento} cambio de {estado_anterior} a {datos.estado}.",
+        "documento_alumno",
+        documento.id_documento,
+    )
 
     db.commit()
     db.refresh(documento)
@@ -801,7 +853,4 @@ def descargar_documento_revision_flujo(id_documento: int, db: Session = Depends(
     documento = db.query(DocumentoModel).filter(DocumentoModel.id_documento == id_documento).first()
     if documento is None or not documento.ruta_archivo:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    ruta = Path(documento.ruta_archivo)
-    if not ruta.exists():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    return FileResponse(ruta, media_type="application/pdf", filename=documento.nombre_archivo or "documento.pdf")
+    return _file_response_segura(documento.ruta_archivo, documento.nombre_archivo or "documento.pdf")

@@ -1,24 +1,29 @@
 from __future__ import annotations
 
 import base64
+import mimetypes
 import re
+import unicodedata
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.notificacion_service import crear_notificacion
+from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_documento_usuario
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
+from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, obtener_usuario_actual, requerir_alumno_actual_o_roles
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.expediente import ExpedienteModel
 from infrastructure.persistence.models.horas import HorasModel
 from infrastructure.persistence.models.reporte import ReporteModel
+from infrastructure.persistence.models.usuario import UsuarioModel
 
 
 router = APIRouter(
@@ -26,7 +31,8 @@ router = APIRouter(
     tags=["Alumno - Reportes"],
     dependencies=[Depends(requerir_alumno_actual_o_roles(["Administrador"]))],
 )
-UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "reportes"
+UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
+UPLOAD_DIR = UPLOADS_DIR / "expedientes"
 HORAS_META = 480
 
 REPORTES_CONFIG = {
@@ -52,8 +58,36 @@ class SubirReporteAlumnoRequest(BaseModel):
 
 
 def _safe_filename(filename: str) -> str:
-    name = Path(filename).name.strip() or "reporte.pdf"
-    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return normalizar_nombre_archivo(filename, "reporte.pdf")
+
+
+def _slug_carpeta(valor: str | None, fallback: str) -> str:
+    texto = valor or fallback
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
+    return texto or fallback
+
+
+def _carpeta_reportes_alumno(alumno: AlumnoModel, asignacion: AsignacionModel, tipo_reporte: str) -> Path:
+    nombre_alumno = "_".join(
+        parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno, alumno.matricula] if parte
+    )
+    tipo_practica = (
+        asignacion.tipo_practica.nombre
+        if asignacion.tipo_practica
+        else alumno.tipo_practica.nombre
+        if alumno.tipo_practica
+        else "practica"
+    )
+    return (
+        UPLOAD_DIR
+        / "alumnos"
+        / _slug_carpeta(nombre_alumno, f"alumno_{alumno.id_alumno}")
+        / _slug_carpeta(tipo_practica, "practica")
+        / f"convocatoria_{asignacion.id_convocatoria}"
+        / "reportes"
+        / _slug_carpeta(tipo_reporte, "reporte")
+    )
 
 
 def _decode_base64(content: str) -> bytes:
@@ -119,6 +153,8 @@ def _horas_aprobadas(db: Session, id_asignacion: int) -> float:
 
 
 def _tipo_reporte(reporte: ReporteModel) -> str | None:
+    if reporte.tipo_reporte in REPORTES_CONFIG:
+        return reporte.tipo_reporte
     titulo = (reporte.titulo or "").lower()
     if "final" in titulo:
         return "Final"
@@ -145,10 +181,33 @@ def _reporte_response(reporte: ReporteModel):
         "titulo": reporte.titulo,
         "descripcion": reporte.descripcion,
         "archivo": Path(reporte.archivo).name,
-        "url": f"/uploads/reportes/{Path(reporte.archivo).name}",
+        "url": f"/alumno/reportes/reportes/{reporte.id_reporte}/archivo" if reporte.archivo else None,
         "fecha_entrega": reporte.fecha_entrega.isoformat(),
         "estado": reporte.estado_reporte,
     }
+
+
+def _es_admin(usuario: UsuarioModel) -> bool:
+    return usuario.rol is not None and usuario.rol.nombre == "Administrador"
+
+
+def _asegurar_permiso_reporte_alumno(usuario: UsuarioModel, reporte: ReporteModel) -> None:
+    if _es_admin(usuario):
+        return
+    asignacion = reporte.asignacion
+    if (
+        usuario.alumno is not None
+        and asignacion is not None
+        and asignacion.id_alumno == usuario.alumno.id_alumno
+    ):
+        return
+    raise HTTPException(status_code=403, detail="No tienes permisos para ver este reporte")
+
+
+def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None):
+    ruta = resolver_archivo_en_uploads(ruta_archivo, UPLOADS_DIR)
+    media_type = mimetypes.guess_type(nombre_archivo or ruta.name)[0] or "application/octet-stream"
+    return FileResponse(ruta, media_type=media_type, filename=nombre_archivo or ruta.name)
 
 
 def _espacios_response(
@@ -211,6 +270,24 @@ def subir_mi_reporte_alumno(
     db: Session = Depends(obtener_db),
 ):
     return subir_reporte_alumno(id_alumno, datos, db)
+
+
+@router.get("/reportes/{id_reporte}/archivo")
+def descargar_reporte_alumno_seguro(
+    id_reporte: int,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    reporte = (
+        db.query(ReporteModel)
+        .options(joinedload(ReporteModel.asignacion))
+        .filter(ReporteModel.id_reporte == id_reporte)
+        .first()
+    )
+    if reporte is None or not reporte.archivo:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    _asegurar_permiso_reporte_alumno(usuario_actual, reporte)
+    return _file_response_segura(reporte.archivo, Path(reporte.archivo).name)
 
 
 @router.get("/{id_alumno:int}")
@@ -286,22 +363,19 @@ def subir_reporte_alumno(
     if existente is not None and existente.estado_reporte in {"Pendiente", "Aprobado"}:
         raise HTTPException(status_code=409, detail="Este reporte ya fue enviado o aprobado")
 
-    if datos.mime_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
-
     contenido = _decode_base64(datos.contenido_base64)
-    if len(contenido) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El reporte no debe superar 10 MB")
+    validar_documento_usuario(contenido, datos.nombre_archivo, datos.mime_type)
 
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = _safe_filename(datos.nombre_archivo)
-    stored_name = f"{alumno.matricula}_{tipo.lower()}_{uuid4().hex}_{safe_name}"
-    ruta = UPLOAD_DIR / stored_name
+    carpeta = _carpeta_reportes_alumno(alumno, asignacion, tipo)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / f"{tipo.lower()}_{uuid4().hex}_{safe_name}"
     ruta.write_bytes(contenido)
 
     if existente is None:
         reporte = ReporteModel(
             id_asignacion=asignacion.id_asignacion,
+            tipo_reporte=tipo,
             titulo=REPORTES_CONFIG[tipo]["titulo"],
             descripcion=datos.descripcion,
             archivo=str(ruta),
@@ -311,6 +385,7 @@ def subir_reporte_alumno(
         db.add(reporte)
     else:
         reporte = existente
+        reporte.tipo_reporte = tipo
         reporte.descripcion = datos.descripcion
         reporte.archivo = str(ruta)
         reporte.fecha_entrega = date.today()

@@ -23,6 +23,8 @@ export interface DocumentacionEmpresaRepository {
     idDocumentoEmpresa: number,
     datos: EditarDocumentoEmpresaInput,
   ): Promise<DocumentoEmpresa>;
+  descargarDocumento(idDocumentoEmpresa: number): Promise<Blob>;
+  descargarFormato(idFormatoEmpresa: number): Promise<Blob>;
   configurarRequisito(
     idTipoDocumentoEmpresa: number,
     datos: ConfigurarRequisitoEmpresaInput,

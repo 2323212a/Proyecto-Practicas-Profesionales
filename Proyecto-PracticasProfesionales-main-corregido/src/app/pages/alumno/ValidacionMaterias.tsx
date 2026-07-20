@@ -98,7 +98,7 @@ export function ValidacionMaterias() {
         </div>
 
         <p className="text-gray-600 text-sm mb-5">
-          Adjunta el documento solicitado en formato PDF. Este archivo será revisado por el área correspondiente.
+          Adjunta el documento solicitado en PDF o imagen. Este archivo será revisado por el área correspondiente.
         </p>
 
         <div className="border-2 border-dashed border-gray-300 rounded-2xl bg-gray-50 p-8 text-center">
@@ -109,12 +109,12 @@ export function ValidacionMaterias() {
           </p>
 
           <p className="text-xs text-gray-500 mb-5">
-            Formato permitido: PDF
+            Formatos permitidos: PDF, JPG, PNG o WEBP. Máximo 2 MB.
           </p>
 
           <input
             type="file"
-            accept=".pdf"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
             onChange={(e) => {
               setArchivo(e.target.files?.[0] || null);
               setEstado("sin_archivo");
