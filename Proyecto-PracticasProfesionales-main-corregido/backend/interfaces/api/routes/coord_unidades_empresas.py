@@ -16,7 +16,7 @@ from app.services.empresa_reglas_service import (
     validar_participacion_aceptada,
 )
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import EmailError, enviar_credenciales_empresa_aceptada
+from infrastructure.email.email_service import enviar_correo_empresa_aceptada, enviar_correo_empresa_rechazada
 from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
@@ -421,6 +421,7 @@ def aceptar_solicitud_empresa(
             id_rol=rol.id_rol,
             correo=correo,
             password_hash=generar_password_hash(password_temporal),
+            debe_cambiar_password=True,
             estado="Activo",
         )
         db.add(usuario)
@@ -464,32 +465,34 @@ def aceptar_solicitud_empresa(
     correo_enviado = False
     advertencia_correo = None
     if cuenta_creada and password_temporal:
-        try:
-            enviar_credenciales_empresa_aceptada(
-                destinatario=correo,
-                nombre_responsable=nombre_contacto,
-                nombre_empresa=empresa.nombre_empresa,
-                correo_acceso=correo,
-                password_temporal=password_temporal,
-            )
+        resultado_correo = enviar_correo_empresa_aceptada(
+            destinatario=correo,
+            nombre_responsable=nombre_contacto,
+            nombre_empresa=empresa.nombre_empresa,
+            correo_acceso=correo,
+            password_temporal=password_temporal,
+        )
+        correo_enviado = resultado_correo.enviado
+        advertencia_correo = resultado_correo.advertencia
+        if resultado_correo.enviado:
             correo_enviado = True
             registrar_bitacora(
                 db,
                 usuario_actual.id_usuario,
-                "Enviar credenciales empresa",
+                "envio_correo_empresa_aceptada",
                 "coord_unidades_empresas",
                 f"Se enviaron credenciales de acceso a la empresa {empresa.nombre_empresa}.",
                 "empresa",
                 empresa.id_empresa,
             )
-        except EmailError:
-            advertencia_correo = "La cuenta fue creada, pero no se pudo enviar el correo de acceso."
+        else:
+            accion_correo = "correo_deshabilitado" if "deshabilitado" in (resultado_correo.error or "").lower() else "error_envio_correo"
             registrar_bitacora(
                 db,
                 usuario_actual.id_usuario,
-                "Fallo envio credenciales empresa",
+                accion_correo,
                 "coord_unidades_empresas",
-                f"No se pudieron enviar credenciales de acceso a la empresa {empresa.nombre_empresa}.",
+                f"No se pudieron enviar credenciales de acceso a la empresa {empresa.nombre_empresa}: {resultado_correo.error}.",
                 "empresa",
                 empresa.id_empresa,
             )
@@ -529,7 +532,56 @@ def rechazar_solicitud_empresa(
         solicitud.revisada_por = usuario_actual.id_usuario
 
     db.commit()
-    return {"mensaje": "Solicitud rechazada", "estado_empresa": empresa.estado_empresa}
+    correo_destino = (empresa.correo_contacto or "").strip().lower()
+    correo_enviado = False
+    advertencia_correo = None
+    if correo_destino:
+        resultado_correo = enviar_correo_empresa_rechazada(
+            destinatario=correo_destino,
+            nombre_empresa=empresa.nombre_empresa,
+            motivo_rechazo=datos.motivo_rechazo.strip(),
+            observaciones=datos.observaciones,
+        )
+        correo_enviado = resultado_correo.enviado
+        advertencia_correo = resultado_correo.advertencia
+        if resultado_correo.enviado:
+            registrar_bitacora(
+                db,
+                usuario_actual.id_usuario,
+                "envio_correo_empresa_rechazada",
+                "coord_unidades_empresas",
+                f"Se envio aviso de rechazo a la empresa {empresa.nombre_empresa}.",
+                "empresa",
+                empresa.id_empresa,
+            )
+        else:
+            accion_correo = "correo_deshabilitado" if "deshabilitado" in (resultado_correo.error or "").lower() else "error_envio_correo"
+            registrar_bitacora(
+                db,
+                usuario_actual.id_usuario,
+                accion_correo,
+                "coord_unidades_empresas",
+                f"No se pudo enviar aviso de rechazo a la empresa {empresa.nombre_empresa}: {resultado_correo.error}.",
+                "empresa",
+                empresa.id_empresa,
+            )
+    else:
+        advertencia_correo = "La empresa fue rechazada, pero no tiene correo de contacto registrado."
+        registrar_bitacora(
+            db,
+            usuario_actual.id_usuario,
+            "correo_deshabilitado",
+            "coord_unidades_empresas",
+            f"No se envio aviso de rechazo a la empresa {empresa.nombre_empresa} porque no tiene correo de contacto.",
+            "empresa",
+            empresa.id_empresa,
+        )
+    return {
+        "mensaje": "Solicitud rechazada",
+        "estado_empresa": empresa.estado_empresa,
+        "correo_enviado": correo_enviado,
+        "advertencia_correo": advertencia_correo,
+    }
 
 
 @router.get("/participaciones/")

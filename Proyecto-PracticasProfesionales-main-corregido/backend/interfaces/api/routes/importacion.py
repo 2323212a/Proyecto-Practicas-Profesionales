@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.services.auditoria_service import registrar_bitacora
 from app.services.upload_security import leer_uploadfile_validado_importacion
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import EmailError, enviar_credenciales_login
+from infrastructure.email.email_service import enviar_correo_importacion_usuario
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
@@ -313,33 +313,45 @@ def _enviar_credenciales_importacion(
 ):
     enviados = []
     fallidos = []
+    omitidos = []
 
     for credencial in credenciales:
         correo = credencial["correo"]
         try:
-            enviar_credenciales_login(
+            resultado = enviar_correo_importacion_usuario(
                 destinatario=correo,
                 nombre=credencial.get("nombre") or correo,
                 correo_acceso=correo,
                 password_temporal=credencial["password_temporal"],
                 rol=credencial.get("rol") or "Usuario",
             )
-            enviados.append(correo)
+            if resultado.enviado:
+                enviados.append(correo)
+                accion = "envio_correo_importacion"
+                descripcion = f"Se enviaron credenciales de acceso al usuario {correo}."
+            elif "deshabilitado" in (resultado.error or "").lower():
+                omitidos.append(correo)
+                accion = "correo_deshabilitado"
+                descripcion = f"No se enviaron credenciales de acceso al usuario {correo}: {resultado.error}."
+            else:
+                fallidos.append(correo)
+                accion = "error_envio_correo"
+                descripcion = f"No se pudieron enviar credenciales de acceso al usuario {correo}: {resultado.error}."
             registrar_bitacora(
                 db,
                 id_usuario_admin,
-                "Enviar credenciales importacion",
+                accion,
                 "importacion",
-                f"Se enviaron credenciales de acceso al usuario {correo}.",
+                descripcion,
                 "usuario",
                 credencial.get("id_usuario"),
             )
-        except EmailError:
+        except Exception:
             fallidos.append(correo)
             registrar_bitacora(
                 db,
                 id_usuario_admin,
-                "Fallo envio credenciales importacion",
+                "error_envio_correo",
                 "importacion",
                 f"No se pudieron enviar credenciales de acceso al usuario {correo}.",
                 "usuario",
@@ -348,12 +360,14 @@ def _enviar_credenciales_importacion(
 
     return {
         "correos_enviados": enviados,
+        "correos_omitidos": omitidos,
         "correos_fallidos": fallidos,
         "total_correos_enviados": len(enviados),
         "total_correos_fallidos": len(fallidos),
+        "total_correos_omitidos": len(omitidos),
         "advertencia_correo": (
             "Algunas cuentas fueron creadas, pero no se pudo enviar el correo de acceso a todos los usuarios."
-            if fallidos
+            if fallidos or omitidos
             else None
         ),
     }
@@ -485,7 +499,7 @@ async def importar_personal(
             id_rol=id_rol,
             correo=_texto(fila["correo"]),
             password_hash=generar_password_hash(password_temporal),
-            debe_cambiar_password=False,
+            debe_cambiar_password=True,
             estado="Activo",
         )
         db.add(nuevo_usuario)

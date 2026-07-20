@@ -1,4 +1,4 @@
-import type { AceptarSolicitudResponse, EmpresaRevision, SolicitudEmpresaDetalle } from "../../domain/coord-unidades/EmpresaRevision";
+import type { AceptarSolicitudResponse, EmpresaRevision, RechazarSolicitudResponse, SolicitudEmpresaDetalle } from "../../domain/coord-unidades/EmpresaRevision";
 import type { EmpresaRevisionRepository } from "../../domain/coord-unidades/EmpresaRevisionRepository";
 import { apiClient } from "../api/apiClient";
 
@@ -28,10 +28,11 @@ export class EmpresaRevisionHttpRepository implements EmpresaRevisionRepository 
     return data;
   }
 
-  async rechazarSolicitud(idEmpresa: number, motivo: string, observaciones?: string): Promise<void> {
-    await apiClient.post(`/coord-unidades/empresas/${idEmpresa}/rechazar-solicitud`, {
+  async rechazarSolicitud(idEmpresa: number, motivo: string, observaciones?: string): Promise<RechazarSolicitudResponse> {
+    const { data } = await apiClient.post<RechazarSolicitudResponse>(`/coord-unidades/empresas/${idEmpresa}/rechazar-solicitud`, {
       motivo_rechazo: motivo,
       observaciones,
     });
+    return data;
   }
 }

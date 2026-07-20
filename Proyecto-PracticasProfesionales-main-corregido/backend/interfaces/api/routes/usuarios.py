@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from interfaces.api.schemas.usuario import UsuarioCreate, UsuarioEstadoUpdate, UsuarioResponse, UsuarioUpdate
 from interfaces.api.schemas.usuario_perfil import UsuarioPerfilResponse, UsuarioPerfilUpdate
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import EmailError, enviar_credenciales_login
+from infrastructure.email.email_service import enviar_correo_reset_password, enviar_correo_usuario_creado
 from interfaces.api.service_factory import UsuarioService
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
@@ -284,35 +284,59 @@ def _enviar_credenciales_admin(
     accion: str,
     mensaje_fallo: str,
 ):
-    try:
-        enviar_credenciales_login(
+    if usuario.estado == "Inactivo":
+        registrar_bitacora(
+            db,
+            usuario_actual.id_usuario,
+            "correo_deshabilitado",
+            "usuarios",
+            f"No se enviaron credenciales al usuario inactivo {usuario.correo}.",
+            "usuario",
+            usuario.id_usuario,
+        )
+        return False, "El usuario esta inactivo. No se envio correo."
+
+    resultado = (
+        enviar_correo_reset_password(
             destinatario=usuario.correo,
             nombre=_nombre_usuario(usuario),
             correo_acceso=usuario.correo,
             password_temporal=password_temporal,
             rol=_nombre_rol(usuario),
         )
+        if "reset" in accion.lower()
+        else enviar_correo_usuario_creado(
+            destinatario=usuario.correo,
+            nombre=_nombre_usuario(usuario),
+            correo_acceso=usuario.correo,
+            password_temporal=password_temporal,
+            rol=_nombre_rol(usuario),
+        )
+    )
+
+    if resultado.enviado:
         registrar_bitacora(
             db,
             usuario_actual.id_usuario,
-            accion,
+            "envio_correo_reset_password" if "reset" in accion.lower() else "envio_correo_usuario_creado",
             "usuarios",
             f"Se enviaron credenciales de acceso al usuario {usuario.correo}.",
             "usuario",
             usuario.id_usuario,
         )
         return True, None
-    except EmailError:
-        registrar_bitacora(
-            db,
-            usuario_actual.id_usuario,
-            f"Fallo {accion.lower()}",
-            "usuarios",
-            f"No se pudieron enviar credenciales de acceso al usuario {usuario.correo}.",
-            "usuario",
-            usuario.id_usuario,
-        )
-        return False, mensaje_fallo
+
+    accion_bitacora = "correo_deshabilitado" if "deshabilitado" in (resultado.error or "").lower() else "error_envio_correo"
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        accion_bitacora,
+        "usuarios",
+        f"No se pudieron enviar credenciales de acceso al usuario {usuario.correo}: {resultado.error}.",
+        "usuario",
+        usuario.id_usuario,
+    )
+    return False, resultado.advertencia or mensaje_fallo
 
 
 def _crear_perfil_usuario_admin(db: Session, usuario: UsuarioModel, datos: UsuarioCreate):
@@ -666,9 +690,11 @@ def resetear_password_usuario(
     usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     usuario = _obtener_usuario_model(db, id_usuario)
+    if usuario.estado == "Inactivo":
+        raise HTTPException(status_code=400, detail="No se puede resetear la contrasena de un usuario inactivo")
     password_temporal = _generar_password_temporal()
     usuario.password_hash = generar_password_hash(password_temporal)
-    usuario.debe_cambiar_password = usuario.id_rol == 1
+    usuario.debe_cambiar_password = True
     usuario.fecha_reset_password = datetime.utcnow()
     db.commit()
     db.refresh(usuario)

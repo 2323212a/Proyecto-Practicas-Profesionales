@@ -29,6 +29,26 @@ const padronColor: Record<string, string> = {
   "No publicado": "bg-gray-100 text-gray-600",
 };
 
+function mensajeCorreoOperacion(
+  operacion: "aceptada" | "rechazada",
+  correoEnviado?: boolean,
+  advertencia?: string | null,
+) {
+  if (correoEnviado) {
+    return operacion === "aceptada"
+      ? "La empresa fue aceptada y se envio el correo de acceso."
+      : "La empresa fue rechazada y se envio la notificacion.";
+  }
+  if (advertencia) {
+    return operacion === "aceptada"
+      ? `La empresa fue aceptada. ${advertencia}`
+      : `La empresa fue rechazada. ${advertencia}`;
+  }
+  return operacion === "aceptada"
+    ? "La empresa fue aceptada, pero no se envio correo."
+    : "La empresa fue rechazada, pero no se envio correo.";
+}
+
 export function ValidacionEmpresas() {
   const navigate = useNavigate();
   const [empresas, setEmpresas] = useState<EmpresaRevision[]>([]);
@@ -92,7 +112,13 @@ export function ValidacionEmpresas() {
     try {
       setProcesando(empresa.id_empresa);
       const respuesta = await gestionEmpresasRevisionUseCase.aceptarSolicitud(empresa.id_empresa);
-      alert(`Cuenta creada\nCorreo: ${respuesta.correo}\nContrasena temporal: ${respuesta.password_temporal ?? "Ya tenia cuenta"}`);
+      alert(
+        [
+          mensajeCorreoOperacion("aceptada", respuesta.correo_enviado, respuesta.advertencia_correo),
+          `Correo: ${respuesta.correo}`,
+          `Contrasena temporal: ${respuesta.password_temporal ?? "Ya tenia cuenta"}`,
+        ].join("\n"),
+      );
       await cargarEmpresas();
     } catch (err) {
       console.error(err);
@@ -109,7 +135,8 @@ export function ValidacionEmpresas() {
     }
     try {
       setProcesando(empresa.id_empresa);
-      await gestionEmpresasRevisionUseCase.rechazarSolicitud(empresa.id_empresa, motivo.trim());
+      const respuesta = await gestionEmpresasRevisionUseCase.rechazarSolicitud(empresa.id_empresa, motivo.trim());
+      alert(mensajeCorreoOperacion("rechazada", respuesta.correo_enviado, respuesta.advertencia_correo));
       await cargarEmpresas();
     } catch (err) {
       console.error(err);

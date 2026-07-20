@@ -26,6 +26,8 @@ type ResetPasswordResultado = {
   debe_cambiar_password: boolean;
   password_temporal: string;
   mensaje: string;
+  correo_enviado?: boolean;
+  advertencia_correo?: string | null;
 };
 
 type PerfilEditable = Record<string, string | number | null>;
@@ -50,6 +52,26 @@ const roles: Record<number, string> = {
   6: "Asesor Interno",
   7: "Direccion",
 };
+
+function mensajeCorreoUsuario(
+  accion: "creado" | "reset",
+  correoEnviado?: boolean,
+  advertencia?: string | null,
+) {
+  if (correoEnviado) {
+    return accion === "creado"
+      ? "Usuario creado y correo de acceso enviado."
+      : "Contrasena restablecida y correo enviado.";
+  }
+  if (advertencia) {
+    return accion === "creado"
+      ? `Usuario creado. ${advertencia}`
+      : `Contrasena restablecida. ${advertencia}`;
+  }
+  return accion === "creado"
+    ? "Usuario creado, pero no se envio correo."
+    : "Contrasena restablecida, pero no se envio correo.";
+}
 
 const rolC: Record<string, string> = {
   Alumno: "bg-blue-100 text-blue-700",
@@ -189,7 +211,7 @@ export function GestionUsuarios() {
         (carrera) => carrera.id_carrera === Number(nuevoUsuario.id_carrera),
       ) as (CarreraCatalogo & { tipo_periodo?: string }) | undefined;
 
-      await gestionUsuariosUseCase.crear({
+      const respuesta = await gestionUsuariosUseCase.crear({
         ...nuevoUsuario,
         id_rol: Number(nuevoUsuario.id_rol),
         id_carrera: nuevoUsuario.id_carrera ? Number(nuevoUsuario.id_carrera) : null,
@@ -221,6 +243,7 @@ export function GestionUsuarios() {
       });
 
       await cargarUsuarios();
+      alert(mensajeCorreoUsuario("creado", respuesta.correo_enviado, respuesta.advertencia_correo));
     } catch (error) {
       console.error(error);
       alert(extraerMensajeError(error, "Error al crear usuario"));
@@ -304,6 +327,7 @@ export function GestionUsuarios() {
         `/usuarios/${usuario.id_usuario}/reset-password`
       );
       setResetResultado(response.data);
+      alert(mensajeCorreoUsuario("reset", response.data.correo_enviado, response.data.advertencia_correo));
       await cargarUsuarios();
     } catch (error) {
       console.error(error);
@@ -1176,4 +1200,3 @@ export function GestionUsuarios() {
     </div>
   );
 }
-

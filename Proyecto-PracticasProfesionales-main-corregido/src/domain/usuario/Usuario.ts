@@ -11,6 +11,8 @@ export interface Usuario {
   id_perfil?: number | null;
   puede_eliminar_definitivamente?: boolean;
   relaciones?: string[];
+  correo_enviado?: boolean;
+  advertencia_correo?: string | null;
 }
 
 export interface CrearUsuario {

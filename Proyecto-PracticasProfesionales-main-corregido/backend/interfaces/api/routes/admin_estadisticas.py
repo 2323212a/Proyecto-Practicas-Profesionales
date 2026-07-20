@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from infrastructure.database.dependencies import obtener_db
+from infrastructure.email.email_service import estado_servicio_correo
 from infrastructure.security.auth_dependencies import requerir_roles
 
 from infrastructure.persistence.models.usuario import UsuarioModel
@@ -81,7 +82,7 @@ def obtener_estadisticas_admin(
         "estado_sistema": {
             "servidor": "Operativo",
             "base_datos": "Operativo",
-            "servicio_correo": "No configurado",
+            "servicio_correo": estado_servicio_correo(),
             "almacenamiento": "Local",
             "backup": "No configurado",
             "sesiones_activas": db.query(UsuarioModel)

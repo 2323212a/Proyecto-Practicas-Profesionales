@@ -36,4 +36,13 @@ export interface AceptarSolicitudResponse {
   cuenta_creada: boolean;
   correo: string;
   password_temporal: string | null;
+  correo_enviado: boolean;
+  advertencia_correo: string | null;
+}
+
+export interface RechazarSolicitudResponse {
+  mensaje: string;
+  estado_empresa: string;
+  correo_enviado: boolean;
+  advertencia_correo: string | null;
 }

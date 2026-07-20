@@ -1,4 +1,4 @@
-import type { AceptarSolicitudResponse, EmpresaRevision, SolicitudEmpresaDetalle } from "../../domain/coord-unidades/EmpresaRevision";
+import type { AceptarSolicitudResponse, EmpresaRevision, RechazarSolicitudResponse, SolicitudEmpresaDetalle } from "../../domain/coord-unidades/EmpresaRevision";
 import type { EmpresaRevisionRepository } from "../../domain/coord-unidades/EmpresaRevisionRepository";
 
 export class GestionEmpresasRevisionUseCase {
@@ -24,7 +24,7 @@ export class GestionEmpresasRevisionUseCase {
     return this.repository.aceptarSolicitud(idEmpresa);
   }
 
-  rechazarSolicitud(idEmpresa: number, motivo: string, observaciones?: string): Promise<void> {
+  rechazarSolicitud(idEmpresa: number, motivo: string, observaciones?: string): Promise<RechazarSolicitudResponse> {
     return this.repository.rechazarSolicitud(idEmpresa, motivo, observaciones);
   }
 }

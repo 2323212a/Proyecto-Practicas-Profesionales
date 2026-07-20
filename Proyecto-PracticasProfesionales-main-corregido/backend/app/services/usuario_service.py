@@ -36,7 +36,7 @@ class UsuarioService:
             "id_rol": usuario.id_rol,
             "correo": usuario.correo,
             "password_hash": self.password_hasher.hash(usuario.password),
-            "debe_cambiar_password": usuario.id_rol == 1,
+            "debe_cambiar_password": True,
             "estado": "Activo"
         })
 
