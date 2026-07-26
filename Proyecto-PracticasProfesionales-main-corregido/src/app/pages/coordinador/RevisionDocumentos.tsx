@@ -8,6 +8,7 @@ import {
   Eye,
   FileText,
   Lock,
+  MessageSquare,
   RefreshCw,
   Search,
   Send,
@@ -20,14 +21,25 @@ import type { AlumnoResumenRevision, DetalleRevisionAlumno, DocumentoRevisionFlu
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 const motivos = ["Documento incorrecto", "Baja calidad de imagen", "Informacion incompleta", "Nombre de archivo incorrecto", "Falta firma", "Documento ilegible"];
+const tiposObservacion = ["Documento observado", "Corrección solicitada", "Documento rechazado", "Revisión manual"] as const;
 
 const nombreAlumno = (detalle: DetalleRevisionAlumno) => [detalle.alumno.nombre, detalle.alumno.apellido_paterno, detalle.alumno.apellido_materno].filter(Boolean).join(" ");
 
 const estadoDoc = (doc: DocumentoRevisionFlujo) => {
   if (doc.estado === "Aprobado") return { label: "Aprobado", color: "bg-green-100 text-green-700", icon: CheckCircle };
-  if (doc.estado === "Observado" || doc.estado === "Rechazado") return { label: "Correccion", color: "bg-orange-100 text-orange-700", icon: AlertTriangle };
+  if (doc.estado === "Observado") return { label: "Con observaciones", color: "bg-orange-100 text-orange-700", icon: AlertTriangle };
+  if (doc.estado === "Rechazado") return { label: "Rechazado", color: "bg-red-100 text-red-700", icon: AlertTriangle };
   if (doc.nombre_archivo) return { label: "Pendiente", color: "bg-yellow-100 text-yellow-700", icon: Clock };
   return { label: "Sin cargar", color: "bg-gray-100 text-gray-500", icon: Clock };
+};
+
+type TipoObservacionDocumento = (typeof tiposObservacion)[number];
+
+const fechaObservacion = (value?: string | null) => {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Sin fecha";
+  return new Intl.DateTimeFormat("es-MX", { dateStyle: "short", timeStyle: "short" }).format(date);
 };
 
 export function RevisionDocumentos() {
@@ -156,6 +168,68 @@ export function RevisionDocumentos() {
     }
   };
 
+  const agregarNotaAlumno = async () => {
+    if (!detalle) return;
+    const nota = window.prompt("Nota para el alumno");
+    if (nota === null) return;
+    const texto = nota.trim();
+    if (texto.length < 3) {
+      setError("Escribe una nota valida para el alumno.");
+      return;
+    }
+
+    try {
+      setAccion("nota-alumno");
+      await gestionRevisionDocumentalUseCase.agregarNotaAlumno(detalle.alumno.id_alumno, {
+        nota: texto,
+        notificar_alumno: true,
+      });
+      await refrescar();
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo enviar la nota al alumno."));
+    } finally {
+      setAccion("");
+    }
+  };
+
+  const agregarNotaDocumento = async (doc: DocumentoRevisionFlujo) => {
+    const tipo = window.prompt(
+      `Tipo de observación:\n1. Documento observado\n2. Corrección solicitada (queda Con observaciones)\n3. Documento rechazado (queda Rechazado)\n4. Revisión manual`,
+      "2"
+    );
+    if (tipo === null) return;
+    const indice = Number(tipo.trim());
+    const tipoObservacion = tiposObservacion[indice - 1] ?? tiposObservacion.find((item) => item === tipo.trim());
+    if (!tipoObservacion) {
+      setError("Selecciona un tipo de observacion valido.");
+      return;
+    }
+
+    const nota = window.prompt(`Nota para ${doc.nombre}`);
+    if (nota === null) return;
+    const texto = nota.trim();
+    if (texto.length < 3) {
+      setError("Escribe una nota valida para el documento.");
+      return;
+    }
+
+    try {
+      setProcesando(doc.id_documento);
+      await gestionRevisionDocumentalUseCase.agregarNotaDocumento(doc.id_documento, {
+        nota: texto,
+        tipo_observacion: tipoObservacion as TipoObservacionDocumento,
+        notificar_alumno: true,
+      });
+      await refrescar();
+    } catch (err: unknown) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No se pudo guardar la nota del documento."));
+    } finally {
+      setProcesando(null);
+    }
+  };
+
   const abrir = async (doc: DocumentoRevisionFlujo) => {
     if (!doc.nombre_archivo) return;
     try {
@@ -197,6 +271,10 @@ export function RevisionDocumentos() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-col lg:flex-row lg:items-center gap-3">
                 <div className="w-9 h-9 bg-[#0d2b5e] rounded-xl flex items-center justify-center text-white"><UserCheck className="w-3.5 h-3.5" /></div>
                 <div className="flex-1"><div className="font-bold text-base text-[#0d2b5e]">{nombreAlumno(detalle)}</div><div className="text-gray-500 text-[11px]">Matricula: {detalle.alumno.matricula} - {detalle.alumno.carrera ?? "Carrera no registrada"}</div><div className="text-gray-400 text-[11px] mt-0.5">Expediente #{detalle.expediente.id_expediente} - {detalle.expediente.estado}</div></div>
+                <button onClick={agregarNotaAlumno} disabled={accion === "nota-alumno"} className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-blue-200 text-[#0d2b5e] rounded-xl text-[11px] font-semibold hover:bg-blue-50 disabled:opacity-50">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  {accion === "nota-alumno" ? "Enviando..." : "Nota alumno"}
+                </button>
                 <span className="text-[11px] px-4 py-1.5 rounded-full font-semibold bg-blue-100 text-blue-700">{detalle.alumno.estado_alumno ?? "Sin estado"}</span>
               </div>
 
@@ -287,8 +365,8 @@ export function RevisionDocumentos() {
     return (
       <div key={doc.id_documento} className={`px-4 py-4 ${bloqueado ? "opacity-50" : ""}`}>
         <div className="flex flex-col xl:flex-row xl:items-center gap-3">
-          <div className="flex items-start gap-3 flex-1"><div className="w-9 h-9 bg-[#e3f0ff] rounded-xl flex items-center justify-center flex-shrink-0"><FileText className="w-3.5 h-3.5 text-[#1565c0]" /></div><div><div className="font-semibold text-gray-800 text-sm">{doc.nombre}</div><div className="text-[11px] text-gray-500 mt-0.5">{doc.descripcion}</div><div className="text-[11px] text-gray-500 mt-1"><span className="font-semibold text-gray-700">Instrucciones:</span> {doc.instrucciones}</div><div className="text-[11px] text-[#1565c0] mt-0.5"><span className="font-semibold">Nomenclatura:</span> {doc.nomenclatura}</div><div className="text-[11px] text-gray-400 mt-0.5">{doc.nombre_archivo ? doc.nombre_archivo : "Sin archivo cargado"}</div>{bloqueado && <div className="text-[11px] text-red-600 mt-1 font-semibold">Este bloque aun no esta habilitado.</div>}</div></div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3"><span className={`inline-flex items-center justify-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full font-semibold ${cfg.color}`}><Icon className="w-3.5 h-3.5" />{cfg.label}</span><button title={cargado ? "Abrir el PDF cargado por el alumno" : "El alumno aun no ha subido este documento"} onClick={() => abrir(doc)} disabled={!cargado} className="inline-flex min-w-[160px] items-center justify-center gap-2 px-3 py-2 bg-[#0d2b5e] text-white rounded-xl text-[11px] font-bold shadow-sm ring-1 ring-[#0d2b5e]/10 hover:bg-[#1565c0] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#1565c0] focus:ring-offset-2 disabled:min-w-[120px] disabled:bg-gray-100 disabled:text-gray-400 disabled:shadow-none disabled:ring-gray-200 disabled:cursor-not-allowed"><Eye className="w-3.5 h-3.5" />{cargado ? "Ver documento PDF" : "Sin PDF"}</button>{puedeRevisar && <button onClick={() => cambiarEstado(doc, "Aprobado")} disabled={procesando === doc.id_documento} className="px-3 py-1.5 bg-green-600 text-white rounded-xl text-[11px] font-semibold hover:bg-green-700 disabled:opacity-50">Aprobar</button>}{puedeRevisar && <button onClick={() => setCorrigiendoId(doc.id_documento)} className="px-3 py-1.5 bg-orange-600 text-white rounded-xl text-[11px] font-semibold hover:bg-orange-700">Solicitar correccion</button>}</div>
+          <div className="flex items-start gap-3 flex-1"><div className="w-9 h-9 bg-[#e3f0ff] rounded-xl flex items-center justify-center flex-shrink-0"><FileText className="w-3.5 h-3.5 text-[#1565c0]" /></div><div><div className="font-semibold text-gray-800 text-sm">{doc.nombre}</div><div className="text-[11px] text-gray-500 mt-0.5">{doc.descripcion}</div><div className="text-[11px] text-gray-500 mt-1"><span className="font-semibold text-gray-700">Instrucciones:</span> {doc.instrucciones}</div><div className="text-[11px] text-[#1565c0] mt-0.5"><span className="font-semibold">Nomenclatura:</span> {doc.nomenclatura}</div><div className="text-[11px] text-gray-400 mt-0.5">{doc.nombre_archivo ? doc.nombre_archivo : "Sin archivo cargado"}</div>{bloqueado && <div className="text-[11px] text-red-600 mt-1 font-semibold">Este bloque aun no esta habilitado.</div>}{doc.observaciones.length > 0 && <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"><div className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Historial de observaciones</div><div className="mt-2 space-y-2">{doc.observaciones.map((observacion) => <div key={observacion.id_observacion} className="text-[11px] text-gray-700"><div className="font-semibold text-[#0d2b5e]">{observacion.tipo_observacion} · {observacion.usuario} · {fechaObservacion(observacion.fecha_observacion)}</div><div className="mt-0.5 whitespace-pre-line">{observacion.descripcion}</div></div>)}</div></div>}</div></div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3"><span className={`inline-flex items-center justify-center gap-1.5 text-[11px] px-3 py-1.5 rounded-full font-semibold ${cfg.color}`}><Icon className="w-3.5 h-3.5" />{cfg.label}</span><button title={cargado ? "Abrir el PDF cargado por el alumno" : "El alumno aun no ha subido este documento"} onClick={() => abrir(doc)} disabled={!cargado} className="inline-flex min-w-[160px] items-center justify-center gap-2 px-3 py-2 bg-[#0d2b5e] text-white rounded-xl text-[11px] font-bold shadow-sm ring-1 ring-[#0d2b5e]/10 hover:bg-[#1565c0] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#1565c0] focus:ring-offset-2 disabled:min-w-[120px] disabled:bg-gray-100 disabled:text-gray-400 disabled:shadow-none disabled:ring-gray-200 disabled:cursor-not-allowed"><Eye className="w-3.5 h-3.5" />{cargado ? "Ver documento PDF" : "Sin PDF"}</button><button onClick={() => agregarNotaDocumento(doc)} disabled={procesando === doc.id_documento} className="inline-flex items-center justify-center gap-2 px-3 py-1.5 border border-blue-200 text-[#0d2b5e] rounded-xl text-[11px] font-semibold hover:bg-blue-50 disabled:opacity-50"><MessageSquare className="w-3.5 h-3.5" />Nota</button>{puedeRevisar && <button onClick={() => cambiarEstado(doc, "Aprobado")} disabled={procesando === doc.id_documento} className="px-3 py-1.5 bg-green-600 text-white rounded-xl text-[11px] font-semibold hover:bg-green-700 disabled:opacity-50">Aprobar</button>}{puedeRevisar && <button onClick={() => setCorrigiendoId(doc.id_documento)} className="px-3 py-1.5 bg-orange-600 text-white rounded-xl text-[11px] font-semibold hover:bg-orange-700">Solicitar correccion</button>}</div>
         </div>
         {corrigiendoId === doc.id_documento && <div className="mt-1 p-3 bg-orange-50 border border-orange-200 rounded-xl"><div className="text-[11px] font-semibold text-orange-700 mb-2">Motivo de correccion:</div><div className="grid sm:grid-cols-2 gap-2 mb-2">{motivos.map((m) => <label key={m} className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-orange-100"><input type="radio" value={m} checked={motivo === m} onChange={(e) => setMotivo(e.target.value)} className="accent-orange-600" /><span className="text-[11px] text-orange-700">{m}</span></label>)}</div><textarea value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Agrega una observacion especifica para el alumno..." className="w-full min-h-[64px] text-[11px] border border-orange-200 rounded-xl p-3 focus:outline-none focus:border-orange-500 bg-white" /><div className="flex gap-2 mt-1"><button onClick={() => cambiarEstado(doc, "Observado")} disabled={!motivo} className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-[11px] font-semibold hover:bg-orange-700 disabled:opacity-50">Confirmar correccion</button><button onClick={() => { setCorrigiendoId(null); setMotivo(""); setComentario(""); }} className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg text-[11px] font-semibold hover:bg-gray-50">Cancelar</button></div></div>}
       </div>

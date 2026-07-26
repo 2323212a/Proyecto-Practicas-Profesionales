@@ -15,10 +15,12 @@ from app.services.convocatoria_rules_service import (
 from app.services.documentacion_generada_service import codigo_generacion_por_nombre
 from app.services.upload_security import leer_uploadfile_validado_documento, normalizar_nombre_archivo
 from infrastructure.persistence.models.alumno import AlumnoModel
+from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento import DocumentoModel
 from infrastructure.persistence.models.expediente import ExpedienteModel
+from infrastructure.persistence.models.observacion import ObservacionModel
 from infrastructure.persistence.models.tipo_documento import TipoDocumentoModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 
@@ -310,6 +312,7 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
             habilitado = asignacion_habilitada
 
         codigo_generacion = codigo_generacion_por_nombre(tipo.nombre_documento)
+        observaciones = _observaciones_documento(documento)
         documentos.append(
             {
                 "id_documento": documento.id_documento,
@@ -329,6 +332,8 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
                 "habilitado": habilitado,
                 "nomenclatura": generar_nomenclatura(tipo.nombre_documento or "documento", alumno.matricula),
                 "url_archivo": f"/alumno/documentos/documentos/{documento.id_documento}/archivo" if documento.ruta_archivo else None,
+                "observaciones": observaciones,
+                "ultima_observacion": observaciones[0] if observaciones else None,
             }
         )
 
@@ -373,6 +378,41 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
     }
 
 
+def _nombre_usuario_observacion(usuario: UsuarioModel | None) -> str:
+    if usuario is None:
+        return "Sin usuario"
+    perfil = usuario.personal_interno or usuario.alumno or usuario.responsable_empresa
+    nombre = " ".join(
+        parte
+        for parte in [
+            getattr(perfil, "nombre", None),
+            getattr(perfil, "apellido_paterno", None),
+            getattr(perfil, "apellido_materno", None),
+        ]
+        if parte
+    )
+    return nombre or usuario.correo or "Sin usuario"
+
+
+def _observaciones_documento(documento: DocumentoModel) -> list[dict]:
+    observaciones = sorted(
+        getattr(documento, "observaciones_relacionadas", []) or [],
+        key=lambda item: item.fecha_observacion,
+        reverse=True,
+    )
+    return [
+        {
+            "id_observacion": observacion.id_observacion,
+            "id_usuario": observacion.id_usuario,
+            "usuario": _nombre_usuario_observacion(observacion.usuario),
+            "descripcion": observacion.descripcion,
+            "tipo_observacion": observacion.tipo_observacion,
+            "fecha_observacion": observacion.fecha_observacion.isoformat() if observacion.fecha_observacion else None,
+        }
+        for observacion in observaciones
+    ]
+
+
 def resumen_documentos(documentos: list[DocumentoModel]) -> dict:
     return {
         "aprobados": sum(1 for d in documentos if d.estado_documento == "Aprobado"),
@@ -415,9 +455,28 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
     return resultado
 
 
-def crear_pdf_placeholder(ruta: Path, titulo: str, alumno: AlumnoModel) -> None:
+def _asignacion_activa_alumno(db: Session, alumno: AlumnoModel) -> AsignacionModel | None:
+    return (
+        db.query(AsignacionModel)
+        .filter(
+            AsignacionModel.id_alumno == alumno.id_alumno,
+            AsignacionModel.estado_asignacion == "Activa",
+        )
+        .order_by(AsignacionModel.fecha_asignacion.desc())
+        .first()
+    )
+
+
+def crear_pdf_placeholder(
+    ruta: Path,
+    titulo: str,
+    alumno: AlumnoModel,
+    asignacion: AsignacionModel | None = None,
+) -> None:
     ruta.parent.mkdir(parents=True, exist_ok=True)
-    texto = f"{titulo} - {alumno.matricula}".replace("(", "").replace(")", "")
+    empresa = asignacion.empresa.nombre_empresa if asignacion and asignacion.empresa else "Sin empresa"
+    vacante = asignacion.vacante.titulo if asignacion and asignacion.vacante else "Sin vacante"
+    texto = f"{titulo} - {alumno.matricula} - {empresa} - {vacante}".replace("(", "").replace(")", "")
     contenido = f"%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n4 0 obj << /Length 80 >> stream\nBT /F1 18 Tf 72 720 Td ({texto}) Tj ET\nendstream endobj\n5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\nxref\n0 6\n0000000000 65535 f \ntrailer << /Root 1 0 R /Size 6 >>\nstartxref\n0\n%%EOF\n"
     ruta.write_bytes(contenido.encode("latin-1", errors="ignore"))
 
@@ -466,12 +525,13 @@ def habilitar_documentacion_asignacion(db: Session, alumno: AlumnoModel) -> dict
     expediente = asegurar_documentos_expediente(db, alumno)
     filas = documentos_del_flujo(db, expediente)
     carpeta = _carpeta_documento_alumno(alumno, expediente, "generados") / "asignacion"
+    asignacion = _asignacion_activa_alumno(db, alumno)
     for documento, tipo in filas:
         if tipo.etapa != "Asignacion":
             continue
         nombre_archivo = generar_nomenclatura(tipo.nombre_documento, alumno.matricula)
         destino = carpeta / f"{documento.id_documento}_{nombre_archivo}"
-        crear_pdf_placeholder(destino, tipo.nombre_documento, alumno)
+        crear_pdf_placeholder(destino, tipo.nombre_documento, alumno, asignacion)
         documento.nombre_archivo = nombre_archivo
         documento.ruta_archivo = str(destino)
         documento.estado_documento = "Aprobado"

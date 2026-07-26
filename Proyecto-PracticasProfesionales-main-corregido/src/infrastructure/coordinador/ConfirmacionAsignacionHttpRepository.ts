@@ -1,5 +1,6 @@
 import type {
   ConfirmacionAsignacionesResponse,
+  CambiarEmpresaAsignacionRequest,
   ConfirmarAsignacionRequest,
   SecretariaAcademicaResponse,
   RechazarSeleccionRequest,
@@ -19,6 +20,16 @@ export class ConfirmacionAsignacionHttpRepository
 
   async confirmar(datos: ConfirmarAsignacionRequest): Promise<void> {
     await apiClient.post("/coordinador/confirmar-asignaciones/", datos);
+  }
+
+  async cambiarEmpresa(
+    idAsignacion: number,
+    datos: CambiarEmpresaAsignacionRequest
+  ): Promise<void> {
+    await apiClient.post(
+      `/coordinador/confirmar-asignaciones/${idAsignacion}/cambiar-empresa`,
+      datos
+    );
   }
 
   async rechazar(

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Integer, Text, UniqueConstraint, func
+from sqlalchemy import Column, Computed, DateTime, Enum, ForeignKey, ForeignKeyConstraint, Integer, Text, func
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -6,7 +6,6 @@ from infrastructure.database.connection import Base
 class AsignacionModel(Base):
     __tablename__ = "asignacion"
     __table_args__ = (
-        UniqueConstraint("id_alumno", "id_convocatoria", name="uq_asignacion_alumno_convocatoria"),
         ForeignKeyConstraint(
             ["id_vacante", "id_empresa"],
             ["vacante.id_vacante", "vacante.id_empresa"],
@@ -27,6 +26,11 @@ class AsignacionModel(Base):
         nullable=False,
         default="Activa",
         server_default="Activa"
+    )
+    asignacion_activa = Column(
+        Integer,
+        Computed("case when estado_asignacion = 'Activa' then 1 else NULL end", persisted=True),
+        nullable=True,
     )
     tipo_asignacion = Column(
         Enum("Normal", "Reasignacion", "Rezagado"),

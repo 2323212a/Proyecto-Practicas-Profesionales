@@ -3,6 +3,7 @@ import type {
   CambiarEstadoDocumentoRequest,
   DetalleRevisionAlumno,
   FormatoDocumento,
+  NotaCoordinadorRequest,
   RevisionDocumentalResponse,
   SubirFormatoRequest,
 } from "../../domain/documento/RevisionDocumental";
@@ -37,6 +38,14 @@ export class GestionRevisionDocumentalUseCase {
 
   obtenerDetalleAlumno(idAlumno: number): Promise<DetalleRevisionAlumno> {
     return this.repository.obtenerDetalleAlumno(idAlumno);
+  }
+
+  agregarNotaDocumento(idDocumento: number, datos: NotaCoordinadorRequest): Promise<void> {
+    return this.repository.agregarNotaDocumento(idDocumento, datos);
+  }
+
+  agregarNotaAlumno(idAlumno: number, datos: NotaCoordinadorRequest): Promise<void> {
+    return this.repository.agregarNotaAlumno(idAlumno, datos);
   }
 
   habilitarSeleccion(idAlumno: number): Promise<DetalleRevisionAlumno> {

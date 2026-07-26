@@ -71,6 +71,7 @@ class DocumentoRevisionResponse(BaseModel):
     estado_expediente: str
     estado_alumno: str
     ultima_observacion: str | None = None
+    observaciones: list[dict] = []
 
 
 class FormatoDocumentoResponse(BaseModel):
@@ -123,6 +124,13 @@ class SubirFormatoRequest(BaseModel):
     mime_type: str
     descripcion: str | None = None
 
+
+class NotaCoordinadorRequest(BaseModel):
+    nota: str
+    tipo_observacion: str = "Corrección solicitada"
+    notificar_alumno: bool = True
+
+
 ETAPAS_HABILITANTES_SELECCION = {
     "registro",
     "elegibilidad",
@@ -153,8 +161,34 @@ def _tipo_observacion_revision(estado: str) -> str:
     if estado == "Rechazado":
         return "Documento rechazado"
     if estado == "Observado":
-        return "Documento observado"
-    return "RevisiÃ³n manual"
+        return "Corrección solicitada"
+    return "Revisión manual"
+
+
+def _normalizar_tipo_observacion(valor: str | None) -> str:
+    normalizado = (valor or "Corrección solicitada").strip()
+    aliases = {
+        "Correccion solicitada": "Corrección solicitada",
+        "Revision manual": "Revisión manual",
+    }
+    normalizado = aliases.get(normalizado, normalizado)
+    tipos_validos = {
+        "Documento observado",
+        "Corrección solicitada",
+        "Documento rechazado",
+        "Revisión manual",
+    }
+    if normalizado not in tipos_validos:
+        raise HTTPException(status_code=422, detail="Tipo de observacion invalido")
+    return normalizado
+
+
+def _estado_por_tipo_observacion(tipo_observacion: str) -> str | None:
+    if tipo_observacion == "Corrección solicitada":
+        return "Observado"
+    if tipo_observacion == "Documento rechazado":
+        return "Rechazado"
+    return None
 
 
 def _decode_base64(content: str) -> bytes:
@@ -193,12 +227,25 @@ def _listar_formatos(db: Session) -> list[FormatoDocumentoResponse]:
 
 def _documento_response(db: Session, documento: DocumentoModel) -> DocumentoRevisionResponse:
     alumno = documento.expediente.alumno
-    ultima_observacion = (
+    observaciones = (
         db.query(ObservacionModel)
         .filter(ObservacionModel.id_documento == documento.id_documento)
         .order_by(ObservacionModel.fecha_observacion.desc())
-        .first()
+        .all()
     )
+    historial = [
+        {
+            "id_observacion": observacion.id_observacion,
+            "id_usuario": observacion.id_usuario,
+            "usuario": _nombre_perfil(observacion.usuario.personal_interno, observacion.usuario.correo)
+            if observacion.usuario and observacion.usuario.personal_interno
+            else observacion.usuario.correo if observacion.usuario else "Sin usuario",
+            "descripcion": observacion.descripcion,
+            "tipo_observacion": observacion.tipo_observacion,
+            "fecha_observacion": observacion.fecha_observacion.isoformat() if observacion.fecha_observacion else None,
+        }
+        for observacion in observaciones
+    ]
     return DocumentoRevisionResponse(
         id_documento=documento.id_documento,
         id_expediente=documento.id_expediente,
@@ -218,7 +265,8 @@ def _documento_response(db: Session, documento: DocumentoModel) -> DocumentoRevi
         carrera=alumno.carrera.nombre,
         estado_expediente=documento.expediente.estado_expediente,
         estado_alumno=alumno.estado_alumno,
-        ultima_observacion=ultima_observacion.descripcion if ultima_observacion else None,
+        ultima_observacion=historial[0]["descripcion"] if historial else None,
+        observaciones=historial,
     )
 
 
@@ -786,6 +834,98 @@ def cambiar_estado_documento(
     db.refresh(documento)
 
     return _documento_response(db, documento)
+
+
+@router.post(
+    "/{id_documento}/nota",
+    dependencies=[Depends(requerir_roles(["Coordinador de Practicas", "Administrador"]))],
+)
+def agregar_nota_documento(
+    id_documento: int,
+    datos: NotaCoordinadorRequest,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    nota = " ".join(datos.nota.split())
+    if len(nota) < 3:
+        raise HTTPException(status_code=422, detail="Ingresa una nota valida")
+    tipo_observacion = _normalizar_tipo_observacion(datos.tipo_observacion)
+
+    documento = db.query(DocumentoModel).filter(DocumentoModel.id_documento == id_documento).first()
+    if documento is None:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    db.add(
+        ObservacionModel(
+            id_documento=documento.id_documento,
+            id_usuario=usuario_actual.id_usuario,
+            descripcion=nota,
+            tipo_observacion=tipo_observacion,
+        )
+    )
+    estado_nuevo = _estado_por_tipo_observacion(tipo_observacion)
+    if estado_nuevo is not None:
+        documento.estado_documento = estado_nuevo
+
+    alumno = documento.expediente.alumno if documento.expediente else None
+    if datos.notificar_alumno and alumno is not None:
+        crear_notificacion(
+            db,
+            alumno.id_usuario,
+            "Nota sobre documento",
+            f"{tipo_observacion} en {documento.tipo_documento.nombre_documento}: {nota}",
+        )
+
+    db.commit()
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Agregar nota a documento de alumno",
+        "documentos",
+        f"Nota agregada al documento {documento.id_documento}.",
+        "documento_alumno",
+        documento.id_documento,
+    )
+    return {"mensaje": "Nota registrada correctamente"}
+
+
+@router.post(
+    "/alumnos/{id_alumno}/nota",
+    dependencies=[Depends(requerir_roles(["Coordinador de Practicas", "Administrador"]))],
+)
+def agregar_nota_alumno(
+    id_alumno: int,
+    datos: NotaCoordinadorRequest,
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+    db: Session = Depends(obtener_db),
+):
+    nota = " ".join(datos.nota.split())
+    if len(nota) < 3:
+        raise HTTPException(status_code=422, detail="Ingresa una nota valida")
+
+    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == id_alumno).first()
+    if alumno is None:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+
+    if datos.notificar_alumno:
+        crear_notificacion(
+            db,
+            alumno.id_usuario,
+            "Nota de coordinacion",
+            nota,
+        )
+
+    db.commit()
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Agregar nota a alumno",
+        "documentos",
+        f"Nota general registrada para alumno {alumno.id_alumno}.",
+        "alumno",
+        alumno.id_alumno,
+    )
+    return {"mensaje": "Nota enviada correctamente"}
 
 @router.get(
     "/flujo/alumnos",

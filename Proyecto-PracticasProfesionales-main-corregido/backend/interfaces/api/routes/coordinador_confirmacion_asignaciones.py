@@ -7,7 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.auditoria_service import registrar_bitacora
 from app.services.convocatoria_rules_service import validar_etapa_actual
+from app.services.documentacion_flujo_service import habilitar_documentacion_asignacion
+from app.services.notificacion_service import crear_notificacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
@@ -76,6 +79,7 @@ class AlumnoConfirmacionResponse(BaseModel):
     id_asignacion: int | None = None
     empresa_asignada: str | None = None
     vacante_asignada: str | None = None
+    vacantes_disponibles: list[VacanteConfirmacionResponse] = []
     preferencias: list[PreferenciaConfirmacionResponse]
 
 
@@ -114,6 +118,21 @@ class ConfirmarAsignacionRequest(BaseModel):
 
 class RechazarSeleccionRequest(BaseModel):
     observaciones: str | None = None
+
+
+class CambiarEmpresaAsignacionRequest(BaseModel):
+    id_vacante_nueva: int
+    motivo: str = Field(min_length=3, max_length=1000)
+    id_asesor: int | None = None
+    notificar_alumno: bool = True
+    regenerar_documentos: bool = True
+
+
+class CambiarEmpresaAsignacionResponse(BaseModel):
+    mensaje: str
+    id_asignacion_anterior: int
+    id_asignacion_nueva: int
+    documentos_regenerados: bool
 
 
 def _convocatoria_vigente(db: Session):
@@ -290,6 +309,31 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
                 )
             )
 
+        vacantes_disponibles = []
+        if convocatoria is not None and asignacion is not None:
+            candidatas = (
+                db.query(VacanteModel)
+                .options(
+                    joinedload(VacanteModel.empresa),
+                    joinedload(VacanteModel.convocatoria),
+                    joinedload(VacanteModel.tipo_practica),
+                )
+                .filter(
+                    VacanteModel.id_convocatoria == convocatoria.id_convocatoria,
+                    VacanteModel.id_tipo_practica == alumno.id_tipo_practica,
+                    VacanteModel.periodo == alumno.periodo_practica,
+                    VacanteModel.estado_vacante == "Activa",
+                    VacanteModel.id_vacante != asignacion.id_vacante,
+                )
+                .order_by(VacanteModel.titulo.asc())
+                .all()
+            )
+            vacantes_disponibles = [
+                _vacante_response(db, vacante)
+                for vacante in candidatas
+                if _cupos_usados(db, vacante.id_vacante) < vacante.cupos
+            ]
+
         respuesta.append(
             AlumnoConfirmacionResponse(
                 id_alumno=alumno.id_alumno,
@@ -302,6 +346,7 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
                 id_asignacion=asignacion.id_asignacion if asignacion else None,
                 empresa_asignada=asignacion.empresa.nombre_empresa if asignacion and asignacion.empresa else None,
                 vacante_asignada=asignacion.vacante.titulo if asignacion and asignacion.vacante else None,
+                vacantes_disponibles=vacantes_disponibles,
                 preferencias=preferencias,
             )
         )
@@ -447,3 +492,153 @@ def rechazar_seleccion(
     seleccion.revisado_por = usuario.id_usuario
     db.commit()
     return {"mensaje": "Seleccion rechazada correctamente"}
+
+
+@router.post("/{id_asignacion}/cambiar-empresa", response_model=CambiarEmpresaAsignacionResponse)
+def cambiar_empresa_asignacion(
+    id_asignacion: int,
+    datos: CambiarEmpresaAsignacionRequest,
+    db: Session = Depends(obtener_db),
+    usuario: UsuarioModel = Depends(requerir_roles(["Coordinador de Practicas", "Administrador"])),
+):
+    motivo = " ".join(datos.motivo.split())
+    if len(motivo) < 3:
+        raise HTTPException(status_code=422, detail="Ingresa el motivo del cambio")
+
+    asignacion_actual = (
+        db.query(AsignacionModel)
+        .options(
+            joinedload(AsignacionModel.alumno).joinedload(AlumnoModel.usuario),
+            joinedload(AsignacionModel.empresa),
+            joinedload(AsignacionModel.vacante),
+            joinedload(AsignacionModel.convocatoria),
+        )
+        .filter(AsignacionModel.id_asignacion == id_asignacion)
+        .first()
+    )
+    if asignacion_actual is None:
+        raise HTTPException(status_code=404, detail="Asignacion no encontrada")
+    if asignacion_actual.estado_asignacion != "Activa":
+        raise HTTPException(status_code=400, detail="Solo se puede cambiar una asignacion activa")
+
+    otra_activa = (
+        db.query(AsignacionModel)
+        .filter(
+            AsignacionModel.id_alumno == asignacion_actual.id_alumno,
+            AsignacionModel.id_convocatoria == asignacion_actual.id_convocatoria,
+            AsignacionModel.estado_asignacion == "Activa",
+            AsignacionModel.id_asignacion != asignacion_actual.id_asignacion,
+        )
+        .first()
+    )
+    if otra_activa is not None:
+        raise HTTPException(status_code=400, detail="El alumno ya tiene otra asignacion activa en esta convocatoria")
+
+    vacante_nueva = (
+        db.query(VacanteModel)
+        .options(joinedload(VacanteModel.empresa), joinedload(VacanteModel.tipo_practica))
+        .filter(VacanteModel.id_vacante == datos.id_vacante_nueva)
+        .first()
+    )
+    if vacante_nueva is None:
+        raise HTTPException(status_code=404, detail="Vacante nueva no encontrada")
+    if vacante_nueva.estado_vacante != "Activa":
+        raise HTTPException(status_code=400, detail="La vacante nueva debe estar activa/publicada")
+    if vacante_nueva.id_vacante == asignacion_actual.id_vacante:
+        raise HTTPException(status_code=400, detail="Selecciona una vacante distinta a la asignacion actual")
+    if vacante_nueva.id_convocatoria != asignacion_actual.id_convocatoria:
+        raise HTTPException(status_code=400, detail="La vacante nueva no pertenece a la misma convocatoria")
+    if vacante_nueva.id_tipo_practica != asignacion_actual.id_tipo_practica:
+        raise HTTPException(status_code=400, detail="La vacante nueva no corresponde al mismo tipo de practica")
+
+    alumno = asignacion_actual.alumno
+    if alumno is None:
+        raise HTTPException(status_code=400, detail="La asignacion no tiene alumno vinculado")
+    if vacante_nueva.periodo != alumno.periodo_practica:
+        raise HTTPException(status_code=400, detail="La vacante nueva no corresponde al periodo del alumno")
+
+    cupos_usados = _cupos_usados(db, vacante_nueva.id_vacante)
+    if cupos_usados >= vacante_nueva.cupos:
+        raise HTTPException(status_code=400, detail="La vacante nueva no tiene cupos disponibles")
+
+    id_asesor = datos.id_asesor if datos.id_asesor is not None else asignacion_actual.id_asesor
+    if id_asesor is not None:
+        asesor = (
+            db.query(PersonalInternoModel)
+            .join(PersonalInternoModel.usuario)
+            .filter(
+                PersonalInternoModel.id_personal == id_asesor,
+                UsuarioModel.id_rol == 6,
+                UsuarioModel.estado == "Activo",
+            )
+            .first()
+        )
+        if asesor is None:
+            raise HTTPException(status_code=400, detail="El asesor interno no existe o no esta activo")
+
+    fecha_motivo = datetime.now().strftime("%Y-%m-%d %H:%M")
+    observacion_anterior = (
+        f"Reasignada el {fecha_motivo}. "
+        f"Empresa anterior: {asignacion_actual.empresa.nombre_empresa if asignacion_actual.empresa else 'Sin empresa'}. "
+        f"Vacante anterior: {asignacion_actual.vacante.titulo if asignacion_actual.vacante else 'Sin vacante'}. "
+        f"Motivo: {motivo}"
+    )
+    asignacion_actual.estado_asignacion = "Cancelada"
+    asignacion_actual.observaciones = "\n".join(
+        parte for parte in [asignacion_actual.observaciones, observacion_anterior] if parte
+    )
+    db.flush()
+
+    nueva_asignacion = AsignacionModel(
+        id_alumno=asignacion_actual.id_alumno,
+        id_empresa=vacante_nueva.id_empresa,
+        id_vacante=vacante_nueva.id_vacante,
+        id_convocatoria=asignacion_actual.id_convocatoria,
+        id_tipo_practica=vacante_nueva.id_tipo_practica,
+        id_asesor=id_asesor,
+        estado_asignacion="Activa",
+        tipo_asignacion="Reasignacion",
+        asignado_por=usuario.id_usuario,
+        observaciones=f"Reasignacion desde asignacion {asignacion_actual.id_asignacion}. Motivo: {motivo}",
+    )
+    db.add(nueva_asignacion)
+    db.flush()
+
+    documentos_regenerados = False
+    if datos.regenerar_documentos:
+        habilitar_documentacion_asignacion(db, alumno)
+        documentos_regenerados = True
+
+    if datos.notificar_alumno:
+        crear_notificacion(
+            db,
+            alumno.id_usuario,
+            "Cambio de empresa asignada",
+            (
+                f"Tu asignacion fue actualizada a {vacante_nueva.empresa.nombre_empresa if vacante_nueva.empresa else 'la nueva empresa'} "
+                f"en la vacante {vacante_nueva.titulo}. Motivo: {motivo}"
+            ),
+        )
+
+    db.commit()
+    db.refresh(nueva_asignacion)
+
+    registrar_bitacora(
+        db,
+        usuario.id_usuario,
+        "Cambiar empresa asignada",
+        "asignaciones",
+        (
+            f"Asignacion {asignacion_actual.id_asignacion} cerrada como historica "
+            f"y creada asignacion {nueva_asignacion.id_asignacion} para alumno {alumno.id_alumno}."
+        ),
+        "asignacion",
+        nueva_asignacion.id_asignacion,
+    )
+
+    return CambiarEmpresaAsignacionResponse(
+        mensaje="Empresa y vacante reasignadas correctamente",
+        id_asignacion_anterior=asignacion_actual.id_asignacion,
+        id_asignacion_nueva=nueva_asignacion.id_asignacion,
+        documentos_regenerados=documentos_regenerados,
+    )

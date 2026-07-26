@@ -1,5 +1,6 @@
 import type {
   ConfirmacionAsignacionesResponse,
+  CambiarEmpresaAsignacionRequest,
   ConfirmarAsignacionRequest,
   SecretariaAcademicaResponse,
   RechazarSeleccionRequest,
@@ -19,6 +20,10 @@ export class GestionConfirmacionAsignacionesUseCase {
 
   confirmar(datos: ConfirmarAsignacionRequest): Promise<void> {
     return this.repository.confirmar(datos);
+  }
+
+  cambiarEmpresa(idAsignacion: number, datos: CambiarEmpresaAsignacionRequest): Promise<void> {
+    return this.repository.cambiarEmpresa(idAsignacion, datos);
   }
 
   rechazar(idSeleccion: number, datos: RechazarSeleccionRequest): Promise<void> {

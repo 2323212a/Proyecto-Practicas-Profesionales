@@ -3,6 +3,7 @@ import type {
   CambiarEstadoDocumentoRequest,
   DetalleRevisionAlumno,
   FormatoDocumento,
+  NotaCoordinadorRequest,
   RevisionDocumentalResponse,
   SubirFormatoRequest,
 } from "../../domain/documento/RevisionDocumental";
@@ -37,6 +38,14 @@ export class RevisionDocumentalHttpRepository implements RevisionDocumentalRepos
   async obtenerDetalleAlumno(idAlumno: number): Promise<DetalleRevisionAlumno> {
     const { data } = await apiClient.get<DetalleRevisionAlumno>(`/coordinador/documentos/flujo/alumnos/${idAlumno}`);
     return data;
+  }
+
+  async agregarNotaDocumento(idDocumento: number, datos: NotaCoordinadorRequest): Promise<void> {
+    await apiClient.post(`/coordinador/documentos/${idDocumento}/nota`, datos);
+  }
+
+  async agregarNotaAlumno(idAlumno: number, datos: NotaCoordinadorRequest): Promise<void> {
+    await apiClient.post(`/coordinador/documentos/alumnos/${idAlumno}/nota`, datos);
   }
 
   async habilitarSeleccion(idAlumno: number): Promise<DetalleRevisionAlumno> {

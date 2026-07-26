@@ -55,6 +55,7 @@ class AsignacionRepository(SQLAlchemyRepository):
             .filter(
                 AsignacionModel.id_alumno == id_alumno,
                 AsignacionModel.id_convocatoria == id_convocatoria,
+                AsignacionModel.estado_asignacion == "Activa",
             )
             .first()
         )

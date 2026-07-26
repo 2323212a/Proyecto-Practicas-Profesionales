@@ -61,6 +61,14 @@ export interface DocumentoRevision {
   estado_expediente: string;
   estado_alumno: string;
   ultima_observacion: string | null;
+  observaciones: Array<{
+    id_observacion: number;
+    id_usuario: number;
+    usuario: string;
+    descripcion: string;
+    tipo_observacion: "Documento observado" | "Corrección solicitada" | "Documento rechazado" | "Revisión manual";
+    fecha_observacion: string | null;
+  }>;
 }
 
 export interface FormatoDocumento {
@@ -104,4 +112,10 @@ export interface SubirFormatoRequest {
   contenido_base64: string;
   mime_type: string;
   descripcion?: string | null;
+}
+
+export interface NotaCoordinadorRequest {
+  nota: string;
+  tipo_observacion?: "Documento observado" | "Corrección solicitada" | "Documento rechazado" | "Revisión manual";
+  notificar_alumno?: boolean;
 }

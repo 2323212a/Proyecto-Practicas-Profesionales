@@ -1,5 +1,14 @@
 export type EstadoDocumentoFlujo = "Pendiente" | "Aprobado" | "Observado" | "Rechazado";
 
+export interface ObservacionDocumentoAlumno {
+  id_observacion: number;
+  id_usuario: number;
+  usuario: string;
+  descripcion: string;
+  tipo_observacion: "Documento observado" | "Corrección solicitada" | "Documento rechazado" | "Revisión manual";
+  fecha_observacion: string | null;
+}
+
 export interface DocumentoFlujoAlumno {
   id_documento: number;
   id_tipo_documento: number;
@@ -18,6 +27,8 @@ export interface DocumentoFlujoAlumno {
   habilitado: boolean;
   nomenclatura: string;
   url_archivo: string | null;
+  observaciones: ObservacionDocumentoAlumno[];
+  ultima_observacion: ObservacionDocumentoAlumno | null;
 }
 
 export interface DocumentacionAlumnoResponse {

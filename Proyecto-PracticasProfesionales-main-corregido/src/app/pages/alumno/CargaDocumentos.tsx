@@ -9,7 +9,8 @@ import { abrirVistaPreviaArchivo } from "../../../shared/utils/filePreview";
 const estadoConfig = (doc: DocumentoFlujoAlumno) => {
   if (doc.estado === "Aprobado") return { label: "Aprobado", color: "bg-green-100 text-green-700", icon: CheckCircle };
   if (doc.nombre_archivo && doc.estado === "Pendiente") return { label: "En revision", color: "bg-yellow-100 text-yellow-700", icon: Clock };
-  if (doc.estado === "Observado" || doc.estado === "Rechazado") return { label: "Correccion", color: "bg-orange-100 text-orange-700", icon: AlertCircle };
+  if (doc.estado === "Observado") return { label: "Con observaciones", color: "bg-orange-100 text-orange-700", icon: AlertCircle };
+  if (doc.estado === "Rechazado") return { label: "Rechazado", color: "bg-red-100 text-red-700", icon: AlertCircle };
   return { label: "Pendiente", color: "bg-gray-100 text-gray-500", icon: Clock };
 };
 const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
@@ -325,6 +326,26 @@ function DocumentoAlumno({ doc, uploading, downloading, onUpload, onOpen, onDown
             </div>
           )}
           {doc.estado === "Aprobado" && !doc.generado_por_sistema && <div className="text-[11px] text-green-700 mt-1 font-medium">Documento aprobado. Puedes verlo, pero ya no reemplazarlo.</div>}
+          {doc.ultima_observacion?.tipo_observacion === "Corrección solicitada" && (
+            <div className="mt-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] font-semibold text-orange-800">
+              Tu documento requiere corrección. Revisa la nota de Coordinación y vuelve a subir el archivo.
+            </div>
+          )}
+          {doc.observaciones.length > 0 && (
+            <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Notas de Coordinación</div>
+              <div className="mt-2 space-y-2">
+                {doc.observaciones.map((observacion) => (
+                  <div key={observacion.id_observacion} className="text-[11px] text-gray-700">
+                    <div className="font-semibold text-[#0d2b5e]">
+                      {observacion.tipo_observacion} · {fecha(observacion.fecha_observacion)}
+                    </div>
+                    <div className="mt-0.5 whitespace-pre-line">{observacion.descripcion}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">

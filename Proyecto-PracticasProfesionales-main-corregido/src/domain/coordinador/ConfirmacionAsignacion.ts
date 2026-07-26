@@ -41,6 +41,7 @@ export interface AlumnoConfirmacion {
   id_asignacion: number | null;
   empresa_asignada: string | null;
   vacante_asignada: string | null;
+  vacantes_disponibles: VacanteConfirmacion[];
   preferencias: PreferenciaConfirmacion[];
 }
 
@@ -75,4 +76,12 @@ export interface ConfirmarAsignacionRequest {
 
 export interface RechazarSeleccionRequest {
   observaciones?: string | null;
+}
+
+export interface CambiarEmpresaAsignacionRequest {
+  id_vacante_nueva: number;
+  motivo: string;
+  id_asesor?: number | null;
+  notificar_alumno?: boolean;
+  regenerar_documentos?: boolean;
 }
