@@ -4,6 +4,7 @@ import {
   Building2,
   Clock,
   Eye,
+  FileSpreadsheet,
   Search,
   Send,
   XCircle,
@@ -13,6 +14,7 @@ import axios from "axios";
 
 import { gestionEmpresasRevisionUseCase } from "../../dependencies";
 import type { EmpresaRevision, SolicitudEmpresaDetalle } from "../../../domain/coord-unidades/EmpresaRevision";
+import { ImportacionEmpresasModal } from "./ImportacionEmpresasModal";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 const estadoColor: Record<string, string> = {
@@ -59,6 +61,7 @@ export function ValidacionEmpresas() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("Solicitudes");
   const [solicitudDetalle, setSolicitudDetalle] = useState<SolicitudEmpresaDetalle | null>(null);
+  const [importacionAbierta, setImportacionAbierta] = useState(false);
 
   useEffect(() => {
     void cargarEmpresas();
@@ -180,11 +183,20 @@ export function ValidacionEmpresas() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Empresas</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Revision de solicitudes, unidades receptoras y publicacion en el padron empresarial.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Empresas</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Revision de solicitudes, unidades receptoras y publicacion en el padron empresarial.
+          </p>
+        </div>
+        <button
+          onClick={() => setImportacionAbierta(true)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0d2b5e]"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          Cargar empresas desde Excel
+        </button>
       </div>
 
       {error && (
@@ -417,6 +429,12 @@ export function ValidacionEmpresas() {
           </div>
         </div>
       )}
+
+      <ImportacionEmpresasModal
+        abierto={importacionAbierta}
+        onClose={() => setImportacionAbierta(false)}
+        onImported={cargarEmpresas}
+      />
     </div>
   );
 }
