@@ -176,8 +176,8 @@ def crear_horas_alumno(
         crear_notificacion(
             db,
             responsable.id_usuario,
-            "Horas pendientes de revision",
-            f"Un alumno registro {datos.horas_realizadas} horas para revision de la unidad receptora.",
+            "Horas pendientes de revisión",
+            f"Un alumno registro {datos.horas_realizadas} horas para revisión de la unidad receptora.",
         )
     db.commit()
     db.refresh(horas)

@@ -76,7 +76,7 @@ export function ExpedienteEmpresa() {
   const { idEmpresa } = useParams();
   const [empresas, setEmpresas] = useState<DocumentacionEmpresaResponse[]>([]);
   const [requisitosGlobales, setRequisitosGlobales] = useState<RequisitoEmpresa[]>([]);
-  const [vista, setVista] = useState<"revision" | "configuracion">("revision");
+  const [vista, setVista] = useState<"revisión" | "configuracion">("revisión");
   const [seleccionada, setSeleccionada] = useState<number | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -478,7 +478,7 @@ export function ExpedienteEmpresa() {
     );
   }
 
-  function renderRequisito(requisito: RequisitoEmpresa, modo: "revision" | "configuracion") {
+  function renderRequisito(requisito: RequisitoEmpresa, modo: "revisión" | "configuracion") {
     const documento = requisito.documento;
     const estado = documento?.estado_documento ?? "Faltante";
     const etapa = requisito.etapa ?? "Documentacion";
@@ -632,7 +632,7 @@ export function ExpedienteEmpresa() {
               </>
             )}
 
-            {modo === "revision" && (
+            {modo === "revisión" && (
               <button
                 onClick={() => documento && abrirDocumento(documento.id_documento_empresa, documento.nombre_archivo)}
                 disabled={!documento}
@@ -655,7 +655,7 @@ export function ExpedienteEmpresa() {
           </div>
         </div>
 
-        {modo === "revision" && (
+        {modo === "revisión" && (
           <div className="flex flex-wrap gap-2 mt-4">
             {documento && documento.estado_documento !== "Aprobado" && (
               <button
@@ -722,12 +722,12 @@ export function ExpedienteEmpresa() {
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-3 flex flex-wrap gap-2">
         {[
-          ["revision", "Revision documental"],
+          ["revisión", "Revisión documental"],
           ["configuracion", "Configuracion de requisitos"],
         ].map(([id, label]) => (
           <button
             key={id}
-            onClick={() => setVista(id as "revision" | "configuracion")}
+            onClick={() => setVista(id as "revisión" | "configuracion")}
             className={`px-4 py-2 rounded-xl text-sm font-semibold ${
               vista === id ? "bg-[#0d2b5e] text-white" : "text-[#0d2b5e] hover:bg-blue-50"
             }`}
@@ -834,7 +834,7 @@ export function ExpedienteEmpresa() {
                 </div>
               </div>
 
-              {vista === "revision" && (
+              {vista === "revisión" && (
                 <div className="space-y-6">
                   <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
                     <h3 className="font-bold text-[#0d2b5e] mb-2">Documentacion legal</h3>
@@ -842,7 +842,7 @@ export function ExpedienteEmpresa() {
                       Estos requisitos deben aprobarse antes de liberar el convenio.
                     </p>
                     <div className="space-y-3">
-                      {documentacionLegal.map((requisito) => renderRequisito(requisito, "revision"))}
+                      {documentacionLegal.map((requisito) => renderRequisito(requisito, "revisión"))}
                       {documentacionLegal.length === 0 && (
                         <div className="text-sm text-gray-400">No hay requisitos de documentacion configurados.</div>
                       )}
@@ -855,7 +855,7 @@ export function ExpedienteEmpresa() {
                       Los requisitos de convenio se revisan por separado de la documentacion legal inicial.
                     </p>
                     <div className="space-y-3">
-                      {requisitosConvenio.map((requisito) => renderRequisito(requisito, "revision"))}
+                      {requisitosConvenio.map((requisito) => renderRequisito(requisito, "revisión"))}
                       {requisitosConvenio.length === 0 && (
                         <div className="text-sm text-gray-400">No hay requisitos de convenio configurados.</div>
                       )}

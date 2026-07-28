@@ -1148,7 +1148,7 @@ def revisar_documento_empresa(
 
     documento.estado_documento = datos.estado_documento
     if datos.estado_documento == "Pendiente":
-        marca = f"Revision deshecha por usuario {usuario_actual.id_usuario}."
+        marca = f"Revisión deshecha por usuario {usuario_actual.id_usuario}."
         documento.observaciones = "\n".join(
             parte for parte in [documento.observaciones, marca, datos.observaciones] if parte
         )

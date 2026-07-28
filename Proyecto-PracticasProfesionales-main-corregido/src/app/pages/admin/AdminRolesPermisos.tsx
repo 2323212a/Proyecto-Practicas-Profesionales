@@ -63,7 +63,7 @@ const ROLES_INFORMATIVOS: RolInformativo[] = [
       "Revisar alumnos",
       "Gestionar asignaciones",
       "Dar seguimiento al proceso academico",
-      "Consultar reportes del area",
+      "Consultar reportes del ?rea",
     ],
   },
   {
@@ -126,7 +126,7 @@ const ROLES_INFORMATIVOS: RolInformativo[] = [
       "Descargar/subir convenio",
       "Registrar plan de trabajo",
       "Crear vacantes",
-      "Consultar estado de revision",
+      "Consultar estado de revisión",
     ],
   },
   {

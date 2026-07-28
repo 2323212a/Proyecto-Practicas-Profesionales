@@ -1079,7 +1079,7 @@ def _reportes_catalogo(db: Session):
         {
             "clave": "horas",
             "titulo": "Reporte de Horas",
-            "descripcion": "Horas registradas por alumnos y estado de revision.",
+            "descripcion": "Horas registradas por alumnos y estado de revisión.",
             "total": horas,
         },
         {
@@ -1335,7 +1335,7 @@ def obtener_reportes_admin(
     solicitudes_pendientes = (
         _safe_scalar(
             db,
-            "SELECT COUNT(*) FROM solicitud_empresa WHERE estado_solicitud IN ('Recibida', 'En revision')",
+            "SELECT COUNT(*) FROM solicitud_empresa WHERE estado_solicitud IN ('Recibida', 'En revisión')",
             default=0,
         )
         if _columna_existe(db, "solicitud_empresa", "estado_solicitud")

@@ -4,6 +4,7 @@ import string
 
 from app.services.auditoria_service import registrar_bitacora
 from fastapi import APIRouter, Depends,  HTTPException
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from interfaces.api.schemas.usuario import UsuarioCreate, UsuarioEstadoUpdate, UsuarioResponse, UsuarioUpdate
@@ -226,6 +227,103 @@ def obtener_relaciones_usuario(db: Session, id_usuario: int):
     }
 
 
+
+def _eliminar_registros_alumno(db: Session, id_usuario: int):
+    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_usuario == id_usuario).first()
+    if alumno is None:
+        raise HTTPException(status_code=404, detail="El perfil de alumno no existe.")
+
+    parametros = {"id_usuario": id_usuario, "id_alumno": alumno.id_alumno}
+    total_eliminados = 0
+
+    def eliminar(sql: str):
+        nonlocal total_eliminados
+        resultado = db.execute(text(sql), parametros)
+        if resultado.rowcount and resultado.rowcount > 0:
+            total_eliminados += resultado.rowcount
+
+    asignaciones_alumno = "SELECT id_asignacion FROM asignacion WHERE id_alumno = :id_alumno"
+    expedientes_alumno = "SELECT id_expediente FROM expediente_alumno WHERE id_alumno = :id_alumno"
+    documentos_alumno = (
+        "SELECT id_documento_alumno FROM documento_alumno "
+        f"WHERE id_expediente IN ({expedientes_alumno})"
+    )
+
+    # Documentos y observaciones del expediente.
+    eliminar(
+        "DELETE FROM observacion_documento_alumno "
+        f"WHERE id_documento_alumno IN ({documentos_alumno})"
+    )
+    eliminar(
+        "DELETE FROM documento_alumno "
+        f"WHERE id_expediente IN ({expedientes_alumno})"
+    )
+
+    # Seguimiento, reportes, evaluaciones y cierre asociados a sus asignaciones.
+    eliminar(
+        "DELETE FROM evaluacion_alumno_empresa "
+        f"WHERE id_alumno = :id_alumno OR id_asignacion IN ({asignaciones_alumno})"
+    )
+    eliminar(
+        "DELETE FROM evaluacion_practica "
+        f"WHERE id_asignacion IN ({asignaciones_alumno}) OR id_usuario_evaluador = :id_usuario"
+    )
+    eliminar("DELETE FROM horas_practica " f"WHERE id_asignacion IN ({asignaciones_alumno})")
+    eliminar(
+        "DELETE FROM incidencia_practica "
+        f"WHERE id_asignacion IN ({asignaciones_alumno}) OR id_usuario_reportante = :id_usuario"
+    )
+    eliminar("DELETE FROM liberacion_practica " f"WHERE id_asignacion IN ({asignaciones_alumno})")
+    eliminar("DELETE FROM reporte_practica " f"WHERE id_asignacion IN ({asignaciones_alumno})")
+
+    # Proceso académico del alumno.
+    eliminar("DELETE FROM expediente_alumno WHERE id_alumno = :id_alumno")
+    eliminar("DELETE FROM seleccion_empresa WHERE id_alumno = :id_alumno")
+    eliminar("DELETE FROM alumno_proceso_practica WHERE id_alumno = :id_alumno")
+    eliminar("DELETE FROM asignacion WHERE id_alumno = :id_alumno")
+    eliminar("DELETE FROM notificacion WHERE id_usuario = :id_usuario")
+    eliminar("DELETE FROM observacion_documento_alumno WHERE id_usuario = :id_usuario")
+
+    referencias_opcionales = [
+        ("alumno_proceso_practica", "creado_por"),
+        ("alumno_proceso_practica", "actualizado_por"),
+        ("asignacion", "asignado_por"),
+        ("bitacora_auditoria", "id_usuario"),
+        ("documento_alumno", "revisado_por"),
+        ("documento_empresa", "revisado_por"),
+        ("documento_vacante", "revisado_por"),
+        ("formato_documento_alumno", "subido_por"),
+        ("formato_empresa", "subido_por"),
+        ("formato_plan_trabajo_vacante", "subido_por"),
+        ("horas_practica", "revisado_por"),
+        ("incidencia_practica", "id_usuario_reportante"),
+        ("liberacion_practica", "emitido_por"),
+        ("participacion_empresa_convocatoria", "revisada_por"),
+        ("reporte_practica", "revisado_por"),
+        ("responsable_empresa", "id_usuario"),
+        ("seleccion_empresa", "revisado_por"),
+        ("solicitud_ampliacion_cupos_vacante", "revisada_por"),
+        ("solicitud_empresa", "revisada_por"),
+        ("vacante", "revisada_por"),
+    ]
+    for tabla, columna in referencias_opcionales:
+        existe = db.execute(
+            text(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :tabla AND COLUMN_NAME = :columna"
+            ),
+            {"tabla": tabla, "columna": columna},
+        ).scalar()
+        if existe:
+            db.execute(
+                text(f"UPDATE {tabla} SET {columna} = NULL WHERE {columna} = :id_usuario"),
+                parametros,
+            )
+
+    eliminar("DELETE FROM alumno WHERE id_alumno = :id_alumno")
+    return total_eliminados
+
+
 def _es_administrador(usuario: UsuarioModel):
     return usuario.rol is not None and usuario.rol.nombre == "Administrador"
 
@@ -266,7 +364,7 @@ def _serializar_usuario(usuario: UsuarioModel, db: Session):
         "debe_cambiar_password": bool(usuario.debe_cambiar_password),
         "tipo_perfil": tipo_perfil,
         "id_perfil": id_perfil,
-        "puede_eliminar_definitivamente": relaciones["puede_eliminar"],
+        "puede_eliminar_definitivamente": usuario.id_rol == 1 or relaciones["puede_eliminar"],
         "relaciones": relaciones["relaciones"],
     }
 
@@ -298,7 +396,7 @@ def _enviar_credenciales_admin(
             "usuario",
             usuario.id_usuario,
         )
-        return False, "El usuario esta inactivo. No se envio correo."
+        return False, "El usuario esta inactivo. No se envi? correo."
 
     resultado = (
         enviar_correo_reset_password(
@@ -827,6 +925,41 @@ def eliminar_usuario_definitivamente(
         "No puedes eliminar este usuario porque es el unico Administrador activo del sistema.",
     )
 
+    correo = usuario.correo
+    if usuario.id_rol == 1:
+        try:
+            registros_eliminados = _eliminar_registros_alumno(db, id_usuario)
+            db.query(UsuarioModel).filter(
+                UsuarioModel.id_usuario == id_usuario
+            ).delete(synchronize_session=False)
+            db.commit()
+        except HTTPException:
+            db.rollback()
+            raise
+        except SQLAlchemyError as error:
+            db.rollback()
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "No se pudo eliminar al alumno de forma segura. "
+                    "La transaccion fue revertida y no se realizo ningun cambio."
+                ),
+            ) from error
+
+        registrar_bitacora(
+            db,
+            usuario_actual.id_usuario,
+            "Eliminar alumno con registros",
+            "usuarios",
+            f"Admin elimino al alumno de prueba {correo} y {registros_eliminados} registros asociados.",
+            "usuario",
+            id_usuario,
+        )
+        return {
+            "mensaje": "Alumno y registros asociados eliminados correctamente.",
+            "registros_eliminados": registros_eliminados,
+        }
+
     relaciones = obtener_relaciones_usuario(db, id_usuario)
     if not relaciones["puede_eliminar"]:
         raise HTTPException(
@@ -847,7 +980,7 @@ def eliminar_usuario_definitivamente(
         usuario_actual.id_usuario,
         "Eliminar usuario definitivo",
         "usuarios",
-        f"Admin elimino definitivamente el usuario {usuario.correo}",
+        f"Admin elimino definitivamente el usuario {correo}",
         "usuario",
         id_usuario,
     )

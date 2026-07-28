@@ -114,7 +114,7 @@ def _expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel | No
             ExpedienteModel.id_alumno == alumno.id_alumno,
             ConvocatoriaModel.estado == "Activa",
             ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
-            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revision", "Aprobado"]),
+            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revisión", "Aprobado"]),
         )
         .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ExpedienteModel.fecha_creacion.desc())
         .first()
@@ -369,7 +369,7 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
         "convocatoria": _convocatoria_response(expediente.convocatoria),
         "resumen": {
             "aprobados": aprobados,
-            "revision": revision,
+            "revisión": revision,
             "observados": observados,
             "pendientes": pendientes,
             "total": len(documentos),
@@ -417,7 +417,7 @@ def resumen_documentos(documentos: list[DocumentoModel]) -> dict:
     return {
         "aprobados": sum(1 for d in documentos if d.estado_documento == "Aprobado"),
         "cargados": sum(1 for d in documentos if d.nombre_archivo),
-        "revision": sum(1 for d in documentos if d.nombre_archivo and d.estado_documento == "Pendiente"),
+        "revisión": sum(1 for d in documentos if d.nombre_archivo and d.estado_documento == "Pendiente"),
         "observados": sum(1 for d in documentos if d.estado_documento in ["Observado", "Rechazado"]),
         "total": len(documentos),
     }
@@ -437,6 +437,18 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
         carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == alumno.id_carrera).first()
         filas = documentos_del_flujo(db, expediente)
         documentos = [documento for documento, _ in filas]
+        documentos_en_revision = [
+            documento
+            for documento in documentos
+            if documento.nombre_archivo
+            and documento.estado_documento == "Pendiente"
+            and not documento.generado_por_sistema
+        ]
+        fecha_envio_pendiente = min(
+            (documento.fecha_carga for documento in documentos_en_revision if documento.fecha_carga),
+            default=None,
+        )
+        resumen = resumen_documentos(documentos)
         resultado.append(
             {
                 "id_alumno": alumno.id_alumno,
@@ -449,9 +461,25 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
                 "carrera": carrera.nombre if carrera else None,
                 "estado_alumno": alumno.estado_alumno,
                 "estado_expediente": expediente.estado_expediente,
-                "resumen": resumen_documentos(documentos),
+                "fecha_envio_pendiente": (
+                    fecha_envio_pendiente.isoformat()
+                    if fecha_envio_pendiente is not None
+                    else None
+                ),
+                "_fecha_orden_revision": fecha_envio_pendiente,
+                "resumen": resumen,
             }
         )
+
+    resultado.sort(
+        key=lambda item: (
+            0 if item["resumen"]["revisión"] > 0 else 1,
+            item["_fecha_orden_revision"] or datetime.max,
+            item["nombre"].casefold(),
+        )
+    )
+    for item in resultado:
+        item.pop("_fecha_orden_revision", None)
     return resultado
 
 
@@ -512,7 +540,7 @@ def subir_archivo_alumno(db: Session, alumno: AlumnoModel, id_documento: int, ar
     documento.ruta_archivo = str(destino)
     documento.estado_documento = "Pendiente"
     documento.fecha_carga = datetime.now()
-    expediente.estado_expediente = "En Revision"
+    expediente.estado_expediente = "En Revisión"
     db.commit()
     return serializar_documentacion(db, alumno)
 

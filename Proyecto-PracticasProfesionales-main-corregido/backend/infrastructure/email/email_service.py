@@ -44,7 +44,7 @@ def mostrar_password_temporal_en_respuesta() -> bool:
 
 def _smtp_config() -> dict[str, str | int]:
     if not _correo_habilitado():
-        raise EmailConfigError("El envio de correo esta deshabilitado.")
+        raise EmailConfigError("El envi? de correo esta deshabilitado.")
 
     host = os.getenv("SMTP_HOST")
     port = os.getenv("SMTP_PORT", "587")
@@ -112,7 +112,7 @@ def _error_correo_seguro(error: Exception) -> str:
     if isinstance(error, EmailConfigError):
         mensaje = str(error)
         if "deshabilitado" in mensaje.lower():
-            return "El envio de correo esta deshabilitado."
+            return "El envi? de correo esta deshabilitado."
         return "La configuracion SMTP esta incompleta."
     return "No se pudo enviar el correo."
 

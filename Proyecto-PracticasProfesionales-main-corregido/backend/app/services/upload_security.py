@@ -64,9 +64,9 @@ MIMES_IMPORTACION = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
-MENSAJE_TAMANO_DOCUMENTO = "El archivo excede el lÃ­mite mÃ¡ximo de 2 MB."
+MENSAJE_TAMANO_DOCUMENTO = "El archivo excede el límite máximo de 2 MB."
 MENSAJE_TIPO = "Tipo de archivo no permitido."
-MENSAJE_NOMBRE = "El nombre del archivo no es vÃ¡lido."
+MENSAJE_NOMBRE = "El nombre del archivo no es válido."
 
 
 def validar_extension_segura(filename: str | None) -> None:
@@ -241,4 +241,3 @@ def resolver_archivo_en_uploads(ruta_archivo: str | None, uploads_root: Path) ->
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
     return ruta_resuelta
-

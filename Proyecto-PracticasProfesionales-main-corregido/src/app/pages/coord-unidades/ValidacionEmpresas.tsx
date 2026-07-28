@@ -36,8 +36,8 @@ function mensajeCorreoOperacion(
 ) {
   if (correoEnviado) {
     return operacion === "aceptada"
-      ? "La empresa fue aceptada y se envio el correo de acceso."
-      : "La empresa fue rechazada y se envio la notificacion.";
+      ? "La empresa fue aceptada y se envi? el correo de acceso."
+      : "La empresa fue rechazada y se envi? la notificacion.";
   }
   if (advertencia) {
     return operacion === "aceptada"
@@ -45,8 +45,8 @@ function mensajeCorreoOperacion(
       : `La empresa fue rechazada. ${advertencia}`;
   }
   return operacion === "aceptada"
-    ? "La empresa fue aceptada, pero no se envio correo."
-    : "La empresa fue rechazada, pero no se envio correo.";
+    ? "La empresa fue aceptada, pero no se envi? correo."
+    : "La empresa fue rechazada, pero no se envi? correo.";
 }
 
 export function ValidacionEmpresas() {

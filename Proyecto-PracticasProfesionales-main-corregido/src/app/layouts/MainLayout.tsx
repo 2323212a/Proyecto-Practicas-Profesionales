@@ -30,9 +30,11 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import logoInstitucional from "../../assets/Ocelote1.png";
+import { NotificationCenter } from "../components/NotificationCenter";
 import { cerrarSesionLocal } from "../routes/authSession";
 
 type UsuarioSesion = {
+  id_usuario?: number;
   id_rol?: number;
   nombre?: string;
   nombre_completo?: string;
@@ -77,7 +79,7 @@ function getNav(role: string): NavItem[] {
     return [
       { label: "Dashboard", icon: LayoutDashboard, path: "/coordinador" },
       { label: "Gestion de Alumnos", icon: Users, path: "/coordinador/alumnos" },
-      { label: "Revision de Documentos", icon: FileCheck, path: "/coordinador/documentos" },
+      { label: "Revisión de Documentos", icon: FileCheck, path: "/coordinador/documentos" },
       { label: "Asignaciones", icon: ClipboardList, path: "/coordinador/asignaciones" },
       { label: "Asignar Asesores", icon: UserCheck, path: "/coordinador/asesores" },
       { label: "Seguimiento", icon: Clock, path: "/coordinador/seguimiento" },
@@ -202,7 +204,6 @@ export function MainLayout() {
   const displaySubtitle = usuarioSesion?.rol || subtitle;
   const navItems = getNav(role);
   const breadcrumb = navItems.find((n) => n.path === location.pathname)?.label || "Inicio";
-  const notifCount = navItems.reduce((a, n) => a + (n.badge || 0), 0);
   function cerrarSesion() {
     cerrarSesionLocal();
     navigate("/login", { replace: true });
@@ -322,15 +323,8 @@ export function MainLayout() {
             <span className="text-gray-700 font-medium">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative p-1.5 text-gray-500 hover:text-[#1565c0] hover:bg-blue-50 rounded-xl transition-colors">
-              <Bell className="w-4 h-4" />
-              {notifCount > 0 && (
-                <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold leading-none">
-                  {notifCount}
-                </span>
-              )}
-            </button>
-            <div className="flex items-center gap-2.5 pl-3 border-l border-gray-200">
+            <NotificationCenter role={role} idUsuario={usuarioSesion?.id_usuario} />
+            <div className={role !== "admin" ? "flex items-center gap-2.5 pl-3 border-l border-gray-200" : "flex items-center gap-2.5"}>
               <div className="w-8 h-8 bg-[#0d2b5e] rounded-xl flex items-center justify-center">
                 <User className="w-4 h-4 text-white" />
               </div>

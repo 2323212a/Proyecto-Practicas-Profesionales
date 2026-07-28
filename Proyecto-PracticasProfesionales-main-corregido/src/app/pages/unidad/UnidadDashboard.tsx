@@ -205,7 +205,7 @@ export function UnidadDashboard() {
               },
               {
                 titulo: `${datos?.vacantes.length ?? 0} plan(es) de trabajo`,
-                fecha: "Revision de cupos y vacantes",
+                fecha: "Revisión de cupos y vacantes",
                 color: "bg-orange-50 text-orange-700",
               },
             ].map((a) => (

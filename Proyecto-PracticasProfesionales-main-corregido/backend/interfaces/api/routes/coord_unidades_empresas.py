@@ -439,7 +439,7 @@ def obtener_dashboard_coord_unidades(db: Session = Depends(obtener_db)):
 
     alertas = []
     if documentos_pendientes:
-        alertas.append(f"{documentos_pendientes} documento(s) de empresa esperan revision.")
+        alertas.append(f"{documentos_pendientes} documento(s) de empresa esperan revisión.")
     if convenios_por_vencer:
         alertas.append(f"{convenios_por_vencer} convenio(s) vencen en los proximos 30 dias.")
     if empresas_pendientes:
@@ -761,7 +761,7 @@ def rechazar_solicitud_empresa(
                 usuario_actual.id_usuario,
                 "envio_correo_empresa_rechazada",
                 "coord_unidades_empresas",
-                f"Se envio aviso de rechazo a la empresa {empresa.nombre_empresa}.",
+                f"Se envi? aviso de rechazo a la empresa {empresa.nombre_empresa}.",
                 "empresa",
                 empresa.id_empresa,
             )
@@ -783,7 +783,7 @@ def rechazar_solicitud_empresa(
             usuario_actual.id_usuario,
             "correo_deshabilitado",
             "coord_unidades_empresas",
-            f"No se envio aviso de rechazo a la empresa {empresa.nombre_empresa} porque no tiene correo de contacto.",
+            f"No se envi? aviso de rechazo a la empresa {empresa.nombre_empresa} porque no tiene correo de contacto.",
             "empresa",
             empresa.id_empresa,
         )
@@ -1027,7 +1027,7 @@ def _aplicar_ampliacion_cupos(db: Session, solicitud: SolicitudAmpliacionCuposVa
                 .first()
             )
             if config is None:
-                raise HTTPException(status_code=400, detail="El tipo de prÃ¡ctica no pertenece a esta vacante")
+                raise HTTPException(status_code=400, detail="El tipo de práctica no pertenece a esta vacante")
             detalle.cupos_aprobados = aprobados
             detalle.estado = "Aprobada"
             config.cupos += aprobados
@@ -1304,7 +1304,7 @@ def cambiar_estado_vacante(
             db,
             responsable.id_usuario,
             "Vacante revisada",
-            f"Tu vacante {vacante.titulo} cambiÃ³ a estado {datos.estado_vacante}.",
+            f"Tu vacante {vacante.titulo} cambió a estado {datos.estado_vacante}.",
         )
     db.commit()
     db.refresh(vacante)
@@ -1380,7 +1380,7 @@ def cambiar_estado_empresa(
             raise HTTPException(status_code=400, detail="No se puede deshacer el rechazo porque la empresa ya avanzo en convocatorias")
         if obtener_convenio_vigente_actual(db, id_empresa) is not None or obtener_vinculacion_aprobada_actual(db, id_empresa) is not None:
             raise HTTPException(status_code=400, detail="No se puede deshacer el rechazo porque la empresa ya avanzo a otra etapa")
-        solicitud.estado_solicitud = "En revision"
+        solicitud.estado_solicitud = "En revisión"
         solicitud.observaciones = (
             f"{solicitud.observaciones or ''}\nRechazo deshecho por usuario {usuario_actual.id_usuario}."
         ).strip()

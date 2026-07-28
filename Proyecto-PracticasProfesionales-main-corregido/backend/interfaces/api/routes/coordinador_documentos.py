@@ -169,7 +169,7 @@ def _normalizar_tipo_observacion(valor: str | None) -> str:
     normalizado = (valor or "Corrección solicitada").strip()
     aliases = {
         "Correccion solicitada": "Corrección solicitada",
-        "Revision manual": "Revisión manual",
+        "Revisión manual": "Revisión manual",
     }
     normalizado = aliases.get(normalizado, normalizado)
     tipos_validos = {
@@ -381,8 +381,8 @@ def _resumen_fases_alumno(alumno: AlumnoModel, tipos: list[TipoDocumentoModel]) 
         siguiente_paso = "Esperar correccion del alumno"
         prioridad = 1
     elif revision > 0:
-        estado_documental = "En revision"
-        fase = "Revision documental"
+        estado_documental = "En revisión"
+        fase = "Revisión documental"
         siguiente_paso = "Revisar documentos cargados"
         prioridad = 2
     elif inicial_aprobado and not seleccion_realizada:
@@ -416,7 +416,7 @@ def _resumen_fases_alumno(alumno: AlumnoModel, tipos: list[TipoDocumentoModel]) 
         "asignacion": asignacion,
         "resumen": {
             "aprobados": aprobados,
-            "revision": revision,
+            "revisión": revision,
             "observados": observados,
             "faltantes": faltantes,
             "cargados": len(docs_cargados),
@@ -481,13 +481,13 @@ def obtener_dashboard_coordinador_documental(db: Session = Depends(obtener_db)):
 
     estado_documentos = {
         "Aprobados": 0,
-        "En revision": 0,
+        "En revisión": 0,
         "Observados": 0,
         "Faltantes": 0,
     }
     for item in alumnos_gestion:
         estado_documentos["Aprobados"] += item["resumen"]["aprobados"]
-        estado_documentos["En revision"] += item["resumen"]["revision"]
+        estado_documentos["En revisión"] += item["resumen"]["revisión"]
         estado_documentos["Observados"] += item["resumen"]["observados"]
         estado_documentos["Faltantes"] += item["resumen"]["faltantes"]
 
@@ -516,7 +516,7 @@ def obtener_dashboard_coordinador_documental(db: Session = Depends(obtener_db)):
     return {
         "metricas": {
             "total_alumnos": len(alumnos_gestion),
-            "alumnos_en_revision": sum(1 for item in alumnos_gestion if item["estado_documental"] == "En revision"),
+            "alumnos_en_revision": sum(1 for item in alumnos_gestion if item["estado_documental"] == "En revisión"),
             "docs_revisados": estado_documentos["Aprobados"] + estado_documentos["Observados"],
             "empresas_disponibles": empresas_disponibles,
             "expedientes_aprobados": sum(1 for item in alumnos_gestion if item["inicial_aprobado"]),
@@ -525,14 +525,14 @@ def obtener_dashboard_coordinador_documental(db: Session = Depends(obtener_db)):
         },
         "estado_documentos": [
             {"name": "Aprobados", "value": estado_documentos["Aprobados"], "color": "#22c55e"},
-            {"name": "En revision", "value": estado_documentos["En revision"], "color": "#f59e0b"},
+            {"name": "En revisión", "value": estado_documentos["En revisión"], "color": "#f59e0b"},
             {"name": "Observados", "value": estado_documentos["Observados"], "color": "#ef4444"},
             {"name": "Faltantes", "value": estado_documentos["Faltantes"], "color": "#94a3b8"},
         ],
         "expedientes_por_revisar": sorted(
             [
                 item for item in alumnos_gestion
-                if item["resumen"]["revision"] > 0 or item["resumen"]["observados"] > 0 or item["resumen"]["faltantes"] > 0
+                if item["resumen"]["revisión"] > 0 or item["resumen"]["observados"] > 0 or item["resumen"]["faltantes"] > 0
             ],
             key=lambda item: item["prioridad"],
         )[:6],
@@ -581,7 +581,7 @@ def _actualizar_estado_expediente(
     # No utilizar todos los documentos obligatorios como respaldo,
     # porque podrían incluir documentos posteriores a la asignación.
     if not tipos_habilitantes:
-        expediente.estado_expediente = "En Revision"
+        expediente.estado_expediente = "En Revisión"
 
         if alumno.estado_alumno not in {"Activo", "Inactivo", "Egresado", "Baja"}:
             alumno.estado_alumno = "Activo"
@@ -629,7 +629,7 @@ def _actualizar_estado_expediente(
             alumno.estado_alumno = "Activo"
 
     else:
-        expediente.estado_expediente = "En Revision"
+        expediente.estado_expediente = "En Revisión"
 
         if alumno.estado_alumno not in {"Activo", "Inactivo", "Egresado", "Baja"}:
             alumno.estado_alumno = "Activo"
@@ -758,9 +758,9 @@ def cambiar_estado_documento(
     ahora = datetime.now()
     if datos.estado == "Pendiente" and estado_anterior != "Pendiente":
         if documento.fecha_revision is None:
-            raise HTTPException(status_code=400, detail="No hay revision reciente para deshacer")
+            raise HTTPException(status_code=400, detail="No hay revisión reciente para deshacer")
         if ahora - documento.fecha_revision > timedelta(minutes=10):
-            raise HTTPException(status_code=400, detail="Solo se puede deshacer la revision durante los primeros 10 minutos")
+            raise HTTPException(status_code=400, detail="Solo se puede deshacer la revisión durante los primeros 10 minutos")
         seleccion_posterior = (
             db.query(SeleccionEmpresaModel)
             .filter(
@@ -823,7 +823,7 @@ def cambiar_estado_documento(
     registrar_bitacora(
         db,
         usuario_actual.id_usuario,
-        "Deshacer revision documental" if datos.estado == "Pendiente" and estado_anterior != "Pendiente" else "Revisar documento de alumno",
+        "Deshacer revisión documental" if datos.estado == "Pendiente" and estado_anterior != "Pendiente" else "Revisar documento de alumno",
         "documentos",
         f"Documento {documento.id_documento} cambio de {estado_anterior} a {datos.estado}.",
         "documento_alumno",

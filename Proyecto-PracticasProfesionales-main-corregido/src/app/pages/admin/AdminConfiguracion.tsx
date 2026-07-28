@@ -234,7 +234,7 @@ export function AdminConfiguracion() {
     Mantenimiento: {
       titulo: "Activar modo mantenimiento",
       mensaje:
-        "Al activar el modo mantenimiento, los usuarios que no sean Administrador no podran iniciar sesion. Tambien se deshabilitara el registro publico de empresas.",
+        "Al activar el modo mantenimiento, los usuarios que no sean Administrador no podran iniciar sesion. Tambien se deshabilitar? el registro publico de empresas.",
       extra: "Los Administradores podran seguir entrando para volver a activar el sistema.",
       confirmar: "Confirmar cambio",
       clase: "bg-yellow-50 border-yellow-200 text-yellow-800",

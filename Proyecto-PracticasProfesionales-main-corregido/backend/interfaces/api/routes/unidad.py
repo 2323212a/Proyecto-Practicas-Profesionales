@@ -1715,7 +1715,7 @@ def reenviar_vacante_unidad(
     if _plan_trabajo_vacante(db, vacante) is None:
         raise HTTPException(status_code=400, detail="Debes subir el Plan de Trabajo antes de enviar la vacante.")
     if not _tipos_practica_vacante(db, vacante):
-        raise HTTPException(status_code=400, detail="La vacante debe tener al menos un tipo de prÃ¡ctica.")
+        raise HTTPException(status_code=400, detail="La vacante debe tener al menos un tipo de práctica.")
     if not vacante.aplica_todas_carreras and not _carreras_vacante(db, vacante):
         raise HTTPException(status_code=400, detail="Selecciona al menos una carrera o marca Todas las carreras.")
 
@@ -1726,21 +1726,21 @@ def reenviar_vacante_unidad(
     notificar_roles(
         db,
         ["Coordinador de Unidades Receptoras", "Administrador"],
-        "Vacante reenviada a revisiÃ³n",
-        f"La empresa {vacante.empresa.nombre_empresa if vacante.empresa else id_empresa} reenviÃ³ la vacante {vacante.titulo}.",
+        "Vacante reenviada a revisión",
+        f"La empresa {vacante.empresa.nombre_empresa if vacante.empresa else id_empresa} reenvió la vacante {vacante.titulo}.",
     )
     registrar_bitacora(
         db,
         None,
         "Reenviar vacante",
         "vacantes",
-        f"Vacante {id_vacante} reenviada a revisiÃ³n.",
+        f"Vacante {id_vacante} reenviada a revisión.",
         "vacante",
         id_vacante,
     )
     db.commit()
     db.refresh(vacante)
-    return {"mensaje": "Vacante reenviada a revisiÃ³n.", "estado_vacante": vacante.estado_vacante}
+    return {"mensaje": "Vacante reenviada a revisión.", "estado_vacante": vacante.estado_vacante}
 
 
 @router.post("/vacantes/{id_vacante:int}/solicitar-ampliacion-cupos")
@@ -1752,7 +1752,7 @@ def solicitar_ampliacion_cupos_vacante(
 ):
     motivo = " ".join(datos.motivo.split())
     if len(motivo) < 10:
-        raise HTTPException(status_code=422, detail="Ingresa un motivo claro para solicitar mas cupos.")
+        raise HTTPException(status_code=422, detail="Ingresa un motivo claro para solicitar más cupos.")
 
     vacante = (
         db.query(VacanteModel)
@@ -1762,15 +1762,15 @@ def solicitar_ampliacion_cupos_vacante(
     if vacante is None:
         raise HTTPException(status_code=404, detail="Vacante no encontrada para esta empresa.")
     if vacante.estado_vacante == "Cerrada":
-        raise HTTPException(status_code=400, detail="No se puede solicitar ampliacion para una vacante cerrada.")
+        raise HTTPException(status_code=400, detail="No se puede solicitar ampliación para una vacante cerrada.")
     if vacante.estado_vacante in {"Rechazada", "Con observaciones"}:
-        raise HTTPException(status_code=400, detail="Primero corrige y reenvia la vacante antes de solicitar mas cupos.")
+        raise HTTPException(status_code=400, detail="Primero corrige y reenvía la vacante antes de solicitar más cupos.")
 
     detalles = datos.detalles or []
     if not detalles and datos.id_tipo_practica is not None and datos.cupos_solicitados is not None:
         detalles = [TipoPracticaVacanteRequest(id_tipo_practica=datos.id_tipo_practica, cupos=datos.cupos_solicitados)]
     if not detalles:
-        raise HTTPException(status_code=400, detail="Indica los cupos adicionales por tipo de practica.")
+        raise HTTPException(status_code=400, detail="Indica los cupos adicionales por tipo de práctica.")
 
     tipos_config = {
         config.id_tipo_practica
@@ -1786,9 +1786,9 @@ def solicitar_ampliacion_cupos_vacante(
         if detalle.cupos <= 0:
             raise HTTPException(status_code=400, detail="Los cupos solicitados deben ser mayores a cero.")
         if detalle.id_tipo_practica in detalles_por_tipo:
-            raise HTTPException(status_code=400, detail="No repitas el mismo tipo de practica en una solicitud.")
+            raise HTTPException(status_code=400, detail="No repitas el mismo tipo de práctica en una solicitud.")
         if detalle.id_tipo_practica not in tipos_config:
-            raise HTTPException(status_code=400, detail="El tipo de practica no pertenece a esta vacante.")
+            raise HTTPException(status_code=400, detail="El tipo de práctica no pertenece a esta vacante.")
         detalles_por_tipo[detalle.id_tipo_practica] = detalle.cupos
 
     pendiente = (
@@ -1800,7 +1800,7 @@ def solicitar_ampliacion_cupos_vacante(
         .first()
     )
     if pendiente is not None:
-        raise HTTPException(status_code=400, detail="Ya existe una solicitud de ampliacion pendiente para esta vacante.")
+        raise HTTPException(status_code=400, detail="Ya existe una solicitud de ampliación pendiente para esta vacante.")
 
     solicitud = SolicitudAmpliacionCuposVacanteModel(
         id_vacante=id_vacante,
@@ -1823,22 +1823,22 @@ def solicitar_ampliacion_cupos_vacante(
     notificar_roles(
         db,
         ["Coordinador de Unidades Receptoras", "Administrador"],
-        "Solicitud de ampliacion de cupos",
-        f"La empresa {vacante.id_empresa} solicito ampliar cupos para la vacante {vacante.titulo}.",
+        "Solicitud de ampliación de cupos",
+        f"La empresa {vacante.id_empresa} solicitó ampliar cupos para la vacante {vacante.titulo}.",
     )
     db.commit()
     db.refresh(solicitud)
     registrar_bitacora(
         db,
         None,
-        "Solicitar ampliacion de cupos",
+        "Solicitar ampliación de cupos",
         "vacantes",
         f"Solicitud {solicitud.id_solicitud_ampliacion} creada para vacante {vacante.id_vacante}.",
         "solicitud_ampliacion_cupos_vacante",
         solicitud.id_solicitud_ampliacion,
     )
     return {
-        "mensaje": "Solicitud de ampliacion enviada a Coordinacion de Unidades.",
+        "mensaje": "Solicitud de ampliación enviada a Coordinación de Unidades.",
         "id_solicitud_ampliacion": solicitud.id_solicitud_ampliacion,
         "estado": solicitud.estado,
         "detalles": [

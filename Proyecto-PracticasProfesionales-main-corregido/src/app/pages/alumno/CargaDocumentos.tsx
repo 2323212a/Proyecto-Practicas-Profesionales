@@ -8,7 +8,7 @@ import { abrirVistaPreviaArchivo } from "../../../shared/utils/filePreview";
 
 const estadoConfig = (doc: DocumentoFlujoAlumno) => {
   if (doc.estado === "Aprobado") return { label: "Aprobado", color: "bg-green-100 text-green-700", icon: CheckCircle };
-  if (doc.nombre_archivo && doc.estado === "Pendiente") return { label: "En revision", color: "bg-yellow-100 text-yellow-700", icon: Clock };
+  if (doc.nombre_archivo && doc.estado === "Pendiente") return { label: "En revisión", color: "bg-yellow-100 text-yellow-700", icon: Clock };
   if (doc.estado === "Observado") return { label: "Con observaciones", color: "bg-orange-100 text-orange-700", icon: AlertCircle };
   if (doc.estado === "Rechazado") return { label: "Rechazado", color: "bg-red-100 text-red-700", icon: AlertCircle };
   return { label: "Pendiente", color: "bg-gray-100 text-gray-500", icon: Clock };

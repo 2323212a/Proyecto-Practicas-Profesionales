@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bell, Check, CheckCircle, Clock, Eye, Info, MessageSquare, X, XCircle } from "lucide-react";
 import { gestionNotificacionesUseCase } from "../dependencies";
 import type { Notificacion } from "../../domain/notificaciones/Notificacion";
+import { normalizarTextoVisible } from "../../shared/utils/normalizarTextoVisible";
 
 type Filtro = "todas" | "no_leidas";
 
@@ -37,14 +38,14 @@ function fechaCorta(fecha: string) {
 }
 
 function tipoVisual(notificacion: Notificacion) {
-  const texto = `${notificacion.titulo} ${notificacion.mensaje}`.toLowerCase();
+  const texto = normalizarTextoVisible(`${notificacion.titulo} ${notificacion.mensaje}`).toLowerCase();
   if (texto.includes("rechaz") || texto.includes("incidencia")) {
     return { icon: XCircle, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" };
   }
   if (texto.includes("aprob") || texto.includes("liberacion") || texto.includes("emitida")) {
     return { icon: CheckCircle, color: "text-green-600", bg: "bg-green-50", border: "border-green-100" };
   }
-  if (texto.includes("observ") || texto.includes("pendiente") || texto.includes("revision")) {
+  if (texto.includes("observ") || texto.includes("pendiente") || texto.includes("revisión")) {
     return { icon: AlertTriangle, color: "text-yellow-600", bg: "bg-yellow-50", border: "border-yellow-100" };
   }
   return { icon: Info, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" };
@@ -60,7 +61,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
 
   async function cargar() {
     if (!idUsuario) {
-      setError("No se encontro el usuario de la sesion actual.");
+      setError("No se encontró el usuario de la sesión actual.");
       setCargando(false);
       return;
     }
@@ -92,6 +93,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
     );
     try {
       await gestionNotificacionesUseCase.marcarLeida(notificacion.id_notificacion);
+      window.dispatchEvent(new Event("notificaciones:actualizadas"));
     } catch (err) {
       console.error(err);
       void cargar();
@@ -103,6 +105,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
     setNotificaciones((actuales) => actuales.map((item) => ({ ...item, leida: true })));
     try {
       await gestionNotificacionesUseCase.marcarTodas(idUsuario);
+      window.dispatchEvent(new Event("notificaciones:actualizadas"));
     } catch (err) {
       console.error(err);
       void cargar();
@@ -125,7 +128,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
         {noLeidas > 0 && (
           <button onClick={marcarTodas} className="flex items-center gap-2 text-sm text-[#1565c0] hover:underline w-fit">
             <Check className="w-4 h-4" />
-            Marcar todas como leidas
+            Marcar todas como leídas
           </button>
         )}
       </div>
@@ -146,14 +149,14 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
         <div className="bg-green-600 rounded-2xl p-5 text-white">
           <CheckCircle className="w-6 h-6 mb-3 opacity-80" />
           <div className="text-2xl font-bold">{notificaciones.length - noLeidas}</div>
-          <div className="text-white/80 text-sm">Leidas</div>
+          <div className="text-white/80 text-sm">Leídas</div>
         </div>
       </div>
 
       <div className="flex gap-3">
         {[
           { k: "todas", l: "Todas" },
-          { k: "no_leidas", l: `No leidas (${noLeidas})` },
+          { k: "no_leidas", l: `No leídas (${noLeidas})` },
         ].map((item) => (
           <button
             key={item.k}
@@ -176,6 +179,8 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
           {!cargando && filtradas.map((notificacion) => {
             const visual = tipoVisual(notificacion);
             const Icon = visual.icon;
+            const tituloNormalizado = normalizarTextoVisible(notificacion.titulo);
+            const mensajeNormalizado = normalizarTextoVisible(notificacion.mensaje);
 
             return (
               <div key={notificacion.id_notificacion} className={`p-5 hover:bg-gray-50 transition-colors ${!notificacion.leida ? "border-l-4 border-l-[#1565c0]" : ""}`}>
@@ -187,8 +192,8 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h4 className={`font-semibold ${!notificacion.leida ? "text-[#0d2b5e]" : "text-gray-800"}`}>{notificacion.titulo}</h4>
-                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">{notificacion.mensaje}</p>
+                        <h4 className={`font-semibold ${!notificacion.leida ? "text-[#0d2b5e]" : "text-gray-800"}`}>{tituloNormalizado}</h4>
+                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">{mensajeNormalizado}</p>
                       </div>
                       {!notificacion.leida && <span className="bg-[#1565c0] w-2 h-2 rounded-full flex-shrink-0 mt-2" />}
                     </div>
@@ -206,7 +211,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
                         </button>
                         {!notificacion.leida && (
                           <button onClick={() => marcarLeida(notificacion)} className="text-xs text-[#1565c0] hover:underline">
-                            Marcar como leida
+                            Marcar como leída
                           </button>
                         )}
                       </div>
@@ -231,7 +236,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
           <div className="bg-white rounded-3xl shadow-xl w-full max-w-2xl p-6">
             <div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4">
               <div>
-                <h2 className="text-xl font-bold text-[#0d2b5e]">Detalle de notificacion</h2>
+                <h2 className="text-xl font-bold text-[#0d2b5e]">Detalle de notificación</h2>
                 <p className="text-sm text-gray-500 mt-1">{fechaCorta(seleccionada.fecha_envio)}</p>
               </div>
               <button onClick={() => setSeleccionada(null)} className="text-gray-400 hover:text-gray-600">
@@ -242,7 +247,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
             <div className="mt-5 space-y-5">
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
                 <div className="text-xs text-blue-500 font-semibold mb-2">Asunto</div>
-                <div className="text-lg font-bold text-[#0d2b5e]">{seleccionada.titulo}</div>
+                <div className="text-lg font-bold text-[#0d2b5e]">{normalizarTextoVisible(seleccionada.titulo)}</div>
               </div>
 
               <div className="bg-white border border-gray-200 rounded-2xl p-5">
@@ -250,7 +255,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
                   <MessageSquare className="w-5 h-5 text-[#1565c0]" />
                   Mensaje
                 </div>
-                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{seleccionada.mensaje}</p>
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{normalizarTextoVisible(seleccionada.mensaje)}</p>
               </div>
 
               <div className="flex justify-end">

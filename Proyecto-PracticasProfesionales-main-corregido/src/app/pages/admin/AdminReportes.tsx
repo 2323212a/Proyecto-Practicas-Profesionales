@@ -144,7 +144,7 @@ function ListaDestacada({
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-[#0d2b5e]">{valorCelda(fila[tituloCampo])}</div>
               <div className="mt-0.5 truncate text-xs text-gray-500">
-                {subtituloCampos.map((campo) => valorCelda(fila[campo])).filter((valor) => valor !== "Sin dato").join(" Â· ") || "Sin detalle"}
+                {subtituloCampos.map((campo) => valorCelda(fila[campo])).filter((valor) => valor !== "Sin dato").join(" · ") || "Sin detalle"}
               </div>
             </div>
             {badgeCampo && (

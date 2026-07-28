@@ -11,7 +11,7 @@ class SolicitudEmpresaModel(Base):
     id_empresa = Column(Integer, ForeignKey("empresa.id_empresa"), nullable=False)
     tipo_tramite_solicitado = Column(Enum("Convenio", "Vinculacion"), nullable=False, default="Convenio")
     estado_solicitud = Column(
-        Enum("Recibida", "En revision", "Aceptada", "Rechazada"),
+        Enum("Recibida", "En revisión", "Aceptada", "Rechazada"),
         nullable=False,
         default="Recibida",
         server_default="Recibida",

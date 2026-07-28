@@ -43,6 +43,10 @@ export function LoginPage() {
 
       localStorage.setItem("token", response.access_token);
       localStorage.setItem("usuario", JSON.stringify(response));
+      sessionStorage.setItem(
+        "notificaciones:mostrar-al-iniciar",
+        String(response.id_usuario),
+      );
 
       if (response.rol === "Alumno" && response.debe_cambiar_password === true) {
         navigate("/cambiar-password-inicial", { replace: true });

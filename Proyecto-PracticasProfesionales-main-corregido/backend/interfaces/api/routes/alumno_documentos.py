@@ -333,12 +333,12 @@ def subir_documento_alumno(
         documento.requiere_validacion_automatica = requiere_auto
         documento.validacion_automatica_estado = estado_auto
 
-    expediente.estado_expediente = "En Revision"
+    expediente.estado_expediente = "En Revisión"
     notificar_roles(
         db,
         ["Coordinador de Practicas", "Administrador"],
         "Documento de alumno recibido",
-        f"{alumno.matricula} subio {tipo.nombre_documento} para revision.",
+        f"{alumno.matricula} subio {tipo.nombre_documento} para revisión.",
     )
     db.commit()
     db.refresh(documento)

@@ -231,7 +231,7 @@ const etapasConvocatoria: EtapaConvocatoria[] = [
   {
     orden: 4,
     nombre: "Validacion",
-    descripcion: "Revision documental por coordinacion.",
+    descripcion: "Revisión documental por coordinacion.",
     inicioCampo: "fecha_inicio_validacion",
     cierreCampo: "fecha_cierre_validacion",
   },

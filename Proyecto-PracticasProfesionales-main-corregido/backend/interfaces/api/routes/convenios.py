@@ -150,7 +150,7 @@ def solicitar_renovacion_convenio(
         crear_notificacion(
             db,
             responsable.id_usuario,
-            "Revision de convenio registrada",
+            "Revisión de convenio registrada",
             f"Coordinacion registro una observacion sobre el convenio de {empresa.nombre_empresa if empresa else 'la empresa'}."
             + (f" Observaciones: {datos.observaciones}" if datos.observaciones else ""),
         )

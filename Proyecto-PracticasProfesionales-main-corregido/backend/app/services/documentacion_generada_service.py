@@ -11,25 +11,28 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from xml.sax.saxutils import escape
 
 from fastapi import HTTPException
+from sqlalchemy.orm import object_session
 
 from infrastructure.database.connection import SessionLocal
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel  # noqa: F401
 from infrastructure.persistence.models.carrera import CarreraModel  # noqa: F401
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel  # noqa: F401
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
 from infrastructure.persistence.models.documento import DocumentoModel  # noqa: F401
 from infrastructure.persistence.models.empresa import EmpresaModel  # noqa: F401
 from infrastructure.persistence.models.expediente import ExpedienteModel  # noqa: F401
 from infrastructure.persistence.models.horas import HorasModel  # noqa: F401
 from infrastructure.persistence.models.rol import RolModel  # noqa: F401
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel  # noqa: F401
+from infrastructure.persistence.models.tipo_practica import TipoPracticaModel  # noqa: F401
 from infrastructure.persistence.models.usuario import UsuarioModel  # noqa: F401
 from infrastructure.persistence.models.vacante import VacanteModel  # noqa: F401
 
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = BASE_DIR / "templates" / "documentos"
-CACHE_VERSION = "relleno-v1"
+CACHE_VERSION = "relleno-v3-configuracion-responsables"
 
 DOCUMENTOS_GENERADOS = {
     "carta_compromiso": {
@@ -95,6 +98,51 @@ def _nombre_completo(alumno: AlumnoModel) -> str:
     ) or "Alumno"
 
 
+def _nombre_tipo_practica(alumno: AlumnoModel) -> str:
+    nombre = (
+        (alumno.tipo_practica.nombre or "").strip()
+        if alumno.tipo_practica is not None
+        else ""
+    )
+    if not nombre:
+        raise HTTPException(
+            status_code=409,
+            detail="El alumno no tiene un tipo de practica asignado en la base de datos",
+        )
+    return nombre
+
+
+def _responsables_documentos(alumno: AlumnoModel) -> dict[str, str]:
+    db = object_session(alumno)
+    cerrar_db = db is None
+    if db is None:
+        db = SessionLocal()
+
+    try:
+        configuracion = (
+            db.query(ConfiguracionSistemaModel)
+            .order_by(ConfiguracionSistemaModel.id_configuracion.asc())
+            .first()
+        )
+        secretaria = (
+            (configuracion.secretaria_academica or "").strip()
+            if configuracion is not None
+            else ""
+        )
+        coordinadora = (
+            (configuracion.coordinadora_practicas or "").strip()
+            if configuracion is not None
+            else ""
+        )
+        return {
+            "secretaria_academica": secretaria or "Paola Lopez",
+            "coordinadora_academica": coordinadora or "Guadalupe Velazquez",
+        }
+    finally:
+        if cerrar_db:
+            db.close()
+
+
 def _slug_carpeta(valor: str | None, fallback: str) -> str:
     texto = valor or fallback
     texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
@@ -117,7 +165,7 @@ def _carpeta_generados_alumno(alumno: AlumnoModel) -> Path:
     nombre_alumno = "_".join(
         parte for parte in [alumno.nombre, alumno.apellido_paterno, alumno.apellido_materno, alumno.matricula] if parte
     )
-    tipo_practica = alumno.tipo_practica.nombre if alumno.tipo_practica else "practica"
+    tipo_practica = _nombre_tipo_practica(alumno)
     convocatoria = f"convocatoria_{expediente.id_convocatoria}" if expediente is not None else "sin_convocatoria"
     return (
         BASE_DIR
@@ -145,16 +193,18 @@ def _contexto(alumno: AlumnoModel) -> dict[str, str]:
     carrera = alumno.carrera.nombre if alumno.carrera else ""
     expediente = _expediente_reciente(alumno)
     convocatoria = expediente.convocatoria if expediente is not None else None
+    tipo_practica = _nombre_tipo_practica(alumno)
+    responsables = _responsables_documentos(alumno)
     return {
         "fecha_larga": _fecha_larga(hoy),
         "fecha_corta": _fecha_corta(hoy),
         "fecha_dia": f"{hoy.day:02d}",
         "fecha_mes": f"{hoy.month:02d}",
         "fecha_anio": str(hoy.year),
-        "secretaria_academica": "Paola Lopez",
-        "coordinadora_academica": "Guadalupe Velazquez",
-        "nombre_practica": "Practicas Profesionales",
-        "tipo_practica": "Practicas Profesionales",
+        "secretaria_academica": responsables["secretaria_academica"],
+        "coordinadora_academica": responsables["coordinadora_academica"],
+        "nombre_practica": tipo_practica,
+        "tipo_practica": tipo_practica,
         "nombre_alumno": _nombre_completo(alumno),
         "nombre": alumno.nombre or "",
         "apellido_paterno": alumno.apellido_paterno or "",
@@ -194,6 +244,7 @@ def _rellenar_xml(codigo: str, xml: str, alumno: AlumnoModel) -> str:
             " LA SECRETARIA ACADÉMICA": "",
             "LICENCIATURA EN ………….": f"LICENCIATURA EN {c['carrera'].upper()}",
             "Práctica: _________________": f"Práctica: {c['nombre_practica']}",
+            "ráctica: _________________": f"ráctica: {c['nombre_practica']}",
             "Práctica: ________________": f"Práctica: {c['nombre_practica']}",
             "licenciatura en _________________": f"licenciatura en {c['carrera']}",
             "Nombre y firma del estudiante": c["nombre_alumno"],

@@ -235,7 +235,7 @@ def _espacios_response(
         if reporte is not None and reporte.estado_reporte in {"Pendiente", "Aprobado"}:
             puede_enviar = False
             if reporte.estado_reporte == "Pendiente":
-                motivo_bloqueo = "Este reporte ya fue enviado y esta en revision."
+                motivo_bloqueo = "Este reporte ya fue enviado y esta en revisión."
             else:
                 motivo_bloqueo = "Este reporte ya fue aprobado por tu asesor."
 
@@ -394,7 +394,7 @@ def subir_reporte_alumno(
     crear_notificacion(
         db,
         asignacion.asesor.id_usuario if asignacion.asesor else None,
-        "Reporte nuevo para revision",
+        "Reporte nuevo para revisión",
         f"{alumno.matricula} subio el {REPORTES_CONFIG[tipo]['titulo'].lower()}.",
     )
     db.commit()

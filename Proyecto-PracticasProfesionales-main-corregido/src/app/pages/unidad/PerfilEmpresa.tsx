@@ -91,7 +91,7 @@ export function PerfilEmpresa() {
             <div className="text-white/80 text-sm mt-1">
               {habilitada
                 ? "Empresa habilitada como unidad receptora"
-                : "Empresa en revision o seguimiento"}
+                : "Empresa en revisión o seguimiento"}
             </div>
             <div className="text-white/80 text-xs mt-1">Giro: {empresa?.giro ?? "Sin giro registrado"}</div>
           </div>

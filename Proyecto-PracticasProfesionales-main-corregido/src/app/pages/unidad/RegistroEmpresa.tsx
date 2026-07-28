@@ -302,11 +302,11 @@ export function RegistroEmpresa() {
 
               </div>
 
-              <Campo label="Descripcion de actividades o areas disponibles" icon={FileText}>
+              <Campo label="Descripcion de actividades o ?reas disponibles" icon={FileText}>
                 <textarea
                   value={form.descripcion}
                   onChange={set("descripcion")}
-                  placeholder="Describe brevemente las areas donde podrian integrarse alumnos de practicas."
+                  placeholder="Describe brevemente las ?reas donde podrian integrarse alumnos de practicas."
                   rows={4}
                   className={`${inputClass} resize-none`}
                 />
@@ -325,7 +325,7 @@ export function RegistroEmpresa() {
                   ? "Registro temporalmente deshabilitado"
                   : guardando
                     ? "Enviando solicitud..."
-                    : "Enviar solicitud de revision"}
+                    : "Enviar solicitud de revisión"}
               </button>
             </div>
           </section>

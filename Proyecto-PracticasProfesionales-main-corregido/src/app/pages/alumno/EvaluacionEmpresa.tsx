@@ -260,7 +260,7 @@ export function EvaluacionEmpresa() {
         {confirmandoIncidencia && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
             {segundosConfirmacion > 0
-              ? `Espera ${segundosConfirmacion} segundo(s) para confirmar el envio.`
+              ? `Espera ${segundosConfirmacion} segundo(s) para confirmar el envi?.`
               : "Confirma si realmente quieres enviar esta incidencia."}
           </div>
         )}
@@ -275,7 +275,7 @@ export function EvaluacionEmpresa() {
               : confirmandoIncidencia
                 ? segundosConfirmacion > 0
                   ? `Confirmar en ${segundosConfirmacion}s`
-                  : "Confirmar envio"
+                  : "Confirmar envi?"
                 : "Registrar incidencia"}
           </button>
           {confirmandoIncidencia && (

@@ -13,7 +13,7 @@ class ExpedienteModel(Base):
     id_alumno = Column(Integer, ForeignKey("alumno.id_alumno"), nullable=False)
     id_convocatoria = Column(Integer, ForeignKey("convocatoria.id_convocatoria"), nullable=False)
     estado_expediente = Column(
-        Enum("Pendiente", "En Revision", "Aprobado", "Rechazado"),
+        Enum("Pendiente", "En Revisión", "Aprobado", "Rechazado"),
         nullable=False,
         default="Pendiente",
         server_default="Pendiente",

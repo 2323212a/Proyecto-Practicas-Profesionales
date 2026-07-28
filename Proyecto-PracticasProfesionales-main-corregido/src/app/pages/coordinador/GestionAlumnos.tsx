@@ -25,7 +25,7 @@ function estadoColor(estado: string) {
     return "bg-orange-100 text-orange-700";
   }
 
-  if (normalizado.includes("revision")) {
+  if (normalizado.includes("revisión")) {
     return "bg-yellow-100 text-yellow-700";
   }
 
@@ -91,7 +91,7 @@ export function GestionAlumnos() {
       total: alumnos.length,
       listos: alumnos.filter((a) => a.inicial_aprobado).length,
       enRevision: alumnos.filter((a) =>
-        a.estado_documental.toLowerCase().includes("revision"),
+        a.estado_documental.toLowerCase().includes("revisión"),
       ).length,
       observados: alumnos.filter((a) =>
         a.estado_documental.toLowerCase().includes("observacion"),
@@ -178,7 +178,7 @@ export function GestionAlumnos() {
         {[
           { l: "Total", v: conteo.total, I: Users },
           { l: "Inicial aprobado", v: conteo.listos, I: CheckCircle2 },
-          { l: "En revision", v: conteo.enRevision, I: Clock },
+          { l: "En revisión", v: conteo.enRevision, I: Clock },
           { l: "Observados", v: conteo.observados, I: AlertTriangle },
           { l: "Asignados", v: conteo.asignados, I: ClipboardCheck },
         ].map((item) => (

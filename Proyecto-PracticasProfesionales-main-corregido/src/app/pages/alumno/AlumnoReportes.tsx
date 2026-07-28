@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  Download,
   Eye,
   FileText,
   Lock,
@@ -36,6 +37,18 @@ const estadoColor: Record<EstadoReporteAlumno, string> = {
 };
 const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
 const ACCEPT_DOCUMENTOS = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+const FORMATOS_PREDETERMINADOS: Record<TipoReporteAlumno, { href: string; nombreArchivo: string; etiqueta: string }> = {
+  Parcial: {
+    href: import.meta.env.BASE_URL + "documentos/reportes/guia-informe-parcial-practicas-profesionales.pdf",
+    nombreArchivo: "guia-informe-parcial-practicas-profesionales.pdf",
+    etiqueta: "Descargar guía del informe parcial",
+  },
+  Final: {
+    href: import.meta.env.BASE_URL + "documentos/reportes/guia-informe-final-practicas-profesionales.pdf",
+    nombreArchivo: "guia-informe-final-practicas-profesionales.pdf",
+    etiqueta: "Descargar guía del informe final",
+  },
+};
 
 function esArchivoDocumentoPermitido(archivo: File) {
   return ["application/pdf", "image/jpeg", "image/png", "image/webp"].includes(archivo.type) ||
@@ -243,7 +256,7 @@ export function AlumnoReportes() {
             {([
               ["Espacios", `${entregadosControlados}/2`, FileText, "bg-blue-600"],
               ["Aprobados", resumen.aprobados, CheckCircle2, "bg-green-600"],
-              ["En revision", resumen.pendientes, Clock, "bg-yellow-500"],
+              ["En revisión", resumen.pendientes, Clock, "bg-yellow-500"],
               ["Rechazados", resumen.rechazados, XCircle, "bg-red-500"],
             ] satisfies ColoredStatCard[]).map(([tituloCard, valor, Icon]) => (
               <div key={tituloCard} className="rounded-xl border border-gray-200 bg-white p-4">
@@ -260,6 +273,7 @@ export function AlumnoReportes() {
               const archivo = archivos[espacio.tipo_reporte];
               const bloqueado = !espacio.puede_enviar;
               const esAprobado = reporte?.estado === "Aprobado";
+              const formatoPredeterminado = FORMATOS_PREDETERMINADOS[espacio.tipo_reporte];
 
               return (
                 <div
@@ -295,6 +309,22 @@ export function AlumnoReportes() {
 
                   <div className="p-5 grid lg:grid-cols-[1fr_360px] gap-4">
                     <div className="space-y-3">
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                        <div className="mb-2 text-xs font-bold uppercase tracking-wide text-[#0d2b5e]">
+                          Formato predeterminado
+                        </div>
+                        <a
+                          href={formatoPredeterminado.href}
+                          download={formatoPredeterminado.nombreArchivo}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#1565c0] bg-white px-4 py-2 text-sm font-semibold text-[#1565c0] transition-colors hover:bg-[#1565c0] hover:text-white"
+                        >
+                          <Download className="h-4 w-4" />
+                          {formatoPredeterminado.etiqueta}
+                        </a>
+                        <p className="mt-2 text-[11px] text-blue-700">
+                          Puedes descargar esta guía en cualquier momento para preparar tu entrega.
+                        </p>
+                      </div>
                       {reporte ? (
                         <>
                           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
