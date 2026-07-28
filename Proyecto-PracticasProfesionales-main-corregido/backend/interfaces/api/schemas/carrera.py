@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 TipoPeriodo = Literal["Semestral", "Cuatrimestral"]
@@ -10,6 +10,8 @@ EstadoCarrera = Literal["Activa", "Inactiva"]
 class CarreraCreate(BaseModel):
     nombre: str
     tipo_periodo: TipoPeriodo = "Semestral"
+    duracion_periodos: int | None = Field(default=None, ge=1)
+    creditos_totales: int | None = Field(default=None, ge=0)
     estado: EstadoCarrera = "Activa"
 
     @field_validator("nombre")
@@ -25,6 +27,8 @@ class CarreraResponse(BaseModel):
     id_carrera: int
     nombre: str
     tipo_periodo: TipoPeriodo = "Semestral"
+    duracion_periodos: int | None = None
+    creditos_totales: int | None = None
     estado: EstadoCarrera
 
     model_config = ConfigDict(
@@ -34,6 +38,8 @@ class CarreraResponse(BaseModel):
 class CarreraUpdate(BaseModel):
     nombre: str
     tipo_periodo: TipoPeriodo = "Semestral"
+    duracion_periodos: int | None = Field(default=None, ge=1)
+    creditos_totales: int | None = Field(default=None, ge=0)
     estado: EstadoCarrera = "Activa"
 
     @field_validator("nombre")

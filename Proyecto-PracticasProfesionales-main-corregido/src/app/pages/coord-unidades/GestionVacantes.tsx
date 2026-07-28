@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import axios from "axios";
 import {
   AlertTriangle,
   Briefcase,
@@ -6,7 +8,9 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  Download,
   Filter,
+  FileText,
   RotateCcw,
   Search,
   Users,
@@ -15,6 +19,7 @@ import {
 import { useNavigate } from "react-router";
 
 import { gestionVacantesRevisionUseCase } from "../../dependencies";
+import { apiClient } from "../../../infrastructure/api/apiClient";
 import type { VacanteRevision } from "../../../domain/coord-unidades/VacanteRevision";
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
@@ -28,6 +33,42 @@ const estadoColor: Record<string, string> = {
   Cerrada: "bg-gray-100 text-gray-600",
 };
 
+type FormatoPlanTrabajo = {
+  id_formato_plan: number;
+  id_convocatoria?: number | null;
+  convocatoria?: string | null;
+  nombre: string;
+  descripcion?: string | null;
+  nombre_archivo: string;
+  activo: boolean;
+  fecha_subida?: string | null;
+};
+
+function obtenerMensajeFormatoPlanError(error: unknown, mensajeDefault: string) {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+
+    if (typeof detail === "string") return detail;
+
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => {
+          const loc = Array.isArray(item?.loc) ? item.loc[item.loc.length - 1] : undefined;
+          if (loc === "nombre") return "El nombre del formato es obligatorio.";
+          if (loc === "archivo") return "Debes seleccionar un archivo.";
+          if (loc === "id_convocatoria") return "La convocatoria seleccionada no es valida.";
+          if (typeof item?.msg === "string") return item.msg;
+          return JSON.stringify(item);
+        })
+        .join("\n");
+    }
+
+    if (detail) return JSON.stringify(detail);
+  }
+
+  return mensajeDefault;
+}
+
 export function GestionVacantes() {
   const navigate = useNavigate();
   const [vacantes, setVacantes] = useState<VacanteRevision[]>([]);
@@ -37,6 +78,11 @@ export function GestionVacantes() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
+  const [formatosPlan, setFormatosPlan] = useState<FormatoPlanTrabajo[]>([]);
+  const [formatoForm, setFormatoForm] = useState({ nombre: "", descripcion: "", id_convocatoria: "" });
+  const [archivoFormato, setArchivoFormato] = useState<File | null>(null);
+  const [archivoFormatoKey, setArchivoFormatoKey] = useState(0);
 
   useEffect(() => {
     cargarVacantes();
@@ -48,6 +94,8 @@ export function GestionVacantes() {
       setError("");
       const data = await gestionVacantesRevisionUseCase.listar();
       setVacantes(data);
+      const formatos = await apiClient.get<FormatoPlanTrabajo[]>("/coord-unidades/vacantes/formatos-plan-trabajo");
+      setFormatosPlan(formatos.data);
     } catch (err) {
       console.error(err);
       setError("No se pudieron cargar las vacantes.");
@@ -117,6 +165,115 @@ export function GestionVacantes() {
     }
   }
 
+  async function revisarAmpliacion(solicitud: NonNullable<VacanteRevision["solicitudes_ampliacion"]>[number], accion: "aprobar" | "rechazar") {
+    const observaciones = window.prompt("Observaciones") ?? "";
+    const cupos_aprobados: Record<number, number> = {};
+    if (accion === "aprobar") {
+      for (const detalle of solicitud.detalles ?? []) {
+        const respuesta = window.prompt(
+          `${detalle.tipo_practica ?? "Tipo"}: cupos aprobados de ${detalle.cupos_solicitados}`,
+          String(detalle.cupos_solicitados),
+        );
+        if (respuesta === null) return;
+        const aprobados = Number(respuesta);
+        if (aprobados < 0 || aprobados > detalle.cupos_solicitados || Number.isNaN(aprobados)) {
+          alert("Los cupos aprobados no pueden ser negativos ni exceder los solicitados.");
+          return;
+        }
+        cupos_aprobados[detalle.id_tipo_practica] = aprobados;
+      }
+    }
+    try {
+      setGuardando(solicitud.id_solicitud_ampliacion);
+      await apiClient.post(`/coord-unidades/empresas/vacantes/solicitudes-ampliacion/${solicitud.id_solicitud_ampliacion}/${accion}`, {
+        observaciones: observaciones.trim() || undefined,
+        cupos_aprobados,
+      });
+      await cargarVacantes();
+    } catch (err) {
+      console.error(err);
+      alert(getApiErrorMessage(err, "No se pudo revisar la solicitud de ampliación."));
+    } finally {
+      setGuardando(null);
+    }
+  }
+
+  async function descargarPlanTrabajo(vacante: VacanteRevision) {
+    try {
+      const { data } = await apiClient.get(`/coord-unidades/empresas/vacantes/${vacante.id_vacante}/plan-trabajo/archivo`, { responseType: "blob" });
+      const url = URL.createObjectURL(data);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error(err);
+      alert(getApiErrorMessage(err, "No fue posible descargar el Plan de Trabajo."));
+    }
+  }
+
+  async function subirFormatoPlanTrabajo(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMensaje("");
+    const nombre = formatoForm.nombre.trim();
+    const descripcion = formatoForm.descripcion.trim();
+    const idConvocatoria = formatoForm.id_convocatoria.trim();
+
+    if (!nombre) {
+      setError("El nombre del formato es obligatorio.");
+      return;
+    }
+    if (!archivoFormato) {
+      setError("Debes seleccionar un archivo.");
+      return;
+    }
+
+    if (idConvocatoria && Number.isNaN(Number(idConvocatoria))) {
+      setError("La convocatoria seleccionada no es valida.");
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("nombre", nombre);
+      if (descripcion) formData.append("descripcion", descripcion);
+      if (idConvocatoria) formData.append("id_convocatoria", String(Number(idConvocatoria)));
+      formData.append("archivo", archivoFormato);
+      await apiClient.post("/coord-unidades/vacantes/formatos-plan-trabajo", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setFormatoForm({ nombre: "", descripcion: "", id_convocatoria: "" });
+      setArchivoFormato(null);
+      setArchivoFormatoKey((value) => value + 1);
+      setMensaje("Formato de Plan de Trabajo guardado correctamente.");
+      await cargarVacantes();
+    } catch (err) {
+      console.error(err);
+      setError(obtenerMensajeFormatoPlanError(err, "No fue posible subir el formato oficial."));
+    }
+  }
+
+  async function descargarFormatoPlanTrabajo(formato: FormatoPlanTrabajo) {
+    try {
+      const { data } = await apiClient.get(`/coord-unidades/vacantes/formatos-plan-trabajo/${formato.id_formato_plan}/archivo`, { responseType: "blob" });
+      const url = URL.createObjectURL(data);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error(err);
+      alert(getApiErrorMessage(err, "No fue posible descargar el formato."));
+    }
+  }
+
+  async function cambiarEstadoFormato(formato: FormatoPlanTrabajo) {
+    try {
+      await apiClient.patch(`/coord-unidades/vacantes/formatos-plan-trabajo/${formato.id_formato_plan}/${formato.activo ? "desactivar" : "activar"}`);
+      await cargarVacantes();
+    } catch (err) {
+      console.error(err);
+      setError(getApiErrorMessage(err, "No fue posible cambiar el estado del formato."));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -129,6 +286,11 @@ export function GestionVacantes() {
       {error && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
           {error}
+        </div>
+      )}
+      {mensaje && (
+        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-700">
+          {mensaje}
         </div>
       )}
 
@@ -149,6 +311,64 @@ export function GestionVacantes() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <FileText className="w-4 h-4 text-[#1565c0]" />
+          <h3 className="font-bold text-[#0d2b5e] text-sm">Formato de Plan de Trabajo</h3>
+        </div>
+        <form onSubmit={subirFormatoPlanTrabajo} className="grid md:grid-cols-[1fr_1fr_180px_220px_auto] gap-3">
+          <input
+            value={formatoForm.nombre}
+            onChange={(event) => setFormatoForm({ ...formatoForm, nombre: event.target.value })}
+            placeholder="Nombre del formato"
+            className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1565c0]"
+          />
+          <input
+            value={formatoForm.descripcion}
+            onChange={(event) => setFormatoForm({ ...formatoForm, descripcion: event.target.value })}
+            placeholder="Descripción"
+            className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#1565c0]"
+          />
+          <select
+            value={formatoForm.id_convocatoria}
+            onChange={(event) => setFormatoForm({ ...formatoForm, id_convocatoria: event.target.value })}
+            className="border rounded-xl px-3 py-2 text-sm bg-white"
+          >
+            <option value="">Formato general</option>
+            {convocatorias.map(([id, nombre]) => (
+              <option key={id} value={String(id)}>
+                Convocatoria #{id} - {nombre}
+              </option>
+            ))}
+          </select>
+          <input
+            key={archivoFormatoKey}
+            type="file"
+            accept=".pdf,.doc,.docx"
+            onChange={(event) => setArchivoFormato(event.target.files?.[0] ?? null)}
+            className="text-sm"
+          />
+          <button type="submit" className="bg-[#1565c0] text-white rounded-xl px-4 py-2 text-xs font-semibold">
+            Subir
+          </button>
+        </form>
+        {formatosPlan.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-4">
+            {formatosPlan.map((formato) => (
+              <div key={formato.id_formato_plan} className="border rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+                <span className="font-semibold text-[#0d2b5e]">{formato.nombre}</span>
+                <span className={formato.activo ? "text-green-700" : "text-gray-500"}>{formato.activo ? "Activo" : "Inactivo"}</span>
+                <span className="text-gray-500">{formato.convocatoria ?? "General"}</span>
+                <button type="button" onClick={() => descargarFormatoPlanTrabajo(formato)} className="text-[#1565c0] font-semibold">Descargar</button>
+                <button type="button" onClick={() => cambiarEstadoFormato(formato)} className="text-gray-600 font-semibold">
+                  {formato.activo ? "Desactivar" : "Activar"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
@@ -243,8 +463,53 @@ export function GestionVacantes() {
                   <p className="font-bold text-[#0d2b5e] mt-1">{vacante.periodo ?? "Sin periodo"}</p>
                 </div>
                 <div className="border rounded-xl p-3">
-                  <div className="text-xs text-gray-500">Tipo practica</div>
-                  <p className="font-bold text-[#0d2b5e] mt-1">{vacante.tipo_practica ?? "Sin tipo"}</p>
+                  <div className="text-xs text-gray-500">Tipos de práctica</div>
+                  <p className="font-bold text-[#0d2b5e] mt-1">
+                    {(vacante.tipos_practica?.map((tipo) => tipo.nombre).filter(Boolean).join(", ")) || vacante.tipo_practica || "Sin tipo"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 border rounded-xl p-4">
+                <div className="text-xs font-semibold text-gray-500">Cupos por tipo</div>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {(vacante.tipos_practica?.length ? vacante.tipos_practica : [{ id_tipo_practica: vacante.id_tipo_practica, nombre: vacante.tipo_practica, cupos: vacante.cupos, cupos_usados: vacante.cupo_ocupado, cupos_disponibles: Math.max(vacante.cupos - vacante.cupo_ocupado, 0) }]).map((tipo) => (
+                    <span key={tipo.id_tipo_practica} className="bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs">
+                      {tipo.nombre ?? "Tipo"}: {tipo.cupos_disponibles}/{tipo.cupos}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-xs font-semibold text-gray-500 mt-3">Carreras destino</div>
+                <p className="text-sm text-gray-600 mt-1">
+                  {vacante.aplica_todas_carreras
+                    ? "Todas las carreras"
+                    : (vacante.carreras?.map((carrera) => carrera.nombre).join(", ") || "Carreras específicas")}
+                </p>
+              </div>
+
+              <div className={`mt-4 border rounded-xl p-4 ${vacante.plan_trabajo ? "border-green-100 bg-green-50" : "border-red-100 bg-red-50"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <FileText className={`w-4 h-4 mt-0.5 ${vacante.plan_trabajo ? "text-green-700" : "text-red-700"}`} />
+                    <div>
+                      <div className={`text-xs font-bold ${vacante.plan_trabajo ? "text-green-800" : "text-red-700"}`}>Plan de Trabajo</div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {vacante.plan_trabajo
+                          ? `${vacante.plan_trabajo.nombre_archivo} · ${vacante.plan_trabajo.estado_documento}`
+                          : "La empresa todavía no sube el Plan de Trabajo."}
+                      </p>
+                    </div>
+                  </div>
+                  {vacante.plan_trabajo && (
+                    <button
+                      type="button"
+                      onClick={() => descargarPlanTrabajo(vacante)}
+                      className="flex items-center gap-1 border border-green-200 bg-white text-green-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Descargar
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -292,12 +557,55 @@ export function GestionVacantes() {
                 </div>
               )}
 
+              {vacante.solicitudes_ampliacion?.some((solicitud) => solicitud.estado === "Pendiente") && (
+                <div className="mt-4 border border-blue-100 bg-blue-50 rounded-xl p-4">
+                  <div className="text-xs font-bold text-[#0d2b5e]">Solicitudes de ampliación de cupos</div>
+                  <div className="space-y-3 mt-3">
+                    {vacante.solicitudes_ampliacion
+                      .filter((solicitud) => solicitud.estado === "Pendiente")
+                      .map((solicitud) => (
+                        <div key={solicitud.id_solicitud_ampliacion} className="bg-white border border-blue-100 rounded-lg p-3">
+                          <div className="text-sm font-semibold text-[#0d2b5e]">{solicitud.cupos_solicitados} cupos solicitados</div>
+                          <p className="text-xs text-gray-600 mt-1">{solicitud.motivo}</p>
+                          <div className="space-y-1 mt-2">
+                            {(solicitud.detalles?.length
+                              ? solicitud.detalles
+                              : [{ id_tipo_practica: solicitud.id_tipo_practica ?? 0, tipo_practica: solicitud.tipo_practica, cupos_solicitados: solicitud.cupos_solicitados, estado: solicitud.estado }]
+                            ).map((detalle) => (
+                              <div key={detalle.id_tipo_practica} className="text-xs bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
+                                {detalle.tipo_practica ?? "Tipo"}: {detalle.cupos_solicitados} cupos solicitados
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex gap-2 mt-3">
+                            <button
+                              onClick={() => revisarAmpliacion(solicitud, "aprobar")}
+                              disabled={guardando === solicitud.id_solicitud_ampliacion}
+                              className="bg-green-600 text-white rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                            >
+                              Aprobar
+                            </button>
+                            <button
+                              onClick={() => revisarAmpliacion(solicitud, "rechazar")}
+                              disabled={guardando === solicitud.id_solicitud_ampliacion}
+                              className="border border-red-200 text-red-600 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                            >
+                              Rechazar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2 mt-5">
                 {vacante.estado_vacante === "Pendiente" && (
                   <>
                     <button
                       onClick={() => cambiarEstado(vacante, "PrePadron")}
-                      disabled={guardando === vacante.id_vacante}
+                      disabled={guardando === vacante.id_vacante || !vacante.plan_trabajo}
+                      title={vacante.plan_trabajo ? "Aprobar a pre-padron" : "La vacante no tiene Plan de Trabajo cargado."}
                       className="bg-green-600 text-white rounded-xl px-3 py-2 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
                     >
                       <CheckCircle2 className="w-3 h-3" />

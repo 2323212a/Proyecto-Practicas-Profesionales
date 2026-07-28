@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -18,6 +18,7 @@ class VacanteModel(Base):
     actividades = Column(Text, nullable=True)
     requisitos = Column(Text, nullable=True)
     cupos = Column(Integer, nullable=False)
+    aplica_todas_carreras = Column(Boolean, nullable=False, default=False, server_default="0")
     periodo = Column(Enum("Semestral", "Cuatrimestral"), nullable=False)
     estado_vacante = Column(
         Enum("Pendiente", "Con observaciones", "PrePadron", "Activa", "Rechazada", "Cerrada"),
@@ -36,3 +37,7 @@ class VacanteModel(Base):
     tipo_practica = relationship("TipoPracticaModel", back_populates="vacantes")
     convocatoria = relationship("ConvocatoriaModel")
     asignaciones = relationship("AsignacionModel", back_populates="vacante", overlaps="empresa")
+    tipos_practica_config = relationship("VacanteTipoPracticaModel", back_populates="vacante")
+    carreras_config = relationship("VacanteCarreraModel", back_populates="vacante")
+    solicitudes_ampliacion = relationship("SolicitudAmpliacionCuposVacanteModel", back_populates="vacante")
+    documentos = relationship("DocumentoVacanteModel", back_populates="vacante")

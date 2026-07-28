@@ -1,5 +1,6 @@
 import type {
   ConvocatoriaBasica,
+  ConvocatoriaDisponibleUnidad,
   CrearVacanteUnidadInput,
   VacanteUnidad,
   VacantesUnidadResponse,
@@ -21,8 +22,32 @@ export class GestionVacantesUnidadUseCase {
     return this.repository.crear(idEmpresa, datos);
   }
 
+  obtenerDetalle(idVacante: number): Promise<VacanteUnidad> {
+    return this.repository.obtenerDetalle(idVacante);
+  }
+
+  editar(idVacante: number, datos: CrearVacanteUnidadInput): Promise<VacanteUnidad> {
+    return this.repository.editar(idVacante, datos);
+  }
+
+  subirPlanTrabajo(idVacante: number, archivo: File): Promise<VacanteUnidad["plan_trabajo"]> {
+    return this.repository.subirPlanTrabajo(idVacante, archivo);
+  }
+
+  reenviar(idVacante: number): Promise<void> {
+    return this.repository.reenviar(idVacante);
+  }
+
+  obtenerFormatoPlanTrabajo(idConvocatoria?: number): Promise<VacanteUnidad["formato_plan_trabajo"]> {
+    return this.repository.obtenerFormatoPlanTrabajo(idConvocatoria);
+  }
+
   listarConvocatorias(): Promise<ConvocatoriaBasica[]> {
     return this.repository.listarConvocatorias();
+  }
+
+  listarConvocatoriasDisponibles(): Promise<ConvocatoriaDisponibleUnidad[]> {
+    return this.repository.listarConvocatoriasDisponibles();
   }
 
   solicitarParticipacion(idConvocatoria: number): Promise<void> {

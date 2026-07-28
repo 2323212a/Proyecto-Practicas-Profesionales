@@ -21,6 +21,8 @@ from infrastructure.persistence.models.rol import RolModel
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 from infrastructure.persistence.models.vacante import VacanteModel
+from infrastructure.persistence.models.vacante_carrera import VacanteCarreraModel
+from infrastructure.persistence.models.vacante_tipo_practica import VacanteTipoPracticaModel
 from infrastructure.security.auth_dependencies import requerir_roles
 from interfaces.api.schemas.asignacion import AsignacionCreate, AsignacionResponse
 from interfaces.api.service_factory import AsignacionService
@@ -165,20 +167,67 @@ def _nombre_personal(persona: PersonalInternoModel | None) -> str:
     )
 
 
-def _cupos_usados(db: Session, id_vacante: int) -> int:
+def _cupos_usados(db: Session, id_vacante: int, id_tipo_practica: int | None = None) -> int:
+    filtros = [
+        AsignacionModel.id_vacante == id_vacante,
+        AsignacionModel.estado_asignacion == "Activa",
+    ]
+    if id_tipo_practica is not None:
+        filtros.append(AsignacionModel.id_tipo_practica == id_tipo_practica)
     return (
         db.query(func.count(AsignacionModel.id_asignacion))
-        .filter(
-            AsignacionModel.id_vacante == id_vacante,
-            AsignacionModel.estado_asignacion == "Activa",
-        )
+        .filter(*filtros)
         .scalar()
         or 0
     )
 
 
+def _config_tipo_vacante(db: Session, vacante: VacanteModel, id_tipo_practica: int | None) -> VacanteTipoPracticaModel | None:
+    if id_tipo_practica is None:
+        return None
+    config = (
+        db.query(VacanteTipoPracticaModel)
+        .filter(
+            VacanteTipoPracticaModel.id_vacante == vacante.id_vacante,
+            VacanteTipoPracticaModel.id_tipo_practica == id_tipo_practica,
+            VacanteTipoPracticaModel.activo.is_(True),
+        )
+        .first()
+    )
+    if config is not None:
+        return config
+    if vacante.id_tipo_practica == id_tipo_practica:
+        return VacanteTipoPracticaModel(
+            id_vacante=vacante.id_vacante,
+            id_tipo_practica=id_tipo_practica,
+            cupos=vacante.cupos,
+            activo=True,
+        )
+    return None
+
+
+def _vacante_permite_carrera(db: Session, vacante: VacanteModel, alumno: AlumnoModel) -> bool:
+    if vacante.aplica_todas_carreras:
+        return True
+    if alumno.id_carrera is None:
+        return False
+    return (
+        db.query(VacanteCarreraModel)
+        .filter(VacanteCarreraModel.id_vacante == vacante.id_vacante, VacanteCarreraModel.id_carrera == alumno.id_carrera)
+        .first()
+        is not None
+    )
+
+
+def _vacante_disponible_para_alumno(db: Session, vacante: VacanteModel, alumno: AlumnoModel) -> bool:
+    config = _config_tipo_vacante(db, vacante, alumno.id_tipo_practica)
+    if config is None or not _vacante_permite_carrera(db, vacante, alumno):
+        return False
+    return _cupos_usados(db, vacante.id_vacante, alumno.id_tipo_practica) < config.cupos
+
+
 def _vacante_response(db: Session, vacante: VacanteModel) -> VacanteConfirmacionResponse:
-    cupos_usados = _cupos_usados(db, vacante.id_vacante)
+    cupos_usados = _cupos_usados(db, vacante.id_vacante, vacante.id_tipo_practica)
     return VacanteConfirmacionResponse(
         id_vacante=vacante.id_vacante,
         id_empresa=vacante.id_empresa,
@@ -288,8 +337,7 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
                 and vacante is not None
                 and vacante.estado_vacante == "Activa"
                 and vacante.periodo == alumno.periodo_practica
-                and vacante.id_tipo_practica == alumno.id_tipo_practica
-                and _cupos_usados(db, vacante.id_vacante) < vacante.cupos
+                and _vacante_disponible_para_alumno(db, vacante, alumno)
             ):
                 vacantes = [_vacante_response(db, vacante)]
 
@@ -320,7 +368,6 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
                 )
                 .filter(
                     VacanteModel.id_convocatoria == convocatoria.id_convocatoria,
-                    VacanteModel.id_tipo_practica == alumno.id_tipo_practica,
                     VacanteModel.periodo == alumno.periodo_practica,
                     VacanteModel.estado_vacante == "Activa",
                     VacanteModel.id_vacante != asignacion.id_vacante,
@@ -331,7 +378,7 @@ def listar_confirmacion_asignaciones(db: Session = Depends(obtener_db)):
             vacantes_disponibles = [
                 _vacante_response(db, vacante)
                 for vacante in candidatas
-                if _cupos_usados(db, vacante.id_vacante) < vacante.cupos
+                if _vacante_disponible_para_alumno(db, vacante, alumno)
             ]
 
         respuesta.append(
@@ -400,6 +447,14 @@ def confirmar_asignacion(
     if vacante.id_convocatoria != convocatoria.id_convocatoria:
         raise HTTPException(status_code=400, detail="La vacante no pertenece a la convocatoria activa")
 
+    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == datos.id_alumno).first()
+    if alumno is None:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    if vacante.periodo != alumno.periodo_practica:
+        raise HTTPException(status_code=400, detail="La vacante no corresponde al periodo del alumno")
+    if not _vacante_disponible_para_alumno(db, vacante, alumno):
+        raise HTTPException(status_code=400, detail="La vacante no tiene cupos disponibles para el tipo de práctica y carrera del alumno")
+
     seleccion = (
         db.query(SeleccionEmpresaModel)
         .filter(
@@ -434,7 +489,7 @@ def confirmar_asignacion(
         id_empresa=datos.id_empresa,
         id_vacante=datos.id_vacante,
         id_convocatoria=convocatoria.id_convocatoria,
-        id_tipo_practica=vacante.id_tipo_practica,
+        id_tipo_practica=alumno.id_tipo_practica,
         id_asesor=id_asesor,
         fecha_asignacion=date.today(),
         estado_asignacion="Activa",
@@ -548,17 +603,17 @@ def cambiar_empresa_asignacion(
         raise HTTPException(status_code=400, detail="Selecciona una vacante distinta a la asignacion actual")
     if vacante_nueva.id_convocatoria != asignacion_actual.id_convocatoria:
         raise HTTPException(status_code=400, detail="La vacante nueva no pertenece a la misma convocatoria")
-    if vacante_nueva.id_tipo_practica != asignacion_actual.id_tipo_practica:
-        raise HTTPException(status_code=400, detail="La vacante nueva no corresponde al mismo tipo de practica")
-
     alumno = asignacion_actual.alumno
     if alumno is None:
         raise HTTPException(status_code=400, detail="La asignacion no tiene alumno vinculado")
     if vacante_nueva.periodo != alumno.periodo_practica:
         raise HTTPException(status_code=400, detail="La vacante nueva no corresponde al periodo del alumno")
-
-    cupos_usados = _cupos_usados(db, vacante_nueva.id_vacante)
-    if cupos_usados >= vacante_nueva.cupos:
+    if vacante_nueva.id_tipo_practica != asignacion_actual.id_tipo_practica and _config_tipo_vacante(db, vacante_nueva, asignacion_actual.id_tipo_practica) is None:
+        raise HTTPException(status_code=400, detail="La vacante nueva no corresponde al mismo tipo de practica")
+    if not _vacante_permite_carrera(db, vacante_nueva, alumno):
+        raise HTTPException(status_code=400, detail="La vacante nueva no corresponde a la carrera del alumno")
+    config_tipo = _config_tipo_vacante(db, vacante_nueva, asignacion_actual.id_tipo_practica)
+    if config_tipo is None or _cupos_usados(db, vacante_nueva.id_vacante, asignacion_actual.id_tipo_practica) >= config_tipo.cupos:
         raise HTTPException(status_code=400, detail="La vacante nueva no tiene cupos disponibles")
 
     id_asesor = datos.id_asesor if datos.id_asesor is not None else asignacion_actual.id_asesor
@@ -594,7 +649,7 @@ def cambiar_empresa_asignacion(
         id_empresa=vacante_nueva.id_empresa,
         id_vacante=vacante_nueva.id_vacante,
         id_convocatoria=asignacion_actual.id_convocatoria,
-        id_tipo_practica=vacante_nueva.id_tipo_practica,
+        id_tipo_practica=asignacion_actual.id_tipo_practica,
         id_asesor=id_asesor,
         estado_asignacion="Activa",
         tipo_asignacion="Reasignacion",

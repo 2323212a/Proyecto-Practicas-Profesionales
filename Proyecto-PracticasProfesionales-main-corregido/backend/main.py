@@ -45,7 +45,7 @@ from interfaces.api.routes.asesor import router as asesor_router
 from interfaces.api.routes.asignaciones import router as asignaciones_router
 from interfaces.api.routes.bitacora_auditoria import router as bitacora_auditoria_router
 from interfaces.api.routes.convenios import router as convenios_router
-from interfaces.api.routes.coord_unidades_empresas import router as coord_unidades_empresas_router
+from interfaces.api.routes.coord_unidades_empresas import router as coord_unidades_empresas_router, vacantes_router as coord_unidades_vacantes_router
 from interfaces.api.routes.coordinador_asignacion_asesores import router as coordinador_asignacion_asesores_router
 from interfaces.api.routes.coordinador_confirmacion_asignaciones import router as coordinador_confirmacion_asignaciones_router
 from interfaces.api.routes.coordinador_documentos import router as coordinador_documentos_router
@@ -57,6 +57,7 @@ from interfaces.api.routes.liberaciones import router as liberaciones_router
 from interfaces.api.routes.notificaciones import router as notificaciones_router
 from interfaces.api.routes.observaciones import router as observaciones_router
 from interfaces.api.routes.reportes import router as reportes_router
+from interfaces.api.routes.reglas_practica_carrera import router as reglas_practica_carrera_router
 from infrastructure.persistence.models.tipo_practica import TipoPracticaModel
 from interfaces.api.routes.responsables_empresa import router as responsables_empresa_router
 from interfaces.api.routes.selecciones_empresa import router as selecciones_empresa_router
@@ -70,18 +71,25 @@ from infrastructure.persistence.models.evaluacion import EvaluacionModel
 from infrastructure.persistence.models.evaluacion_empresa_alumno import EvaluacionEmpresaAlumnoModel
 from infrastructure.persistence.models.formato_documento import FormatoDocumentoModel
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
+from infrastructure.persistence.models.documento_vacante import DocumentoVacanteModel
 from infrastructure.persistence.models.horas import HorasModel
 from infrastructure.persistence.models.incidencia_practica import IncidenciaPracticaModel
 from infrastructure.persistence.models.formato_empresa import FormatoEmpresaModel
+from infrastructure.persistence.models.formato_plan_trabajo_vacante import FormatoPlanTrabajoVacanteModel
 from infrastructure.persistence.models.liberacion import LiberacionModel
 from infrastructure.persistence.models.notificacion import NotificacionModel
 from infrastructure.persistence.models.observacion import ObservacionModel
 from infrastructure.persistence.models.participacion_empresa_convocatoria import ParticipacionEmpresaConvocatoriaModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
 from infrastructure.persistence.models.reporte import ReporteModel
+from infrastructure.persistence.models.regla_practica_carrera import ReglaPracticaCarreraModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
 from infrastructure.persistence.models.vacante import VacanteModel
+from infrastructure.persistence.models.vacante_carrera import VacanteCarreraModel
+from infrastructure.persistence.models.vacante_tipo_practica import VacanteTipoPracticaModel
+from infrastructure.persistence.models.solicitud_ampliacion_cupos_vacante import SolicitudAmpliacionCuposVacanteModel
+from infrastructure.persistence.models.solicitud_ampliacion_cupos_vacante_detalle import SolicitudAmpliacionCuposVacanteDetalleModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
 from infrastructure.persistence.models.tipo_practica import TipoPracticaModel
 from infrastructure.persistence.models.vinculacion_empresa import VinculacionEmpresaModel
@@ -151,6 +159,7 @@ app.include_router(coordinador_confirmacion_asignaciones_router)
 app.include_router(coordinador_documentos_router)
 app.include_router(coordinador_liberacion_router)
 app.include_router(coord_unidades_empresas_router)
+app.include_router(coord_unidades_vacantes_router)
 app.include_router(convenios_router)
 app.include_router(vacantes_router)
 app.include_router(selecciones_empresa_router)
@@ -159,6 +168,7 @@ app.include_router(horas_router)
 app.include_router(evaluaciones_router)
 app.include_router(liberaciones_router)
 app.include_router(reportes_router)
+app.include_router(reglas_practica_carrera_router)
 app.include_router(notificaciones_router)
 app.include_router(observaciones_router)
 app.include_router(bitacora_auditoria_router)

@@ -14,6 +14,8 @@ class CarreraModel(Base):
         default="Semestral",
         server_default="Semestral",
     )
+    duracion_periodos = Column(Integer, nullable=True)
+    creditos_totales = Column(Integer, nullable=True)
     estado = Column(
         Enum("Activa", "Inactiva"),
         nullable=False,
@@ -24,3 +26,4 @@ class CarreraModel(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     alumnos = relationship("AlumnoModel", back_populates="carrera")
+    reglas_practica = relationship("ReglaPracticaCarreraModel", back_populates="carrera")

@@ -1163,15 +1163,21 @@ def _resumen_elegibilidad_db(
     tiene_tipo_tabla = _tabla_existe(db, "tipo_practica")
     tiene_tipo_semestre = _columna_existe(db, "tipo_practica", "semestre_requerido")
     tiene_tipo_creditos = _columna_existe(db, "tipo_practica", "creditos_minimos")
+    tiene_regla_tabla = _tabla_existe(db, "regla_practica_carrera")
 
     select_tipo = "a.id_tipo_practica" if tiene_id_tipo else "NULL"
     select_semestre = "a.semestre" if tiene_semestre else "0"
     select_creditos = "a.creditos_aprobados" if tiene_creditos else "0"
-    select_tipo_semestre = "tp.semestre_requerido" if tiene_tipo_semestre else "0"
-    select_tipo_creditos = "tp.creditos_minimos" if tiene_tipo_creditos else "0"
+    select_tipo_semestre = "COALESCE(rpc.periodo_requerido, tp.semestre_requerido)" if tiene_regla_tabla and tiene_tipo_semestre else ("tp.semestre_requerido" if tiene_tipo_semestre else "0")
+    select_tipo_creditos = "COALESCE(rpc.creditos_minimos, tp.creditos_minimos)" if tiene_regla_tabla and tiene_tipo_creditos else ("tp.creditos_minimos" if tiene_tipo_creditos else "0")
     join_tipo = (
         "LEFT JOIN tipo_practica tp ON tp.id_tipo_practica = a.id_tipo_practica"
         if tiene_id_tipo and tiene_tipo_tabla
+        else ""
+    )
+    join_regla = (
+        "LEFT JOIN regla_practica_carrera rpc ON rpc.id_carrera = a.id_carrera AND rpc.id_tipo_practica = a.id_tipo_practica AND rpc.activo = 1"
+        if tiene_regla_tabla and tiene_carrera and tiene_id_tipo
         else ""
     )
 
@@ -1205,6 +1211,7 @@ def _resumen_elegibilidad_db(
             COALESCE({select_tipo_creditos}, 0) AS creditos_minimos
         FROM alumno a
         {join_tipo}
+        {join_regla}
         {where}
         """,
         params,

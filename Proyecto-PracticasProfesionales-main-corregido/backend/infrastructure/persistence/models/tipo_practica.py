@@ -18,3 +18,4 @@ class TipoPracticaModel(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     vacantes = relationship("VacanteModel", back_populates="tipo_practica")
+    reglas_carrera = relationship("ReglaPracticaCarreraModel", back_populates="tipo_practica")

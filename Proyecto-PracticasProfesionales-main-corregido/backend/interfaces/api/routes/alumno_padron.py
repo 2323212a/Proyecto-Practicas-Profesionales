@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.convocatoria_rules_service import validar_etapa_actual
+from app.services.regla_practica_carrera_service import obtener_regla_practica_para_alumno
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
@@ -17,6 +18,8 @@ from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.expediente import ExpedienteModel
 from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
 from infrastructure.persistence.models.vacante import VacanteModel
+from infrastructure.persistence.models.vacante_carrera import VacanteCarreraModel
+from infrastructure.persistence.models.vacante_tipo_practica import VacanteTipoPracticaModel
 from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
 
 
@@ -52,20 +55,63 @@ def _expediente_actual_aprobado(db: Session, alumno: AlumnoModel) -> ExpedienteM
     )
 
 
-def _cupos_usados(db: Session, id_vacante: int) -> int:
+def _cupos_usados(db: Session, id_vacante: int, id_tipo_practica: int | None = None) -> int:
+    filtros = [
+        AsignacionModel.id_vacante == id_vacante,
+        AsignacionModel.estado_asignacion == "Activa",
+    ]
+    if id_tipo_practica is not None:
+        filtros.append(AsignacionModel.id_tipo_practica == id_tipo_practica)
     return (
         db.query(func.count(AsignacionModel.id_asignacion))
-        .filter(
-            AsignacionModel.id_vacante == id_vacante,
-            AsignacionModel.estado_asignacion == "Activa",
-        )
+        .filter(*filtros)
         .scalar()
         or 0
     )
 
 
-def _vacante_tiene_cupo(db: Session, vacante: VacanteModel) -> bool:
-    return _cupos_usados(db, vacante.id_vacante) < vacante.cupos
+def _config_tipo_vacante(db: Session, vacante: VacanteModel, id_tipo_practica: int | None) -> VacanteTipoPracticaModel | None:
+    if id_tipo_practica is None:
+        return None
+    config = (
+        db.query(VacanteTipoPracticaModel)
+        .filter(
+            VacanteTipoPracticaModel.id_vacante == vacante.id_vacante,
+            VacanteTipoPracticaModel.id_tipo_practica == id_tipo_practica,
+            VacanteTipoPracticaModel.activo.is_(True),
+        )
+        .first()
+    )
+    if config is not None:
+        return config
+    if vacante.id_tipo_practica == id_tipo_practica:
+        return VacanteTipoPracticaModel(
+            id_vacante=vacante.id_vacante,
+            id_tipo_practica=id_tipo_practica,
+            cupos=vacante.cupos,
+            activo=True,
+        )
+    return None
+
+
+def _vacante_permite_carrera(db: Session, vacante: VacanteModel, id_carrera: int | None) -> bool:
+    if vacante.aplica_todas_carreras:
+        return True
+    if id_carrera is None:
+        return False
+    return (
+        db.query(VacanteCarreraModel)
+        .filter(VacanteCarreraModel.id_vacante == vacante.id_vacante, VacanteCarreraModel.id_carrera == id_carrera)
+        .first()
+        is not None
+    )
+
+
+def _vacante_tiene_cupo(db: Session, vacante: VacanteModel, id_tipo_practica: int | None) -> bool:
+    config = _config_tipo_vacante(db, vacante, id_tipo_practica)
+    if config is None:
+        return False
+    return _cupos_usados(db, vacante.id_vacante, id_tipo_practica) < config.cupos
 
 
 def _estado_seleccion_api(seleccion: SeleccionEmpresaModel) -> str:
@@ -95,8 +141,9 @@ def _expediente_aprobado(db: Session, alumno: AlumnoModel, id_convocatoria: int 
     return query.first() is not None
 
 
-def _validar_elegibilidad_practica(alumno: AlumnoModel):
+def _validar_elegibilidad_practica(db: Session, alumno: AlumnoModel):
     tipo = alumno.tipo_practica
+    regla = obtener_regla_practica_para_alumno(db, alumno)
     respuesta_base = {
         "alumno": {
             "semestre": alumno.semestre,
@@ -109,31 +156,59 @@ def _validar_elegibilidad_practica(alumno: AlumnoModel):
                 "nombre": tipo.nombre,
                 "semestre_requerido": tipo.semestre_requerido,
                 "creditos_minimos": tipo.creditos_minimos,
+                "horas_requeridas": tipo.horas_requeridas,
                 "orden": tipo.orden,
             }
             if tipo
             else None
         ),
+        "regla_practica": (
+            {
+                "periodo_requerido": regla.periodo_requerido,
+                "creditos_minimos": regla.creditos_minimos,
+                "horas_requeridas": regla.horas_requeridas,
+                "origen_regla": regla.origen_regla,
+                "advertencia": regla.advertencia,
+            }
+            if regla
+            else None
+        ),
     }
 
-    if tipo is None:
+    if tipo is None or regla is None:
         return {
             "elegible": False,
             "motivo_bloqueo": "No tienes un tipo de practica asignado. Contacta a Administracion.",
             **respuesta_base,
         }
 
-    if tipo.semestre_requerido is not None and alumno.semestre != tipo.semestre_requerido:
+    if alumno.estado_alumno != "Activo":
+        return {
+            "elegible": False,
+            "motivo_bloqueo": "Tu estatus de alumno no esta activo.",
+            **respuesta_base,
+        }
+
+    carrera = alumno.carrera
+    if carrera is not None and alumno.periodo_practica != carrera.tipo_periodo:
+        return {
+            "elegible": False,
+            "motivo_bloqueo": "Tu periodo de practica no coincide con el tipo de periodo de tu carrera.",
+            **respuesta_base,
+        }
+
+    if alumno.semestre < regla.periodo_requerido:
+        etiqueta_periodo = "cuatrimestre" if carrera and carrera.tipo_periodo == "Cuatrimestral" else "semestre"
         return {
             "elegible": False,
             "motivo_bloqueo": (
                 f"No puedes iniciar este proceso porque {tipo.nombre} "
-                f"corresponde a {tipo.semestre_requerido}. semestre."
+                f"requiere estar en {regla.periodo_requerido}. {etiqueta_periodo}."
             ),
             **respuesta_base,
         }
 
-    creditos_minimos = tipo.creditos_minimos or 0
+    creditos_minimos = regla.creditos_minimos
     if alumno.creditos_aprobados < creditos_minimos:
         return {
             "elegible": False,
@@ -162,7 +237,6 @@ def _query_vacantes_compatibles(db: Session, alumno: AlumnoModel, id_convocatori
             ConvenioModel.fecha_fin >= date.today(),
             VacanteModel.estado_vacante == "Activa",
             VacanteModel.periodo == alumno.periodo_practica,
-            VacanteModel.id_tipo_practica == alumno.id_tipo_practica,
         )
     )
     if id_convocatoria is not None:
@@ -205,7 +279,13 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
         alumno,
         convocatoria.id_convocatoria if convocatoria else None,
     )
-    vacantes = [vacante for vacante in vacantes if _vacante_tiene_cupo(db, vacante)]
+    vacantes = [
+        vacante
+        for vacante in vacantes
+        if _config_tipo_vacante(db, vacante, alumno.id_tipo_practica) is not None
+        and _vacante_permite_carrera(db, vacante, alumno.id_carrera)
+        and _vacante_tiene_cupo(db, vacante, alumno.id_tipo_practica)
+    ]
 
     empresas = sorted(
         {vacante.id_empresa: vacante.empresa for vacante in vacantes if vacante.empresa}.values(),
@@ -235,7 +315,7 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
         .first()
     )
 
-    elegibilidad = _validar_elegibilidad_practica(alumno)
+    elegibilidad = _validar_elegibilidad_practica(db, alumno)
     expediente_aprobado = expediente_actual is not None
     ventana_seleccion_abierta = False
     motivo_calendario = None
@@ -325,8 +405,8 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
                 "descripcion": vacante.descripcion,
                 "actividades": vacante.actividades,
                 "requisitos": vacante.requisitos,
-                "cupos": vacante.cupos,
-                "cupos_usados": _cupos_usados(db, vacante.id_vacante),
+                "cupos": (_config_tipo_vacante(db, vacante, alumno.id_tipo_practica).cupos if _config_tipo_vacante(db, vacante, alumno.id_tipo_practica) else vacante.cupos),
+                "cupos_usados": _cupos_usados(db, vacante.id_vacante, alumno.id_tipo_practica),
                 "periodo": vacante.periodo,
                 "estado_vacante": vacante.estado_vacante,
             }
@@ -374,7 +454,7 @@ def guardar_preferencias_alumno(
             detail=_mensaje_etapa_seleccion_no_disponible(convocatoria, str(exc.detail)),
         ) from exc
 
-    elegibilidad = _validar_elegibilidad_practica(alumno)
+    elegibilidad = _validar_elegibilidad_practica(db, alumno)
     if not elegibilidad["elegible"]:
         raise HTTPException(status_code=403, detail=elegibilidad["motivo_bloqueo"])
 
@@ -402,11 +482,13 @@ def guardar_preferencias_alumno(
             raise HTTPException(status_code=400, detail="Solo puedes seleccionar vacantes activas")
         if vacante.periodo != alumno.periodo_practica:
             raise HTTPException(status_code=400, detail="La vacante no corresponde a tu periodo de practica")
-        if vacante.id_tipo_practica != alumno.id_tipo_practica:
+        if _config_tipo_vacante(db, vacante, alumno.id_tipo_practica) is None:
             raise HTTPException(status_code=400, detail="La vacante no corresponde a tu tipo de practica")
+        if not _vacante_permite_carrera(db, vacante, alumno.id_carrera):
+            raise HTTPException(status_code=400, detail="La vacante no corresponde a tu carrera")
         if vacante.empresa is None or vacante.empresa.estado_empresa != "Activa":
             raise HTTPException(status_code=400, detail="La empresa de la vacante no esta activa")
-        if not _vacante_tiene_cupo(db, vacante):
+        if not _vacante_tiene_cupo(db, vacante, alumno.id_tipo_practica):
             raise HTTPException(status_code=400, detail="La vacante seleccionada ya no tiene cupo disponible")
 
     db.query(SeleccionEmpresaModel).filter(SeleccionEmpresaModel.id_alumno == id_alumno).delete()

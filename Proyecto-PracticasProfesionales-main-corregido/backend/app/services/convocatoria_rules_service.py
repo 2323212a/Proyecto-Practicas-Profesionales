@@ -118,7 +118,10 @@ def validar_sin_conflicto_activo(
     if id_convocatoria_ignorar is not None:
         query = query.filter(ConvocatoriaModel.id_convocatoria != id_convocatoria_ignorar)
     if query.first() is not None:
-        raise HTTPException(status_code=409, detail="Ya existe una convocatoria activa que se traslapa con ese periodo.")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya existe una convocatoria {convocatoria.tipo_periodo} activa que se cruza con este periodo.",
+        )
 
 
 def validar_convocatoria_sin_dependencias(db: Session, id_convocatoria: int) -> None:

@@ -44,7 +44,15 @@ type ElegibilidadAcademica = {
     nombre: string;
     semestre_requerido: number | null;
     creditos_minimos: number | null;
+    horas_requeridas?: number | null;
     orden: number | null;
+  } | null;
+  regla_practica?: {
+    periodo_requerido: number;
+    creditos_minimos: number;
+    horas_requeridas: number;
+    origen_regla: "carrera" | "tipo_practica";
+    advertencia?: string | null;
   } | null;
 };
 
@@ -80,6 +88,7 @@ export function PadronEmpresarial() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const requisitoPractica = elegibilidad?.regla_practica;
 
   useEffect(() => {
     void cargarPadron();
@@ -311,12 +320,23 @@ export function PadronEmpresarial() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4 text-xs">
               <DatoElegibilidad titulo="Tipo de practica" valor={elegibilidad?.tipo_practica?.nombre ?? "Sin asignar"} />
               <DatoElegibilidad titulo="Periodo" valor={elegibilidad?.alumno?.periodo_practica ?? "Sin registrar"} />
-              <DatoElegibilidad titulo="Tu semestre actual" valor={String(elegibilidad?.alumno?.semestre ?? "Sin registrar")} />
+              <DatoElegibilidad
+                titulo={elegibilidad?.alumno?.periodo_practica === "Cuatrimestral" ? "Tu cuatrimestre actual" : "Tu semestre actual"}
+                valor={String(elegibilidad?.alumno?.semestre ?? "Sin registrar")}
+              />
               <DatoElegibilidad
                 titulo="Creditos"
-                valor={`${elegibilidad?.alumno?.creditos_aprobados ?? 0} / ${elegibilidad?.tipo_practica?.creditos_minimos ?? 0}`}
+                valor={`${elegibilidad?.alumno?.creditos_aprobados ?? 0} / ${requisitoPractica?.creditos_minimos ?? elegibilidad?.tipo_practica?.creditos_minimos ?? 0}`}
               />
+              <DatoElegibilidad
+                titulo={elegibilidad?.alumno?.periodo_practica === "Cuatrimestral" ? "Cuatrimestre requerido" : "Semestre requerido"}
+                valor={String(requisitoPractica?.periodo_requerido ?? elegibilidad?.tipo_practica?.semestre_requerido ?? "Sin configurar")}
+              />
+              <DatoElegibilidad titulo="Horas requeridas" valor={String(requisitoPractica?.horas_requeridas ?? elegibilidad?.tipo_practica?.horas_requeridas ?? "Sin configurar")} />
             </div>
+            {requisitoPractica?.advertencia && (
+              <div className="text-xs text-orange-700 mt-3">{requisitoPractica.advertencia}</div>
+            )}
           </div>
         </div>
       )}

@@ -20,6 +20,48 @@ export async function obtenerTiposPractica() {
   return response.data;
 }
 
+export async function obtenerReglasPracticaCarrera() {
+  const response = await apiClient.get("/reglas-practica-carrera/");
+  return response.data;
+}
+
+export async function crearReglaPracticaCarrera(data: {
+  id_carrera: number;
+  id_tipo_practica: number;
+  periodo_requerido: number;
+  creditos_minimos: number;
+  horas_requeridas: number;
+  activo: boolean;
+  observaciones?: string | null;
+}) {
+  const response = await apiClient.post("/reglas-practica-carrera/", data);
+  return response.data;
+}
+
+export async function actualizarReglaPracticaCarrera(
+  id: number,
+  data: {
+    periodo_requerido?: number;
+    creditos_minimos?: number;
+    horas_requeridas?: number;
+    activo?: boolean;
+    observaciones?: string | null;
+  }
+) {
+  const response = await apiClient.put(`/reglas-practica-carrera/${id}`, data);
+  return response.data;
+}
+
+export async function activarReglaPracticaCarrera(id: number) {
+  const response = await apiClient.patch(`/reglas-practica-carrera/${id}/activar`);
+  return response.data;
+}
+
+export async function desactivarReglaPracticaCarrera(id: number) {
+  const response = await apiClient.patch(`/reglas-practica-carrera/${id}/desactivar`);
+  return response.data;
+}
+
 export async function actualizarTipoPractica(
   id: number,
   data: {
@@ -118,6 +160,8 @@ export async function importarPersonalMasivo(archivo: File) {
 export async function crearCarrera(data: {
   nombre: string;
   tipo_periodo: string;
+  duracion_periodos?: number | null;
+  creditos_totales?: number | null;
   estado: string;
 }) {
   const response = await apiClient.post(
@@ -133,6 +177,8 @@ export async function actualizarCarrera(
   data: {
     nombre: string;
     tipo_periodo: string;
+    duracion_periodos?: number | null;
+    creditos_totales?: number | null;
     estado: string;
   }
 ) {

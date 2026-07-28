@@ -12,6 +12,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy import case
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.auditoria_service import registrar_bitacora
@@ -106,6 +107,13 @@ def _slug_carpeta(valor: str | None, fallback: str) -> str:
     return texto or fallback
 
 
+def _orden_fecha_inicio_general_mysql():
+    return (
+        case((ConvocatoriaModel.fecha_inicio_general.is_(None), 1), else_=0),
+        ConvocatoriaModel.fecha_inicio_general.desc(),
+    )
+
+
 def _convocatoria_empresa_documentos(db: Session, id_empresa: int) -> ConvocatoriaModel | None:
     participacion = (
         db.query(ParticipacionEmpresaConvocatoriaModel)
@@ -115,7 +123,7 @@ def _convocatoria_empresa_documentos(db: Session, id_empresa: int) -> Convocator
             ParticipacionEmpresaConvocatoriaModel.estado.in_(["Aceptada", "Pendiente"]),
         )
         .order_by(
-            ConvocatoriaModel.fecha_inicio_general.desc().nullslast(),
+            *_orden_fecha_inicio_general_mysql(),
             ParticipacionEmpresaConvocatoriaModel.fecha_solicitud.desc(),
         )
         .first()
@@ -131,7 +139,7 @@ def _convocatoria_empresa_documentos(db: Session, id_empresa: int) -> Convocator
             ConvocatoriaModel.fecha_inicio_empresas <= hoy,
             ConvocatoriaModel.fecha_cierre_empresas >= hoy,
         )
-        .order_by(ConvocatoriaModel.fecha_inicio_general.desc().nullslast())
+        .order_by(*_orden_fecha_inicio_general_mysql())
         .first()
     )
     if convocatoria is not None:
@@ -140,7 +148,7 @@ def _convocatoria_empresa_documentos(db: Session, id_empresa: int) -> Convocator
     return (
         db.query(ConvocatoriaModel)
         .filter(ConvocatoriaModel.estado == "Activa")
-        .order_by(ConvocatoriaModel.fecha_inicio_general.desc().nullslast())
+        .order_by(*_orden_fecha_inicio_general_mysql())
         .first()
     )
 
@@ -479,6 +487,9 @@ def _sincronizar_convenio_desde_documento(
         convenio_actual.observaciones = documento.observaciones
 
 def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
+    if empresa.estado_empresa in {"Solicitante", "Rechazada", "Inactiva"}:
+        return
+
     tipos_obligatorios = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
@@ -519,13 +530,9 @@ def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
         por_tipo[tipo.id_tipo_documento_empresa].estado_documento == "Aprobado"
         for tipo in tipos_obligatorios
     ):
-        convenio_actual = obtener_convenio_actual(db, empresa.id_empresa)
-        hoy = date.today()
-        if (
-            convenio_actual is not None
-            and convenio_actual.estado_convenio == "Vigente"
-            and convenio_actual.fecha_inicio <= hoy <= convenio_actual.fecha_fin
-        ):
+        if empresa.tipo_tramite == "Convenio" and obtener_convenio_vigente_actual(db, empresa.id_empresa) is not None:
+            empresa.estado_empresa = "Activa"
+        elif empresa.tipo_tramite == "Vinculacion" and obtener_vinculacion_aprobada_actual(db, empresa.id_empresa) is not None:
             empresa.estado_empresa = "Activa"
         else:
             empresa.estado_empresa = "Pendiente"
@@ -536,6 +543,8 @@ def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
 
 def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
     _asegurar_tipos_base(db)
+    _recalcular_estado_empresa(db, empresa)
+    db.flush()
     tipos = (
         db.query(TipoDocumentoEmpresaModel)
         .options(joinedload(TipoDocumentoEmpresaModel.formatos))
@@ -642,7 +651,9 @@ def listar_documentos_empresa(id_empresa: int, db: Session = Depends(obtener_db)
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
     if empresa is None:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
-    return _empresa_documentacion_response(db, empresa)
+    respuesta = _empresa_documentacion_response(db, empresa)
+    db.commit()
+    return respuesta
 
 
 @router.post(
@@ -670,7 +681,7 @@ def subir_documento_empresa(
     if tipo.etapa in {"Convenio", "Vinculacion"} and not _documentacion_legal_aprobada(db, id_empresa):
         raise HTTPException(
             status_code=400,
-            detail="El tramite se habilita cuando la documentacion legal obligatoria esta aprobada",
+            detail="El trámite se habilita cuando la documentación legal obligatoria está aprobada",
         )
     contenido = _decode_base64(datos.contenido_base64)
     validar_documento_usuario(contenido, datos.nombre_archivo, datos.mime_type)
@@ -712,7 +723,7 @@ def subir_documento_empresa(
         db,
         ["Coordinador de Unidades Receptoras", "Administrador"],
         "Documento de empresa recibido",
-        f"{empresa.nombre_empresa} subio {tipo.nombre} para revision.",
+        f"{empresa.nombre_empresa} subió {tipo.nombre} para revisión.",
     )
     db.commit()
     db.refresh(documento)
@@ -759,7 +770,9 @@ def descargar_formato_empresa_seguro(
 )
 def listar_documentacion_empresas(db: Session = Depends(obtener_db)):
     empresas = db.query(EmpresaModel).order_by(EmpresaModel.id_empresa.desc()).all()
-    return [_empresa_documentacion_response(db, empresa) for empresa in empresas]
+    respuesta = [_empresa_documentacion_response(db, empresa) for empresa in empresas]
+    db.commit()
+    return respuesta
 
 
 @router.post(
@@ -1107,9 +1120,9 @@ def revisar_documento_empresa(
 
     if datos.estado_documento == "Pendiente" and estado_anterior != "Pendiente":
         if documento.fecha_revision is None:
-            raise HTTPException(status_code=400, detail="No hay revision reciente para deshacer")
+            raise HTTPException(status_code=400, detail="No hay revisión reciente para deshacer")
         if ahora - documento.fecha_revision > timedelta(minutes=10):
-            raise HTTPException(status_code=400, detail="Solo se puede deshacer la revision durante los primeros 10 minutos")
+            raise HTTPException(status_code=400, detail="Solo se puede deshacer la revisión durante los primeros 10 minutos")
         if empresa is not None:
             tiene_vacantes = db.query(VacanteModel).filter(VacanteModel.id_empresa == empresa.id_empresa).first() is not None
             tiene_participacion_aceptada = (
@@ -1130,7 +1143,7 @@ def revisar_documento_empresa(
             ):
                 raise HTTPException(
                     status_code=400,
-                    detail="No se puede deshacer la revision porque la empresa ya avanzo a otra etapa",
+                    detail="No se puede deshacer la revisión porque la empresa ya avanzó a otra etapa",
                 )
 
     documento.estado_documento = datos.estado_documento
@@ -1172,7 +1185,7 @@ def revisar_documento_empresa(
     registrar_bitacora(
         db,
         usuario_actual.id_usuario,
-        "Deshacer revision documental" if datos.estado_documento == "Pendiente" and estado_anterior != "Pendiente" else "Revisar documento de empresa",
+        "Deshacer revisión documental" if datos.estado_documento == "Pendiente" and estado_anterior != "Pendiente" else "Revisar documento de empresa",
         "documentos",
         f"Documento de empresa {documento.id_documento_empresa} cambio de {estado_anterior} a {datos.estado_documento}.",
         "documento_empresa",
@@ -1234,7 +1247,7 @@ def reemplazar_documento_empresa_por_coordinacion(
                 db,
                 responsable.id_usuario,
                 "Documento de empresa actualizado",
-                f"Coordinacion actualizo el archivo {documento.nombre_archivo}. Quedo pendiente de revision.",
+                f"Coordinación actualizó el archivo {documento.nombre_archivo}. Quedó pendiente de revisión.",
             )
 
     db.commit()

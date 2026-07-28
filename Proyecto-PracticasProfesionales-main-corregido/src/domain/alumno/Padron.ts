@@ -67,7 +67,15 @@ export interface PadronAlumnoResponse {
     nombre: string;
     semestre_requerido: number | null;
     creditos_minimos: number | null;
+    horas_requeridas?: number | null;
     orden: number | null;
+  } | null;
+  regla_practica?: {
+    periodo_requerido: number;
+    creditos_minimos: number;
+    horas_requeridas: number;
+    origen_regla: "carrera" | "tipo_practica";
+    advertencia?: string | null;
   } | null;
   convocatoria: {
     id_convocatoria: number;
