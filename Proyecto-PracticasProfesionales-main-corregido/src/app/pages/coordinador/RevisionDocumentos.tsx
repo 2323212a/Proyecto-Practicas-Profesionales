@@ -111,6 +111,11 @@ export function RevisionDocumentos() {
     return alumnos.filter((a) => `${a.nombre} ${a.matricula} ${a.carrera ?? ""}`.toLowerCase().includes(q));
   }, [alumnos, busqueda]);
 
+  const gruposFiltrados = useMemo(() => ({
+    enRevision: filtrados.filter((alumno) => alumno.resumen.revision > 0),
+    sinRevision: filtrados.filter((alumno) => alumno.resumen.revision === 0),
+  }), [filtrados]);
+
   const porEtapa = useMemo(() => {
     const docs = detalle?.documentos ?? [];
     return {
@@ -254,14 +259,61 @@ export function RevisionDocumentos() {
       <div className="grid xl:grid-cols-[350px_1fr] gap-3">
         <aside className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="p-3 border-b border-gray-100"><div className="border rounded-xl px-2.5 py-1.5 flex items-center gap-2"><Search className="w-3.5 h-3.5 text-gray-400" /><input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="outline-none text-[11px] w-full" placeholder="Buscar alumno..." /></div></div>
-          <div className="max-h-[660px] overflow-y-auto divide-y divide-gray-100">
-            {loading ? <div className="p-3 text-[11px] text-gray-500">Cargando alumnos...</div> : filtrados.length === 0 ? <div className="p-3 text-[11px] text-gray-500">No hay alumnos para revisar.</div> : filtrados.map((a) => (
-              <button key={a.id_alumno} onClick={() => seleccionarAlumno(a.id_alumno)} className={`w-full text-left p-3 hover:bg-blue-50 ${seleccionado === a.id_alumno ? "bg-blue-50" : ""}`}>
-                <div className="font-semibold text-[11px] text-[#0d2b5e]">{a.nombre}</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">{a.matricula} - {a.carrera ?? "Carrera no registrada"}</div>
-                <div className="mt-1 flex gap-2 text-[11px]"><span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{a.resumen.aprobados} aprobados</span><span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{a.resumen.revision} revision</span></div>
-              </button>
-            ))}
+          <div className="max-h-[660px] overflow-y-auto">
+            {loading ? (
+              <div className="p-3 text-[11px] text-gray-500">Cargando alumnos...</div>
+            ) : filtrados.length === 0 ? (
+              <div className="p-3 text-[11px] text-gray-500">No hay alumnos para revisar.</div>
+            ) : (
+              [
+                {
+                  key: "revision",
+                  titulo: "Documentos en revisión",
+                  alumnos: gruposFiltrados.enRevision,
+                  encabezado: "bg-amber-50 text-amber-800 border-amber-200",
+                  contador: "bg-amber-200 text-amber-900",
+                },
+                {
+                  key: "sin-revision",
+                  titulo: "Sin documentos en revisión",
+                  alumnos: gruposFiltrados.sinRevision,
+                  encabezado: "bg-gray-50 text-gray-600 border-gray-200",
+                  contador: "bg-gray-200 text-gray-700",
+                },
+              ].map((grupo) => (
+                <section key={grupo.key}>
+                  <div className={"sticky top-0 z-[1] flex items-center justify-between border-y px-3 py-2 " + grupo.encabezado}>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">{grupo.titulo}</span>
+                    <span className={"min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold " + grupo.contador}>
+                      {grupo.alumnos.length}
+                    </span>
+                  </div>
+                  {grupo.alumnos.length === 0 ? (
+                    <div className="px-3 py-4 text-[10px] text-gray-400">No hay alumnos en este grupo.</div>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {grupo.alumnos.map((a) => (
+                        <button
+                          key={a.id_alumno}
+                          onClick={() => seleccionarAlumno(a.id_alumno)}
+                          className={"w-full text-left p-3 hover:bg-blue-50 " + (seleccionado === a.id_alumno ? "bg-blue-50" : "")}
+                        >
+                          <div className="font-semibold text-[11px] text-[#0d2b5e]">{a.nombre}</div>
+                          <div className="text-[11px] text-gray-500 mt-0.5">{a.matricula} - {a.carrera ?? "Carrera no registrada"}</div>
+                          <div className="mt-1 flex gap-2 text-[11px]"><span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{a.resumen.aprobados} aprobados</span><span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{a.resumen.revision} revisión</span></div>
+                          {a.resumen.revision > 0 && a.fecha_envio_pendiente && (
+                            <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-700">
+                              <Clock className="h-3 w-3" />
+                              En espera desde {fechaObservacion(a.fecha_envio_pendiente)}
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ))
+            )}
           </div>
         </aside>
 

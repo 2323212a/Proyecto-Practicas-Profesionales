@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Users, Search, Plus, Edit2, Trash2, UserX, KeyRound, Download, Copy } from "lucide-react";
 import { gestionUsuariosUseCase } from "../../dependencies";
 import { apiClient } from "../../../infrastructure/api/apiClient";
@@ -83,6 +83,17 @@ const rolC: Record<string, string> = {
   Direccion: "bg-orange-100 text-orange-700",
 };
 
+const ordenRoles = [2, 3, 4, 6, 7, 5, 1];
+
+const rolGrupoC: Record<string, string> = {
+  Alumno: "bg-blue-50 text-blue-800 border-blue-200",
+  Administrador: "bg-red-50 text-red-800 border-red-200",
+  "Coordinador de Practicas": "bg-purple-50 text-purple-800 border-purple-200",
+  "Coordinador de Unidades Receptoras": "bg-indigo-50 text-indigo-800 border-indigo-200",
+  "Unidad Receptora": "bg-green-50 text-green-800 border-green-200",
+  "Asesor Interno": "bg-teal-50 text-teal-800 border-teal-200",
+  Direccion: "bg-orange-50 text-orange-800 border-orange-200",
+};
 function extraerMensajeError(error: unknown, mensajeDefault: string) {
   if (typeof error !== "object" || error === null) return mensajeDefault;
   const response = (error as { response?: { data?: unknown } }).response;
@@ -276,7 +287,13 @@ export function GestionUsuarios() {
     }
 
     const confirmar = window.confirm(
-      "Este usuario no tiene registros asociados. Se eliminara definitivamente de la base de datos. Esta accion no se puede deshacer. Deseas continuar?"
+      usuario.id_rol === 1
+        ? (
+            "Se eliminara definitivamente al alumno y todos sus registros asociados: "
+            + "documentos, asignaciones, horas, reportes, evaluaciones y notificaciones. "
+            + "La operacion se realizara en una sola transaccion y no se puede deshacer. Deseas continuar?"
+          )
+        : "Este usuario no tiene registros asociados. Se eliminara definitivamente de la base de datos. Esta accion no se puede deshacer. Deseas continuar?"
     );
 
     if (!confirmar) return;
@@ -326,8 +343,14 @@ export function GestionUsuarios() {
       const response = await apiClient.post<ResetPasswordResultado>(
         `/usuarios/${usuario.id_usuario}/reset-password`
       );
-      setResetResultado(response.data);
-      alert(mensajeCorreoUsuario("reset", response.data.correo_enviado, response.data.advertencia_correo));
+      if (response.data.correo_enviado) {
+        alert(mensajeCorreoUsuario("reset", true));
+      } else {
+        setResetResultado(response.data);
+        if (!response.data.password_temporal) {
+          alert(mensajeCorreoUsuario("reset", false, response.data.advertencia_correo));
+        }
+      }
       await cargarUsuarios();
     } catch (error) {
       console.error(error);
@@ -379,20 +402,35 @@ export function GestionUsuarios() {
     }
   }
 
-  const filtrados = usuarios.filter((u) => {
-    const nombreCompleto = `${u.nombre} ${u.apellido_paterno ?? ""} ${
-      u.apellido_materno ?? ""
-    }`;
+  const filtrados = usuarios
+    .filter((u) => {
+      const nombreCompleto = `${u.nombre} ${u.apellido_paterno ?? ""} ${
+        u.apellido_materno ?? ""
+      }`;
 
-    const rol = roles[u.id_rol] ?? "Sin rol";
+      const rol = roles[u.id_rol] ?? "Sin rol";
 
-    const coincideBusqueda =
-      nombreCompleto.toLowerCase().includes(q.toLowerCase()) ||
-      u.correo.toLowerCase().includes(q.toLowerCase()) ||
-      rol.toLowerCase().includes(q.toLowerCase());
+      const coincideBusqueda =
+        nombreCompleto.toLowerCase().includes(q.toLowerCase()) ||
+        u.correo.toLowerCase().includes(q.toLowerCase()) ||
+        rol.toLowerCase().includes(q.toLowerCase());
 
-    return (filtroEstado === "Todos" || u.estado === filtroEstado) && coincideBusqueda;
-  });
+      return (filtroEstado === "Todos" || u.estado === filtroEstado) && coincideBusqueda;
+    })
+    .sort((a, b) => {
+      const posicionRolA = ordenRoles.indexOf(a.id_rol);
+      const posicionRolB = ordenRoles.indexOf(b.id_rol);
+      const ordenRolA = posicionRolA === -1 ? ordenRoles.length : posicionRolA;
+      const ordenRolB = posicionRolB === -1 ? ordenRoles.length : posicionRolB;
+      if (ordenRolA !== ordenRolB) return ordenRolA - ordenRolB;
+
+      const nombreA = `${a.nombre ?? ""} ${a.apellido_paterno ?? ""} ${a.apellido_materno ?? ""}`.trim();
+      const nombreB = `${b.nombre ?? ""} ${b.apellido_paterno ?? ""} ${b.apellido_materno ?? ""}`.trim();
+      return (
+        nombreA.localeCompare(nombreB, "es", { sensitivity: "base" }) ||
+        a.correo.localeCompare(b.correo, "es", { sensitivity: "base" })
+      );
+    });
 
   function perfilEsEditable(idRol: number) {
     return [1, 3, 4, 5, 6].includes(idRol);
@@ -694,7 +732,7 @@ export function GestionUsuarios() {
             </thead>
 
             <tbody className="divide-y divide-gray-100">
-              {filtrados.map((u) => {
+              {filtrados.map((u, index) => {
                 const nombreBase = u.nombre ?? "Sin nombre";
                 const nombreCompleto = `${nombreBase} ${
                   u.apellido_paterno ?? ""
@@ -705,11 +743,29 @@ export function GestionUsuarios() {
                 const puedeEliminar = Boolean(u.puede_eliminar_definitivamente);
                 const relaciones = u.relaciones ?? [];
 
+                const iniciaGrupo = index === 0 || filtrados[index - 1].id_rol !== u.id_rol;
+                const cantidadEnGrupo = filtrados.filter((usuario) => usuario.id_rol === u.id_rol).length;
+                const colorGrupo = rolGrupoC[rol] || "bg-gray-50 text-gray-700 border-gray-200";
+
                 return (
-                  <tr key={u.id_usuario} className="hover:bg-gray-50">
+                  <Fragment key={u.id_usuario}>
+                    {iniciaGrupo && (
+                      <tr>
+                        <td colSpan={5} className={`px-6 py-3 border-y ${colorGrupo}`}>
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4" />
+                            <span className="text-sm font-bold">{rol}</span>
+                            <span className="ml-auto text-xs font-semibold opacity-70">
+                              {cantidadEnGrupo} {cantidadEnGrupo === 1 ? "usuario" : "usuarios"}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    <tr className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-[#e3f0ff] rounded-lg flex items-center justify-center text-[#1565c0] font-bold text-sm">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${rolC[rol] || "bg-gray-100 text-gray-600"}`}>
                           {nombreBase.charAt(0)}
                         </div>
 
@@ -796,7 +852,8 @@ export function GestionUsuarios() {
                         </button>
                       </div>
                     </td>
-                  </tr>
+                    </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

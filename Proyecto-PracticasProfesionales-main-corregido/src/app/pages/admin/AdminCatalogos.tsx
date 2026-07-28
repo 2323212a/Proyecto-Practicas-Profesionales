@@ -8,6 +8,7 @@ import {
   Download,
   Edit2,
   Eye,
+  FileCheck,
   FileSpreadsheet,
   GraduationCap,
   KeyRound,
@@ -370,7 +371,7 @@ function descargarCsv(nombre: string, filas: Array<Array<string | number>>) {
         .join(","),
     )
     .join("\n");
-  const blob = new Blob([contenido], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob(["\uFEFF", contenido], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -619,6 +620,8 @@ export function AdminCatalogos() {
   function reiniciarCarga(nuevoTipo = tipoCarga) {
     setTipoCarga(nuevoTipo);
     setArchivo(null);
+    const selectorArchivo = document.getElementById("archivo-carga-masiva");
+    if (selectorArchivo instanceof HTMLInputElement) selectorArchivo.value = "";
     setResultadoValidacion(null);
     setResultadoImportacion(null);
     setMensaje("");
@@ -769,7 +772,14 @@ export function AdminCatalogos() {
   function descargarCredenciales() {
     const credenciales = resultadoImportacion?.credenciales ?? [];
     if (credenciales.length === 0) return;
-    const encabezados = Object.keys(credenciales[0]);
+
+    const sinPassword = credenciales.some((item) => !String(item.password_temporal ?? "").trim());
+    if (sinPassword) {
+      setError("No se recibieron todas las contraseñas temporales. Reinicia el backend; si la importación ya terminó, restablece las contraseñas desde Gestión de usuarios.");
+      return;
+    }
+
+    const encabezados = ["fila", "id_usuario", "correo", "nombre", "rol", "password_temporal"];
     descargarCsv("credenciales_temporales.csv", [
       encabezados,
       ...credenciales.map((item) => encabezados.map((encabezado) => item[encabezado] ?? "")),
@@ -1182,8 +1192,9 @@ export function AdminCatalogos() {
               {(tipoCarga === "alumnos" ? columnasAlumnos : columnasPersonal).join(", ")}
             </div>
 
-            <div className="mt-5 flex flex-col md:flex-row items-start md:items-center gap-3">
+            <div className="mt-5 flex flex-col md:flex-row items-start gap-3">
               <input
+                id="archivo-carga-masiva"
                 type="file"
                 accept=".xlsx,.csv"
                 onChange={(event) => {
@@ -1202,22 +1213,35 @@ export function AdminCatalogos() {
                   setResultadoImportacion(null);
                   setError("");
                 }}
-                className="block w-full md:w-auto text-sm"
+                className="sr-only"
               />
+
+              <div className="flex flex-col items-start gap-1.5">
+                <label
+                  htmlFor="archivo-carga-masiva"
+                  className="h-12 cursor-pointer bg-white text-[#1565c0] border-2 border-[#1565c0] rounded-xl px-5 text-sm font-semibold inline-flex items-center gap-2 shadow-sm transition-colors hover:bg-blue-50 focus-within:ring-2 focus-within:ring-blue-300"
+                >
+                  <Upload className="w-4 h-4" />
+                  Seleccionar archivo
+                </label>
+                <span className="max-w-64 truncate text-xs text-gray-500" title={archivo?.name}>
+                  {archivo?.name ?? "Ning\u00fan archivo seleccionado"}
+                </span>
+              </div>
 
               <button
                 onClick={handleValidarArchivo}
                 disabled={cargando || !archivo}
-                className="bg-[#1565c0] text-white rounded-xl px-5 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
+                className="h-12 bg-[#1565c0] text-white rounded-xl px-5 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
               >
-                <Upload className="w-4 h-4" />
+                <FileCheck className="w-4 h-4" />
                 Validar archivo
               </button>
 
               <button
                 onClick={handleImportarArchivo}
                 disabled={cargando || !puedeImportar}
-                className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
+                className="h-12 bg-green-600 text-white rounded-xl px-5 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 Confirmar importacion
@@ -1263,6 +1287,18 @@ export function AdminCatalogos() {
                   </table>
                 </div>
               )}
+
+              {resultadoValidacion.errores.length === 0 && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    onClick={() => reiniciarCarga()}
+                    className="bg-white border border-red-300 text-red-600 rounded-lg px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 hover:bg-red-50 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancelar importaci&oacute;n
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1273,12 +1309,21 @@ export function AdminCatalogos() {
                   <AlertTriangle className="w-4 h-4" />
                   Errores por fila
                 </h4>
-                <button
-                  onClick={descargarErrores}
-                  className="bg-white border border-red-200 text-red-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
-                >
-                  Descargar errores
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    onClick={descargarErrores}
+                    className="bg-white border border-red-200 text-red-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Descargar errores
+                  </button>
+                  <button
+                    onClick={() => reiniciarCarga()}
+                    className="bg-white border border-red-300 text-red-600 rounded-lg px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-red-50 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Cancelar importaci&oacute;n
+                  </button>
+                </div>
               </div>
               <div className="mt-3 space-y-2 max-h-52 overflow-y-auto">
                 {errores.map((item) => (

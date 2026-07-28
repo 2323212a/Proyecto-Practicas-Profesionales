@@ -92,6 +92,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
     );
     try {
       await gestionNotificacionesUseCase.marcarLeida(notificacion.id_notificacion);
+      window.dispatchEvent(new Event("notificaciones:actualizadas"));
     } catch (err) {
       console.error(err);
       void cargar();
@@ -103,6 +104,7 @@ export function NotificacionesUsuarioView({ titulo = "Notificaciones", subtitulo
     setNotificaciones((actuales) => actuales.map((item) => ({ ...item, leida: true })));
     try {
       await gestionNotificacionesUseCase.marcarTodas(idUsuario);
+      window.dispatchEvent(new Event("notificaciones:actualizadas"));
     } catch (err) {
       console.error(err);
       void cargar();

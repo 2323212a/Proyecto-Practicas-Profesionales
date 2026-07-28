@@ -437,6 +437,17 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
         carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == alumno.id_carrera).first()
         filas = documentos_del_flujo(db, expediente)
         documentos = [documento for documento, _ in filas]
+        documentos_en_revision = [
+            documento
+            for documento in documentos
+            if documento.nombre_archivo
+            and documento.estado_documento == "Pendiente"
+            and not documento.generado_por_sistema
+        ]
+        fecha_envio_pendiente = min(
+            (documento.fecha_carga for documento in documentos_en_revision if documento.fecha_carga),
+            default=None,
+        )
         resultado.append(
             {
                 "id_alumno": alumno.id_alumno,
@@ -449,9 +460,25 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
                 "carrera": carrera.nombre if carrera else None,
                 "estado_alumno": alumno.estado_alumno,
                 "estado_expediente": expediente.estado_expediente,
+                "fecha_envio_pendiente": (
+                    fecha_envio_pendiente.isoformat()
+                    if fecha_envio_pendiente is not None
+                    else None
+                ),
+                "_fecha_orden_revision": fecha_envio_pendiente,
                 "resumen": resumen_documentos(documentos),
             }
         )
+
+    resultado.sort(
+        key=lambda item: (
+            0 if item["resumen"]["revision"] > 0 else 1,
+            item["_fecha_orden_revision"] or datetime.max,
+            item["nombre"].casefold(),
+        )
+    )
+    for item in resultado:
+        item.pop("_fecha_orden_revision", None)
     return resultado
 
 

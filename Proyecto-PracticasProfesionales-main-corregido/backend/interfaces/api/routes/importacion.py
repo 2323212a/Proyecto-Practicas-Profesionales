@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.services.auditoria_service import registrar_bitacora
 from app.services.upload_security import leer_uploadfile_validado_importacion
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import enviar_correo_importacion_usuario, mostrar_password_temporal_en_respuesta
+from infrastructure.email.email_service import enviar_correo_importacion_usuario
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
@@ -374,15 +374,10 @@ def _enviar_credenciales_importacion(
 
 
 def _credenciales_respuesta(credenciales: list[dict]) -> list[dict]:
-    if mostrar_password_temporal_en_respuesta():
-        return credenciales
-    return [
-        {
-            **credencial,
-            "password_temporal": None,
-        }
-        for credencial in credenciales
-    ]
+    # Esta respuesta solo se entrega al administrador que acaba de confirmar la
+    # importacion. Es la unica oportunidad de compartir las claves en texto plano:
+    # en la base de datos se conserva exclusivamente el hash.
+    return [credencial.copy() for credencial in credenciales]
 
 
 @router.post("/validar-alumnos")

@@ -11,6 +11,7 @@ export interface AlumnoResumenRevision {
   carrera: string | null;
   estado_alumno: string | null;
   estado_expediente: string;
+  fecha_envio_pendiente: string | null;
   resumen: {
     aprobados: number;
     cargados: number;
