@@ -46,6 +46,7 @@ from interfaces.api.routes.asignaciones import router as asignaciones_router
 from interfaces.api.routes.bitacora_auditoria import router as bitacora_auditoria_router
 from interfaces.api.routes.convenios import router as convenios_router
 from interfaces.api.routes.coord_unidades_empresas import router as coord_unidades_empresas_router, vacantes_router as coord_unidades_vacantes_router
+from interfaces.api.routes.coord_unidades_importacion_empresas import router as coord_unidades_importacion_empresas_router
 from interfaces.api.routes.coordinador_asignacion_asesores import router as coordinador_asignacion_asesores_router
 from interfaces.api.routes.coordinador_confirmacion_asignaciones import router as coordinador_confirmacion_asignaciones_router
 from interfaces.api.routes.coordinador_documentos import router as coordinador_documentos_router
@@ -160,6 +161,7 @@ app.include_router(coordinador_documentos_router)
 app.include_router(coordinador_liberacion_router)
 app.include_router(coord_unidades_empresas_router)
 app.include_router(coord_unidades_vacantes_router)
+app.include_router(coord_unidades_importacion_empresas_router)
 app.include_router(convenios_router)
 app.include_router(vacantes_router)
 app.include_router(selecciones_empresa_router)

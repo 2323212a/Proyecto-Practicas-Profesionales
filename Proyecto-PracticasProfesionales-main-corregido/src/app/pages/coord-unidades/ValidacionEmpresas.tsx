@@ -4,6 +4,7 @@ import {
   Building2,
   Clock,
   Eye,
+  FileSpreadsheet,
   Search,
   Send,
   XCircle,
@@ -13,6 +14,7 @@ import axios from "axios";
 
 import { gestionEmpresasRevisionUseCase } from "../../dependencies";
 import type { EmpresaRevision, SolicitudEmpresaDetalle } from "../../../domain/coord-unidades/EmpresaRevision";
+import { ImportacionEmpresasModal } from "./ImportacionEmpresasModal";
 
 import type { ColoredStatCard } from "../../../shared/types/ui";
 const estadoColor: Record<string, string> = {
@@ -36,8 +38,8 @@ function mensajeCorreoOperacion(
 ) {
   if (correoEnviado) {
     return operacion === "aceptada"
-      ? "La empresa fue aceptada y se envi? el correo de acceso."
-      : "La empresa fue rechazada y se envi? la notificacion.";
+      ? "La empresa fue aceptada y se envió el correo de acceso."
+      : "La empresa fue rechazada y se envió la notificación.";
   }
   if (advertencia) {
     return operacion === "aceptada"
@@ -45,8 +47,8 @@ function mensajeCorreoOperacion(
       : `La empresa fue rechazada. ${advertencia}`;
   }
   return operacion === "aceptada"
-    ? "La empresa fue aceptada, pero no se envi? correo."
-    : "La empresa fue rechazada, pero no se envi? correo.";
+    ? "La empresa fue aceptada, pero no se envió correo."
+    : "La empresa fue rechazada, pero no se envió correo.";
 }
 
 export function ValidacionEmpresas() {
@@ -59,6 +61,7 @@ export function ValidacionEmpresas() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("Solicitudes");
   const [solicitudDetalle, setSolicitudDetalle] = useState<SolicitudEmpresaDetalle | null>(null);
+  const [importacionAbierta, setImportacionAbierta] = useState(false);
 
   useEffect(() => {
     void cargarEmpresas();
@@ -106,7 +109,7 @@ export function ValidacionEmpresas() {
   }
 
   async function aceptarSolicitud(empresa: EmpresaRevision) {
-    if (!window.confirm("Dar de alta usuario solo permite que la empresa ingrese al sistema y suba documentos. No significa que este activa ni publicada para alumnos.")) {
+    if (!window.confirm("Dar de alta usuario solo permite que la empresa ingrese al sistema y suba documentos. No significa que esté activa ni publicada para alumnos.")) {
       return;
     }
     try {
@@ -116,9 +119,9 @@ export function ValidacionEmpresas() {
         [
           mensajeCorreoOperacion("aceptada", respuesta.correo_enviado, respuesta.advertencia_correo),
           `Correo: ${respuesta.correo}`,
-          `Contrasena temporal: ${
+          `Contraseña temporal: ${
             respuesta.password_temporal
-              ?? (respuesta.cuenta_creada ? "No se muestra por seguridad" : "Ya tenia cuenta")
+              ?? (respuesta.cuenta_creada ? "No se muestra por seguridad" : "Ya tenía cuenta")
           }`,
         ].join("\n"),
       );
@@ -180,11 +183,23 @@ export function ValidacionEmpresas() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestion de Empresas</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Revision de solicitudes, unidades receptoras y publicacion en el padron empresarial.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[#0d2b5e]">Gestión de Empresas</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Revisión de solicitudes, unidades receptoras y publicación en el padrón empresarial.
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            La carga masiva registra empresas y responsables, pero no sustituye la validación documental ni crea cuentas de acceso automáticamente.
+          </p>
+        </div>
+        <button
+          onClick={() => setImportacionAbierta(true)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0d2b5e]"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          Cargar empresas desde Excel
+        </button>
       </div>
 
       {error && (
@@ -260,7 +275,7 @@ export function ValidacionEmpresas() {
               <tr className="text-left text-gray-500">
                 <th className="px-6 py-3">Empresa</th>
                 <th>Giro</th>
-                <th>Tramite</th>
+                <th>Trámite</th>
                 <th>Vacantes</th>
                 <th>Estado</th>
                 <th>Padron</th>
@@ -283,13 +298,13 @@ export function ValidacionEmpresas() {
                     <td className="px-6 py-4">
                       <div className="font-medium text-[#0d2b5e]">{empresa.nombre_empresa}</div>
                       <div className="text-xs text-gray-400">
-                        {empresa.correo_contacto ?? "Sin correo"} - {empresa.telefono ?? "Sin telefono"}
+                        {empresa.correo_contacto ?? "Sin correo"} - {empresa.telefono ?? "Sin teléfono"}
                       </div>
                     </td>
 
                     <td className="text-gray-600">{empresa.giro ?? "Sin giro"}</td>
                     <td className="text-gray-600">
-                      {empresa.tipo_tramite ?? "Sin tramite"}
+                      {empresa.tipo_tramite ?? "Sin trámite"}
                     </td>
                     <td className="text-gray-600">{empresa.vacantes_activas}/{empresa.vacantes} activas</td>
 
@@ -376,7 +391,7 @@ export function ValidacionEmpresas() {
 
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
         <p className="text-sm text-[#0d2b5e]">
-          Una empresa solicitante aun no tiene expediente documental. El expediente se habilita despues de aceptar la solicitud y crear la cuenta.
+          Una empresa solicitante aún no tiene expediente documental. El expediente se habilita después de aceptar la solicitud y crear la cuenta.
         </p>
       </div>
 
@@ -394,14 +409,14 @@ export function ValidacionEmpresas() {
             </div>
             <div className="grid md:grid-cols-2 gap-3 text-sm">
               <p><b>Giro:</b> {solicitudDetalle.empresa.giro ?? "Sin giro"}</p>
-              <p><b>Telefono:</b> {solicitudDetalle.empresa.telefono ?? "Sin telefono"}</p>
-              <p><b>Tramite:</b> {solicitudDetalle.solicitud.tipo_tramite ?? "Sin tramite"}</p>
+              <p><b>Teléfono:</b> {solicitudDetalle.empresa.telefono ?? "Sin teléfono"}</p>
+              <p><b>Trámite:</b> {solicitudDetalle.solicitud.tipo_tramite ?? "Sin trámite"}</p>
               <p><b>Estado solicitud:</b> {solicitudDetalle.solicitud.estado_solicitud ?? "Sin solicitud"}</p>
               <p><b>Cuenta creada:</b> {solicitudDetalle.cuenta_creada ? solicitudDetalle.correo_usuario : "No"}</p>
             </div>
             <p className="text-sm"><b>Domicilio:</b> {solicitudDetalle.empresa.domicilio ?? "Sin domicilio"}</p>
             {solicitudDetalle.solicitud.observaciones && <p className="text-sm"><b>Observaciones:</b> {solicitudDetalle.solicitud.observaciones}</p>}
-            {solicitudDetalle.solicitud.motivo_rechazo && <p className="text-sm text-red-600"><b>Motivo rechazo:</b> {solicitudDetalle.solicitud.motivo_rechazo}</p>}
+            {solicitudDetalle.solicitud.motivo_rechazo && <p className="text-sm text-red-600"><b>Motivo de rechazo:</b> {solicitudDetalle.solicitud.motivo_rechazo}</p>}
             <div className="flex justify-end gap-2">
               {solicitudDetalle.empresa.estado_empresa === "Solicitante" && (
                 <>
@@ -417,6 +432,12 @@ export function ValidacionEmpresas() {
           </div>
         </div>
       )}
+
+      <ImportacionEmpresasModal
+        abierto={importacionAbierta}
+        onClose={() => setImportacionAbierta(false)}
+        onImported={cargarEmpresas}
+      />
     </div>
   );
 }
