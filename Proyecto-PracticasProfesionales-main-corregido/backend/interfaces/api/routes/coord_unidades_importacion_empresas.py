@@ -29,6 +29,7 @@ from infrastructure.database.dependencies import obtener_db
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
+from infrastructure.persistence.models.tipo_unidad_receptora import TipoUnidadReceptoraModel
 from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
 from infrastructure.persistence.models.usuario import UsuarioModel
@@ -99,9 +100,12 @@ CAMPOS_OBLIGATORIOS = {COLUMNAS[0]}
 # Se conserva vacío únicamente para no romper compatibilidad interna con trabajos validados previamente.
 COLUMNAS_DOCUMENTOS: dict[str, str] = {}
 TIPOS_UNIDAD = [
-    "Persona jurídica", "Persona física", "Ayuntamiento", "Organismo descentralizado",
-    "Organismo desconcentrado", "Sector Público (estatal o federal)",
-    "Sector público estatal", "Sector público federal", "Institución educativa", "Asociación civil", "Otro",
+    "Sector Productivo - Persona física",
+    "Sector Productivo - Persona jurídica",
+    "Sector Público - Estatal o Federal",
+    "Sector Social",
+    "Sector Municipal - Ayuntamiento",
+    "Sector Municipal - Descentralizado o desconcentrado",
 ]
 MODALIDADES = ["Presencial", "Virtual", "Híbrida"]
 ESTATUS_PERMITIDOS = ["Solicitante", "Pendiente", "Aceptado"]
@@ -294,7 +298,7 @@ def _validar_fila(fila: dict[str, str], numero: int, db: Session) -> dict:
         errores.append(f"{COLUMNAS[2]}: formato no válido")
 
     for indice, opciones in (
-        (1, TIPOS_UNIDAD), (17, MODALIDADES), (20, ESTADOS_MEXICO),
+        (17, MODALIDADES), (20, ESTADOS_MEXICO),
         (21, ESTATUS_PERMITIDOS), (23, CARTA_COLABORACION),
     ):
         if not datos[COLUMNAS[indice]]:
@@ -304,6 +308,22 @@ def _validar_fila(fila: dict[str, str], numero: int, db: Session) -> dict:
             errores.append(f"{COLUMNAS[indice]}: valor fuera del catálogo")
         else:
             datos[COLUMNAS[indice]] = normal
+
+    if datos[COLUMNAS[1]]:
+        tipo_unidad = (
+            db.query(TipoUnidadReceptoraModel)
+            .filter(
+                func.lower(TipoUnidadReceptoraModel.nombre) == datos[COLUMNAS[1]].lower(),
+                TipoUnidadReceptoraModel.activo.is_(True),
+            )
+            .first()
+        )
+        if tipo_unidad is None:
+            errores.append("Tipo de unidad receptora no válido.")
+        else:
+            datos[COLUMNAS[1]] = tipo_unidad.nombre
+    else:
+        errores.append("Tipo de unidad receptora: campo obligatorio")
 
     domicilio = datos[COLUMNAS[3]]
     if domicilio and not re.search(r"(?<!\d)\d{5}(?!\d)", domicilio):
@@ -443,7 +463,7 @@ def _leer_y_validar(excel: bytes, db: Session) -> tuple[list[dict], list[str]]:
     return vistas, errores_generales
 
 
-def _crear_plantilla() -> bytes:
+def _crear_plantilla(tipos_unidad: list[str]) -> bytes:
     libro = Workbook()
     hoja = libro.active
     hoja.title = HOJA_DATOS
@@ -548,10 +568,10 @@ def _crear_plantilla() -> bytes:
     hoja.sheet_view.showGridLines = False
 
     catalogos.append(["Tipo de unidad receptora", "Modalidad", "Estatus", "Carta de colaboración", "Estado"])
-    maximo = max(len(TIPOS_UNIDAD), len(MODALIDADES), len(ESTATUS_PERMITIDOS), len(CARTA_COLABORACION), len(ESTADOS_MEXICO))
+    maximo = max(len(tipos_unidad), len(MODALIDADES), len(ESTATUS_PERMITIDOS), len(CARTA_COLABORACION), len(ESTADOS_MEXICO))
     for fila in range(maximo):
         catalogos.append([
-            TIPOS_UNIDAD[fila] if fila < len(TIPOS_UNIDAD) else "", MODALIDADES[fila] if fila < len(MODALIDADES) else "",
+            tipos_unidad[fila] if fila < len(tipos_unidad) else "", MODALIDADES[fila] if fila < len(MODALIDADES) else "",
             ESTATUS_PERMITIDOS[fila] if fila < len(ESTATUS_PERMITIDOS) else "",
             CARTA_COLABORACION[fila] if fila < len(CARTA_COLABORACION) else "",
             ESTADOS_MEXICO[fila] if fila < len(ESTADOS_MEXICO) else "",
@@ -570,7 +590,7 @@ def _crear_plantilla() -> bytes:
         catalogos.column_dimensions[columna].width = 32
 
     validaciones = [
-        (f"B{FILA_INICIO_DATOS}:B{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$A$2:$A$" + str(len(TIPOS_UNIDAD) + 1)),
+        (f"B{FILA_INICIO_DATOS}:B{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$A$2:$A$" + str(len(tipos_unidad) + 1)),
         (f"R{FILA_INICIO_DATOS}:R{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$B$2:$B$" + str(len(MODALIDADES) + 1)),
         (f"V{FILA_INICIO_DATOS}:V{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$C$2:$C$" + str(len(ESTATUS_PERMITIDOS) + 1)),
         (f"X{FILA_INICIO_DATOS}:X{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$D$2:$D$" + str(len(CARTA_COLABORACION) + 1)),
@@ -750,8 +770,15 @@ def _guardar_documentos(db: Session, empresa: EmpresaModel, datos: dict[str, str
     return guardados
 
 @router.get("/plantilla")
-def descargar_plantilla():
-    contenido = _crear_plantilla()
+def descargar_plantilla(db: Session = Depends(obtener_db)):
+    tipos_unidad = [
+        tipo.nombre
+        for tipo in db.query(TipoUnidadReceptoraModel)
+        .filter(TipoUnidadReceptoraModel.activo.is_(True))
+        .order_by(TipoUnidadReceptoraModel.nombre.asc())
+        .all()
+    ]
+    contenido = _crear_plantilla(tipos_unidad)
     return StreamingResponse(
         io.BytesIO(contenido),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -863,6 +890,14 @@ def confirmar_importacion(
                     domicilio=domicilio, telefono=telefono_principal,
                     correo_contacto=datos[COLUMNAS[5]], tipo_tramite=tipo_tramite,
                     estado_empresa=estado_empresa,
+                    id_tipo_unidad_receptora=(
+                        db.query(TipoUnidadReceptoraModel.id_tipo_unidad_receptora)
+                        .filter(
+                            TipoUnidadReceptoraModel.nombre == datos[COLUMNAS[1]],
+                            TipoUnidadReceptoraModel.activo.is_(True),
+                        )
+                        .scalar()
+                    ),
                 )
                 db.add(empresa)
                 db.flush()

@@ -29,6 +29,7 @@ type SolicitudEmpresaForm = {
   apellido_materno_responsable: string;
   cargo_responsable: string;
   tipo_tramite: string;
+  id_tipo_unidad_receptora: string;
   descripcion: string;
 };
 
@@ -44,6 +45,7 @@ const FORM_INICIAL: SolicitudEmpresaForm = {
   apellido_materno_responsable: "",
   cargo_responsable: "",
   tipo_tramite: "",
+  id_tipo_unidad_receptora: "",
   descripcion: "",
 };
 
@@ -70,6 +72,10 @@ export function RegistroEmpresa() {
   const [estadoSistema, setEstadoSistema] = useState("Activo");
   const [inscripcionEmpresasEstado, setInscripcionEmpresasEstado] = useState("Abierta");
   const [form, setForm] = useState<SolicitudEmpresaForm>(FORM_INICIAL);
+  const [tiposUnidad, setTiposUnidad] = useState<Array<{
+    id_tipo_unidad_receptora: number;
+    nombre: string;
+  }>>([]);
 
   useEffect(() => {
     gestionConfiguracionUseCase
@@ -78,6 +84,12 @@ export function RegistroEmpresa() {
         setEstadoSistema(configuracion.estado_sistema);
         setInscripcionEmpresasEstado(configuracion.inscripcion_empresas_estado);
       })
+      .catch((err) => console.error(err));
+    apiClient
+      .get<Array<{ id_tipo_unidad_receptora: number; nombre: string }>>(
+        "/empresas/tipos-unidad-receptora",
+      )
+      .then(({ data }) => setTiposUnidad(data))
       .catch((err) => console.error(err));
   }, []);
 
@@ -107,6 +119,7 @@ export function RegistroEmpresa() {
     if (!form.giro.trim()) return "Selecciona el giro o sector.";
     if (!form.domicilio.trim()) return "El domicilio fiscal o de operacion es obligatorio.";
     if (!form.tipo_tramite) return "Selecciona el tipo de tramite.";
+    if (!form.id_tipo_unidad_receptora) return "Selecciona el tipo de unidad receptora.";
     return "";
   }
 
@@ -151,6 +164,7 @@ export function RegistroEmpresa() {
         nombre_contacto: nombreCompletoResponsable,
         cargo_contacto: form.cargo_responsable.trim(),
         tipo_tramite: form.tipo_tramite,
+        id_tipo_unidad_receptora: Number(form.id_tipo_unidad_receptora),
         descripcion: form.descripcion.trim() || null,
       });
       setSubmitted(true);
@@ -297,6 +311,27 @@ export function RegistroEmpresa() {
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Vinculacion: para relacion institucional sin publicar vacantes necesariamente.
+                  </p>
+                </Campo>
+
+                <Campo label="Tipo de unidad receptora *" icon={Building2}>
+                  <select
+                    value={form.id_tipo_unidad_receptora}
+                    onChange={set("id_tipo_unidad_receptora")}
+                    className={`${inputClass} bg-white`}
+                  >
+                    <option value="">Selecciona...</option>
+                    {tiposUnidad.map((tipo) => (
+                      <option
+                        key={tipo.id_tipo_unidad_receptora}
+                        value={tipo.id_tipo_unidad_receptora}
+                      >
+                        {tipo.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    El tipo de unidad receptora determina la documentación legal que deberás presentar.
                   </p>
                 </Campo>
 

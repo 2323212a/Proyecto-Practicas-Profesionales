@@ -35,7 +35,9 @@ from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.formato_empresa import FormatoEmpresaModel
 from infrastructure.persistence.models.participacion_empresa_convocatoria import ParticipacionEmpresaConvocatoriaModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
+from infrastructure.persistence.models.requisito_empresa_tipo_unidad import RequisitoEmpresaTipoUnidadModel
 from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
+from infrastructure.persistence.models.tipo_unidad_receptora import TipoUnidadReceptoraModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 from infrastructure.persistence.models.vacante import VacanteModel
 
@@ -85,6 +87,22 @@ class ConfigurarRequisitoEmpresaRequest(BaseModel):
     activo: bool = True
     etapa: str = "Documentacion"
     tipo_tramite: str | None = None
+
+
+class RequisitoTipoUnidadItemRequest(BaseModel):
+    id_tipo_documento_empresa: int
+    aplica: bool = True
+    obligatorio: bool = True
+    orden: int = 0
+    instrucciones: str | None = None
+
+
+class ConfigurarRequisitosTipoUnidadRequest(BaseModel):
+    requisitos: list[RequisitoTipoUnidadItemRequest]
+
+
+class AsignarTipoUnidadEmpresaRequest(BaseModel):
+    id_tipo_unidad_receptora: int
 
 
 TIPOS_BASE_EMPRESA = [
@@ -304,6 +322,20 @@ def _requisito_permitido_para_empresa(tipo: TipoDocumentoEmpresaModel, empresa: 
     return _etapa_permitida_para_empresa(tipo.etapa, empresa)
 
 
+def _requisitos_documentacion_aplicables(db: Session, empresa: EmpresaModel) -> dict[int, RequisitoEmpresaTipoUnidadModel]:
+    if empresa.id_tipo_unidad_receptora is None:
+        return {}
+    requisitos = (
+        db.query(RequisitoEmpresaTipoUnidadModel)
+        .filter(
+            RequisitoEmpresaTipoUnidadModel.id_tipo_unidad_receptora == empresa.id_tipo_unidad_receptora,
+            RequisitoEmpresaTipoUnidadModel.activo.is_(True),
+        )
+        .all()
+    )
+    return {requisito.id_tipo_documento_empresa: requisito for requisito in requisitos}
+
+
 def _asegurar_permiso_formato_empresa(usuario: UsuarioModel, formato: FormatoEmpresaModel) -> None:
     rol = _nombre_rol(usuario)
     if rol in {"Administrador", "Coordinador de Unidades Receptoras", "Direccion"}:
@@ -392,17 +424,22 @@ def _documentacion_legal_aprobada(db: Session, id_empresa: int) -> bool:
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
     if empresa is None:
         return False
+    requisitos_aplicables = _requisitos_documentacion_aplicables(db, empresa)
+    if not requisitos_aplicables:
+        return False
     tipos_obligatorios = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
             TipoDocumentoEmpresaModel.activo.is_(True),
-            TipoDocumentoEmpresaModel.obligatorio.is_(True),
             TipoDocumentoEmpresaModel.etapa == "Documentacion",
+            TipoDocumentoEmpresaModel.id_tipo_documento_empresa.in_(requisitos_aplicables),
         )
         .all()
     )
     tipos_obligatorios = [
-        tipo for tipo in tipos_obligatorios if _requisito_permitido_para_empresa(tipo, empresa)
+        tipo
+        for tipo in tipos_obligatorios
+        if requisitos_aplicables[tipo.id_tipo_documento_empresa].obligatorio
     ]
     if not tipos_obligatorios:
         return False
@@ -490,17 +527,22 @@ def _recalcular_estado_empresa(db: Session, empresa: EmpresaModel) -> None:
     if empresa.estado_empresa in {"Solicitante", "Rechazada", "Inactiva"}:
         return
 
+    requisitos_aplicables = _requisitos_documentacion_aplicables(db, empresa)
+    if not requisitos_aplicables:
+        return
     tipos_obligatorios = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
             TipoDocumentoEmpresaModel.activo.is_(True),
-            TipoDocumentoEmpresaModel.obligatorio.is_(True),
             TipoDocumentoEmpresaModel.etapa == "Documentacion",
+            TipoDocumentoEmpresaModel.id_tipo_documento_empresa.in_(requisitos_aplicables),
         )
         .all()
     )
     tipos_obligatorios = [
-        tipo for tipo in tipos_obligatorios if _requisito_permitido_para_empresa(tipo, empresa)
+        tipo
+        for tipo in tipos_obligatorios
+        if requisitos_aplicables[tipo.id_tipo_documento_empresa].obligatorio
     ]
     documentos = (
         db.query(DocumentoEmpresaModel)
@@ -559,10 +601,14 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
     )
     por_tipo = {documento.id_tipo_documento_empresa: documento for documento in documentos}
     documentacion_legal_aprobada = _documentacion_legal_aprobada(db, empresa.id_empresa)
+    requisitos_aplicables = _requisitos_documentacion_aplicables(db, empresa)
 
     items = []
     for tipo in tipos:
         if not _requisito_permitido_para_empresa(tipo, empresa):
+            continue
+        requisito_categoria = requisitos_aplicables.get(tipo.id_tipo_documento_empresa)
+        if tipo.etapa == "Documentacion" and requisito_categoria is None:
             continue
         if tipo.etapa in {"Convenio", "Vinculacion"} and not documentacion_legal_aprobada:
             continue
@@ -573,10 +619,12 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
                 "id_tipo_documento_empresa": tipo.id_tipo_documento_empresa,
                 "nombre": tipo.nombre,
                 "descripcion": tipo.descripcion,
-                "obligatorio": tipo.obligatorio,
+                "obligatorio": requisito_categoria.obligatorio if requisito_categoria else tipo.obligatorio,
                 "activo": tipo.activo,
                 "requiere_formato": tipo.requiere_formato,
                 "etapa": tipo.etapa,
+                "orden": requisito_categoria.orden if requisito_categoria else 0,
+                "instrucciones": requisito_categoria.instrucciones if requisito_categoria else None,
                 "formato": _formato_response(formato),
                 "documento": _documento_response(documento),
             }
@@ -602,7 +650,20 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
             "correo_contacto": empresa.correo_contacto,
             "estado_empresa": empresa.estado_empresa,
             "tipo_tramite": empresa.tipo_tramite,
+            "id_tipo_unidad_receptora": empresa.id_tipo_unidad_receptora,
+            "tipo_unidad_receptora": (
+                empresa.tipo_unidad_receptora.nombre
+                if empresa.tipo_unidad_receptora
+                else None
+            ),
         },
+        "clasificacion_pendiente": empresa.id_tipo_unidad_receptora is None,
+        "mensaje_clasificacion": (
+            "La unidad receptora aún no tiene clasificación documental. "
+            "Coordinación debe asignar un tipo de unidad receptora."
+            if empresa.id_tipo_unidad_receptora is None
+            else None
+        ),
         "resumen": resumen,
         "convenio_actual": (
             {
@@ -678,6 +739,17 @@ def subir_documento_empresa(
         raise HTTPException(status_code=404, detail="Tipo de documento no encontrado")
     if not _requisito_permitido_para_empresa(tipo, empresa):
         raise HTTPException(status_code=400, detail="El requisito no corresponde al tipo de tramite de la empresa")
+    if tipo.etapa == "Documentacion":
+        if empresa.id_tipo_unidad_receptora is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "La unidad receptora aún no tiene clasificación documental. "
+                    "Coordinación debe asignar un tipo de unidad receptora."
+                ),
+            )
+        if tipo.id_tipo_documento_empresa not in _requisitos_documentacion_aplicables(db, empresa):
+            raise HTTPException(status_code=400, detail="El documento no aplica al tipo de unidad receptora.")
     if tipo.etapa in {"Convenio", "Vinculacion"} and not _documentacion_legal_aprobada(db, id_empresa):
         raise HTTPException(
             status_code=400,
@@ -1115,6 +1187,25 @@ def revisar_documento_empresa(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == documento.id_empresa).first()
+    tipo_documento = (
+        db.query(TipoDocumentoEmpresaModel)
+        .filter(
+            TipoDocumentoEmpresaModel.id_tipo_documento_empresa
+            == documento.id_tipo_documento_empresa
+        )
+        .first()
+    )
+    if (
+        empresa is not None
+        and tipo_documento is not None
+        and tipo_documento.etapa == "Documentacion"
+        and documento.id_tipo_documento_empresa
+        not in _requisitos_documentacion_aplicables(db, empresa)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="El documento no aplica a la clasificación actual de la unidad receptora",
+        )
     estado_anterior = documento.estado_documento
     ahora = datetime.now()
 
@@ -1253,3 +1344,120 @@ def reemplazar_documento_empresa_por_coordinacion(
     db.commit()
     db.refresh(documento)
     return _documento_response(documento)
+
+
+@router.get(
+    "/coord-unidades/requisitos-por-tipo-unidad/{id_tipo_unidad:int}",
+    dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
+)
+def listar_requisitos_por_tipo_unidad(id_tipo_unidad: int, db: Session = Depends(obtener_db)):
+    tipo_unidad = (
+        db.query(TipoUnidadReceptoraModel)
+        .filter(TipoUnidadReceptoraModel.id_tipo_unidad_receptora == id_tipo_unidad)
+        .first()
+    )
+    if tipo_unidad is None:
+        raise HTTPException(status_code=404, detail="Tipo de unidad receptora no encontrado.")
+    configurados = _requisitos_documentacion_aplicables(
+        db,
+        EmpresaModel(id_tipo_unidad_receptora=id_tipo_unidad),
+    )
+    documentos = (
+        db.query(TipoDocumentoEmpresaModel)
+        .filter(TipoDocumentoEmpresaModel.etapa == "Documentacion")
+        .order_by(TipoDocumentoEmpresaModel.nombre.asc())
+        .all()
+    )
+    return {
+        "tipo_unidad_receptora": {
+            "id_tipo_unidad_receptora": tipo_unidad.id_tipo_unidad_receptora,
+            "nombre": tipo_unidad.nombre,
+        },
+        "requisitos": [
+            {
+                "id_tipo_documento_empresa": documento.id_tipo_documento_empresa,
+                "nombre": documento.nombre,
+                "activo_documento": bool(documento.activo),
+                "aplica": documento.id_tipo_documento_empresa in configurados,
+                "obligatorio": (
+                    configurados[documento.id_tipo_documento_empresa].obligatorio
+                    if documento.id_tipo_documento_empresa in configurados
+                    else documento.obligatorio
+                ),
+                "orden": (
+                    configurados[documento.id_tipo_documento_empresa].orden
+                    if documento.id_tipo_documento_empresa in configurados
+                    else 0
+                ),
+                "instrucciones": (
+                    configurados[documento.id_tipo_documento_empresa].instrucciones
+                    if documento.id_tipo_documento_empresa in configurados
+                    else None
+                ),
+            }
+            for documento in documentos
+        ],
+    }
+
+
+@router.put(
+    "/coord-unidades/requisitos-por-tipo-unidad/{id_tipo_unidad:int}",
+    dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
+)
+def guardar_requisitos_por_tipo_unidad(
+    id_tipo_unidad: int,
+    datos: ConfigurarRequisitosTipoUnidadRequest,
+    db: Session = Depends(obtener_db),
+):
+    if db.query(TipoUnidadReceptoraModel).filter(TipoUnidadReceptoraModel.id_tipo_unidad_receptora == id_tipo_unidad).first() is None:
+        raise HTTPException(status_code=404, detail="Tipo de unidad receptora no encontrado.")
+    ids_recibidos: set[int] = set()
+    for item in datos.requisitos:
+        if item.id_tipo_documento_empresa in ids_recibidos:
+            raise HTTPException(status_code=400, detail="No repitas documentos en la configuración.")
+        ids_recibidos.add(item.id_tipo_documento_empresa)
+        requisito = (
+            db.query(RequisitoEmpresaTipoUnidadModel)
+            .filter(
+                RequisitoEmpresaTipoUnidadModel.id_tipo_unidad_receptora == id_tipo_unidad,
+                RequisitoEmpresaTipoUnidadModel.id_tipo_documento_empresa == item.id_tipo_documento_empresa,
+            )
+            .first()
+        )
+        if requisito is None:
+            requisito = RequisitoEmpresaTipoUnidadModel(
+                id_tipo_unidad_receptora=id_tipo_unidad,
+                id_tipo_documento_empresa=item.id_tipo_documento_empresa,
+            )
+            db.add(requisito)
+        requisito.activo = item.aplica
+        requisito.obligatorio = item.obligatorio
+        requisito.orden = item.orden
+        requisito.instrucciones = (item.instrucciones or "").strip() or None
+    db.commit()
+    return listar_requisitos_por_tipo_unidad(id_tipo_unidad, db)
+
+
+@router.patch(
+    "/coord-unidades/documentos-empresa/empresas/{id_empresa:int}/tipo-unidad",
+    dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
+)
+def asignar_tipo_unidad_empresa(
+    id_empresa: int,
+    datos: AsignarTipoUnidadEmpresaRequest,
+    db: Session = Depends(obtener_db),
+):
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
+    tipo = (
+        db.query(TipoUnidadReceptoraModel)
+        .filter(
+            TipoUnidadReceptoraModel.id_tipo_unidad_receptora == datos.id_tipo_unidad_receptora,
+            TipoUnidadReceptoraModel.activo.is_(True),
+        )
+        .first()
+    )
+    if empresa is None or tipo is None:
+        raise HTTPException(status_code=404, detail="Empresa o tipo de unidad receptora no encontrado.")
+    empresa.id_tipo_unidad_receptora = tipo.id_tipo_unidad_receptora
+    db.commit()
+    return {"mensaje": "Tipo de unidad receptora actualizado.", "id_tipo_unidad_receptora": tipo.id_tipo_unidad_receptora}

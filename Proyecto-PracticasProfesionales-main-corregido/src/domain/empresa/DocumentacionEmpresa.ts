@@ -10,6 +10,8 @@ export interface EmpresaDocumentacionInfo {
   telefono: string | null;
   correo_contacto: string | null;
   estado_empresa: string;
+  id_tipo_unidad_receptora?: number | null;
+  tipo_unidad_receptora?: string | null;
 }
 
 export interface FormatoEmpresa {
@@ -39,6 +41,8 @@ export interface RequisitoEmpresa {
   id_tipo_documento_empresa: number;
   nombre: string;
   descripcion: string | null;
+  instrucciones?: string | null;
+  orden?: number;
   obligatorio: boolean;
   activo?: boolean;
   requiere_formato: boolean;
@@ -69,6 +73,8 @@ export interface DocumentacionEmpresaResponse {
     observaciones: string | null;
   } | null;
   documentos: RequisitoEmpresa[];
+  clasificacion_pendiente?: boolean;
+  mensaje_clasificacion?: string | null;
 }
 
 export interface ArchivoBase64Input {

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Enum, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 from infrastructure.database.connection import Base
 
@@ -7,6 +7,11 @@ class EmpresaModel(Base):
     __tablename__ = "empresa"
 
     id_empresa = Column(Integer, primary_key=True, autoincrement=True)
+    id_tipo_unidad_receptora = Column(
+        Integer,
+        ForeignKey("tipo_unidad_receptora.id_tipo_unidad_receptora"),
+        nullable=True,
+    )
     nombre_empresa = Column(String(150), nullable=False)
     rfc = Column(String(20), nullable=True, unique=True)
     giro = Column(String(100), nullable=True)
@@ -31,3 +36,4 @@ class EmpresaModel(Base):
     participaciones = relationship("ParticipacionEmpresaConvocatoriaModel", back_populates="empresa")
     vacantes = relationship("VacanteModel", back_populates="empresa")
     asignaciones = relationship("AsignacionModel", back_populates="empresa", overlaps="asignaciones,vacante")
+    tipo_unidad_receptora = relationship("TipoUnidadReceptoraModel", back_populates="empresas")

@@ -76,6 +76,16 @@ export function ExpedienteEmpresa() {
   const { idEmpresa } = useParams();
   const [empresas, setEmpresas] = useState<DocumentacionEmpresaResponse[]>([]);
   const [requisitosGlobales, setRequisitosGlobales] = useState<RequisitoEmpresa[]>([]);
+  const [tiposUnidad, setTiposUnidad] = useState<Array<{ id_tipo_unidad_receptora: number; nombre: string; descripcion?: string | null; activo?: boolean }>>([]);
+  const [tipoUnidadConfigurando, setTipoUnidadConfigurando] = useState<number | null>(null);
+  const [matrizTipoUnidad, setMatrizTipoUnidad] = useState<Array<{
+    id_tipo_documento_empresa: number;
+    nombre: string;
+    aplica: boolean;
+    obligatorio: boolean;
+    orden: number;
+    instrucciones: string | null;
+  }>>([]);
   const [vista, setVista] = useState<"revisión" | "configuracion">("revisión");
   const [seleccionada, setSeleccionada] = useState<number | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -108,19 +118,36 @@ export function ExpedienteEmpresa() {
     void cargar();
   }, [idEmpresa]); // eslint-disable-line react-hooks/exhaustive-deps -- cargar only reads the route company id.
 
+  useEffect(() => {
+    if (!tipoUnidadConfigurando) {
+      setMatrizTipoUnidad([]);
+      return;
+    }
+    void apiClient
+      .get<{ requisitos: typeof matrizTipoUnidad }>(
+        `/coord-unidades/requisitos-por-tipo-unidad/${tipoUnidadConfigurando}`,
+      )
+      .then(({ data }) => setMatrizTipoUnidad(data.requisitos))
+      .catch((err) => setError(getApiErrorMessage(err, "No se pudo cargar la configuración por tipo.")));
+  }, [tipoUnidadConfigurando]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function cargar() {
     try {
       setCargando(true);
       setError("");
-      const [respuesta, requisitosRespuesta] = await Promise.all([
+      const [respuesta, requisitosRespuesta, tiposRespuesta] = await Promise.all([
         gestionDocumentacionEmpresaUseCase.listarRevision(),
         apiClient.get<RequisitoEmpresa[]>("/coord-unidades/documentos-empresa/requisitos"),
+        apiClient.get<Array<{ id_tipo_unidad_receptora: number; nombre: string; descripcion?: string | null; activo?: boolean }>>(
+          "/empresas/tipos-unidad-receptora?incluir_inactivos=true",
+        ),
       ]);
       const conExpediente = respuesta.filter(
         (item) => !["Solicitante", "Rechazada"].includes(item.empresa.estado_empresa),
       );
       setEmpresas(conExpediente);
       setRequisitosGlobales(requisitosRespuesta.data);
+      setTiposUnidad(tiposRespuesta.data);
       const idSolicitado = Number(idEmpresa);
       const existeSolicitada =
         Number.isFinite(idSolicitado) &&
@@ -149,6 +176,85 @@ export function ExpedienteEmpresa() {
   const requisitosConvenio = empresaActual?.documentos.filter(
     (requisito) => ((requisito as RequisitoEmpresa & { etapa?: string }).etapa ?? "Documentacion") === "Convenio",
   ) ?? [];
+
+  async function cambiarTipoUnidad(idTipo: number) {
+    if (!empresaActual || !idTipo) return;
+    try {
+      await apiClient.patch(
+        `/coord-unidades/documentos-empresa/empresas/${empresaActual.empresa.id_empresa}/tipo-unidad`,
+        { id_tipo_unidad_receptora: idTipo },
+      );
+      await cargar();
+      setExito("Tipo de unidad receptora actualizado.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "No se pudo actualizar el tipo de unidad receptora."));
+    }
+  }
+
+  async function crearTipoUnidad() {
+    const nombre = window.prompt("Nombre del nuevo tipo de unidad receptora:")?.trim();
+    if (!nombre) return;
+    const descripcion = window.prompt("Descripción (opcional):")?.trim() || null;
+    try {
+      await apiClient.post("/empresas/tipos-unidad-receptora", { nombre, descripcion, activo: true });
+      await cargar();
+      setExito("Tipo de unidad receptora creado.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "No se pudo crear el tipo de unidad receptora."));
+    }
+  }
+
+  async function editarTipoUnidad(tipo: (typeof tiposUnidad)[number]) {
+    const nombre = window.prompt("Nombre del tipo de unidad receptora:", tipo.nombre)?.trim();
+    if (!nombre) return;
+    const descripcion = window.prompt("Descripción (opcional):", tipo.descripcion ?? "")?.trim() || null;
+    try {
+      await apiClient.put(`/empresas/tipos-unidad-receptora/${tipo.id_tipo_unidad_receptora}`, {
+        nombre,
+        descripcion,
+        activo: tipo.activo !== false,
+      });
+      await cargar();
+      setExito("Tipo de unidad receptora actualizado.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "No se pudo editar el tipo de unidad receptora."));
+    }
+  }
+
+  async function cambiarEstadoTipoUnidad(tipo: (typeof tiposUnidad)[number]) {
+    try {
+      await apiClient.put(`/empresas/tipos-unidad-receptora/${tipo.id_tipo_unidad_receptora}`, {
+        nombre: tipo.nombre,
+        descripcion: tipo.descripcion ?? null,
+        activo: tipo.activo === false,
+      });
+      await cargar();
+      setExito(`Tipo de unidad receptora ${tipo.activo === false ? "activado" : "desactivado"}.`);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "No se pudo cambiar el estado del tipo de unidad receptora."));
+    }
+  }
+
+  async function guardarMatrizTipoUnidad() {
+    if (!tipoUnidadConfigurando) return;
+    try {
+      await apiClient.put(
+        `/coord-unidades/requisitos-por-tipo-unidad/${tipoUnidadConfigurando}`,
+        {
+          requisitos: matrizTipoUnidad.map((item) => ({
+            id_tipo_documento_empresa: item.id_tipo_documento_empresa,
+            aplica: item.aplica,
+            obligatorio: item.obligatorio,
+            orden: Number(item.orden || 0),
+            instrucciones: item.instrucciones,
+          })),
+        },
+      );
+      setExito("Configuración documental guardada.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "No se pudo guardar la configuración documental."));
+    }
+  }
   const existeConvenioConFormato = requisitosGlobales.some(
     (requisito) =>
       ((requisito as RequisitoEmpresa & { etapa?: string }).etapa ?? "Documentacion") === "Convenio" &&
@@ -787,6 +893,60 @@ export function ExpedienteEmpresa() {
                   Crear requisito
                 </button>
               </div>
+              <div className="border border-blue-100 bg-blue-50 rounded-xl p-4 mb-5 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-sm text-[#0d2b5e]">Requisitos por tipo de unidad receptora</div>
+                  <button onClick={() => void crearTipoUnidad()} className="bg-white border border-blue-200 text-[#0d2b5e] rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    Crear nuevo tipo
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {tiposUnidad.map((tipo) => (
+                    <div key={tipo.id_tipo_unidad_receptora} className="bg-white border rounded-lg px-2 py-1 flex items-center gap-2 text-xs">
+                      <span className={tipo.activo === false ? "text-gray-400 line-through" : "text-gray-700"}>{tipo.nombre}</span>
+                      <button onClick={() => void editarTipoUnidad(tipo)} className="text-blue-700">Editar</button>
+                      <button onClick={() => void cambiarEstadoTipoUnidad(tipo)} className="text-orange-700">
+                        {tipo.activo === false ? "Activar" : "Desactivar"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <select
+                  value={tipoUnidadConfigurando ?? ""}
+                  onChange={(event) => setTipoUnidadConfigurando(Number(event.target.value) || null)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">Selecciona un tipo</option>
+                  {tiposUnidad.filter((tipo) => tipo.activo !== false).map((tipo) => (
+                    <option key={tipo.id_tipo_unidad_receptora} value={tipo.id_tipo_unidad_receptora}>
+                      {tipo.nombre}
+                    </option>
+                  ))}
+                </select>
+                {matrizTipoUnidad.length > 0 && (
+                  <>
+                    <div className="overflow-x-auto bg-white rounded-lg border">
+                      <table className="w-full text-xs">
+                        <thead><tr className="text-left border-b"><th className="p-2">Documento</th><th>Aplica</th><th>Obligatorio</th><th>Orden</th><th>Instrucciones</th></tr></thead>
+                        <tbody>
+                          {matrizTipoUnidad.map((item, indice) => (
+                            <tr key={item.id_tipo_documento_empresa} className="border-b last:border-0">
+                              <td className="p-2">{item.nombre}</td>
+                              <td><input type="checkbox" checked={item.aplica} onChange={(e) => setMatrizTipoUnidad((actual) => actual.map((fila, i) => i === indice ? { ...fila, aplica: e.target.checked } : fila))} /></td>
+                              <td><input type="checkbox" checked={item.obligatorio} onChange={(e) => setMatrizTipoUnidad((actual) => actual.map((fila, i) => i === indice ? { ...fila, obligatorio: e.target.checked } : fila))} /></td>
+                              <td><input type="number" value={item.orden} onChange={(e) => setMatrizTipoUnidad((actual) => actual.map((fila, i) => i === indice ? { ...fila, orden: Number(e.target.value) } : fila))} className="w-16 border rounded px-2 py-1" /></td>
+                              <td><input value={item.instrucciones ?? ""} onChange={(e) => setMatrizTipoUnidad((actual) => actual.map((fila, i) => i === indice ? { ...fila, instrucciones: e.target.value } : fila))} className="w-full min-w-44 border rounded px-2 py-1" /></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button onClick={() => void guardarMatrizTipoUnidad()} className="bg-[#0d2b5e] text-white rounded-lg px-4 py-2 text-xs font-semibold">
+                      Guardar configuración
+                    </button>
+                  </>
+                )}
+              </div>
               <p className="text-xs text-orange-700 bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 mb-5">
                 No elimines requisitos usados; desactivalos para conservar historial.
               </p>
@@ -808,6 +968,21 @@ export function ExpedienteEmpresa() {
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                   <div>
                     <h2 className="text-xl font-bold">{empresaActual.empresa.nombre_empresa}</h2>
+                    <div className="mt-3">
+                      <label className="text-xs text-blue-100 block mb-1">Tipo de unidad receptora</label>
+                      <select
+                        value={empresaActual.empresa.id_tipo_unidad_receptora ?? ""}
+                        onChange={(event) => void cambiarTipoUnidad(Number(event.target.value))}
+                        className="text-gray-800 bg-white border rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="">Sin clasificación</option>
+                        {tiposUnidad.filter((tipo) => tipo.activo !== false).map((tipo) => (
+                          <option key={tipo.id_tipo_unidad_receptora} value={tipo.id_tipo_unidad_receptora}>
+                            {tipo.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <p className="text-blue-200 text-sm mt-1">
                       RFC: {empresaActual.empresa.rfc ?? "Sin RFC"} · {empresaActual.empresa.giro ?? "Sin giro"}
                     </p>

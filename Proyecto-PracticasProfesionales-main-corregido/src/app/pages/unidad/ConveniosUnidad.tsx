@@ -237,6 +237,11 @@ export function ConveniosUnidad() {
 
   return (
     <div className="space-y-6">
+      {datos?.clasificacion_pendiente && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-800 rounded-xl p-4 text-sm">
+          {datos.mensaje_clasificacion}
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold text-[#0d2b5e]">Documentacion de Alta</h1>
         <p className="text-gray-500 text-sm mt-1">

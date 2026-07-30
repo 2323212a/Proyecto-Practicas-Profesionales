@@ -18,6 +18,7 @@ from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.empresa import EmpresaModel
 from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
+from infrastructure.persistence.models.tipo_unidad_receptora import TipoUnidadReceptoraModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 from infrastructure.persistence.models.vacante import VacanteModel
 from interfaces.api.schemas.empresa import EmpresaCreate, EmpresaResponse, EmpresaUpdate
@@ -114,6 +115,67 @@ class SolicitudEmpresaCreate(BaseModel):
     cargo_responsable: Optional[str] = Field(default=None, max_length=100)
     descripcion: Optional[str] = None
     tipo_tramite: str
+    id_tipo_unidad_receptora: int
+
+
+class TipoUnidadReceptoraRequest(BaseModel):
+    nombre: str = Field(min_length=2, max_length=150)
+    descripcion: str | None = None
+    activo: bool = True
+
+
+def _tipo_unidad_response(tipo: TipoUnidadReceptoraModel) -> dict:
+    return {
+        "id_tipo_unidad_receptora": tipo.id_tipo_unidad_receptora,
+        "nombre": tipo.nombre,
+        "descripcion": tipo.descripcion,
+        "activo": bool(tipo.activo),
+    }
+
+
+@router.get("/tipos-unidad-receptora")
+def listar_tipos_unidad_receptora(
+    incluir_inactivos: bool = False,
+    db: Session = Depends(obtener_db),
+):
+    query = db.query(TipoUnidadReceptoraModel)
+    if not incluir_inactivos:
+        query = query.filter(TipoUnidadReceptoraModel.activo.is_(True))
+    return [_tipo_unidad_response(tipo) for tipo in query.order_by(TipoUnidadReceptoraModel.nombre.asc()).all()]
+
+
+@router.post(
+    "/tipos-unidad-receptora",
+    dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
+)
+def crear_tipo_unidad_receptora(datos: TipoUnidadReceptoraRequest, db: Session = Depends(obtener_db)):
+    nombre = " ".join(datos.nombre.split())
+    if db.query(TipoUnidadReceptoraModel).filter(func.lower(TipoUnidadReceptoraModel.nombre) == nombre.lower()).first():
+        raise HTTPException(status_code=400, detail="Ya existe un tipo de unidad receptora con ese nombre.")
+    tipo = TipoUnidadReceptoraModel(nombre=nombre, descripcion=limpiar_texto(datos.descripcion), activo=datos.activo)
+    db.add(tipo)
+    db.commit()
+    db.refresh(tipo)
+    return _tipo_unidad_response(tipo)
+
+
+@router.put(
+    "/tipos-unidad-receptora/{id_tipo:int}",
+    dependencies=[Depends(requerir_roles(["Coordinador de Unidades Receptoras", "Administrador"]))],
+)
+def editar_tipo_unidad_receptora(
+    id_tipo: int,
+    datos: TipoUnidadReceptoraRequest,
+    db: Session = Depends(obtener_db),
+):
+    tipo = db.query(TipoUnidadReceptoraModel).filter(TipoUnidadReceptoraModel.id_tipo_unidad_receptora == id_tipo).first()
+    if tipo is None:
+        raise HTTPException(status_code=404, detail="Tipo de unidad receptora no encontrado.")
+    tipo.nombre = " ".join(datos.nombre.split())
+    tipo.descripcion = limpiar_texto(datos.descripcion)
+    tipo.activo = datos.activo
+    db.commit()
+    return _tipo_unidad_response(tipo)
 
 
 @router.get(
@@ -188,6 +250,16 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
         cargo_contacto = cargo_contacto_legacy
     descripcion = limpiar_texto(solicitud.descripcion)
     tipo_tramite = normalizar_opcion(solicitud.tipo_tramite, TIPOS_TRAMITE, "Tipo de tramite")
+    tipo_unidad = (
+        db.query(TipoUnidadReceptoraModel)
+        .filter(
+            TipoUnidadReceptoraModel.id_tipo_unidad_receptora == solicitud.id_tipo_unidad_receptora,
+            TipoUnidadReceptoraModel.activo.is_(True),
+        )
+        .first()
+    )
+    if tipo_unidad is None:
+        raise HTTPException(status_code=400, detail="Selecciona el tipo de unidad receptora.")
 
     existente_rfc = (
         db.query(EmpresaModel).filter(EmpresaModel.rfc == rfc).first() if rfc else None
@@ -236,6 +308,7 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
             correo_contacto=correo_contacto,
             estado_empresa="Solicitante",
             tipo_tramite=tipo_tramite,
+            id_tipo_unidad_receptora=tipo_unidad.id_tipo_unidad_receptora,
         )
         db.add(empresa)
         db.flush()
@@ -261,6 +334,7 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
         empresa.correo_contacto = correo_contacto
         empresa.estado_empresa = "Solicitante"
         empresa.tipo_tramite = tipo_tramite
+        empresa.id_tipo_unidad_receptora = tipo_unidad.id_tipo_unidad_receptora
         responsable = (
             db.query(ResponsableEmpresaModel)
             .filter(ResponsableEmpresaModel.id_empresa == empresa.id_empresa)

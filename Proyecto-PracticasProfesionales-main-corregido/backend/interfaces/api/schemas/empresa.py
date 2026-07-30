@@ -16,6 +16,7 @@ class EmpresaCreate(BaseModel):
     telefono: str | None = None
     correo_contacto: EmailStr | None = None
     tipo_tramite: TipoTramite
+    id_tipo_unidad_receptora: int | None = None
     estado_empresa: EstadoEmpresa = "Pendiente"
 
 
@@ -27,6 +28,7 @@ class EmpresaUpdate(BaseModel):
     telefono: str | None = None
     correo_contacto: EmailStr | None = None
     tipo_tramite: TipoTramite | None = None
+    id_tipo_unidad_receptora: int | None = None
     estado_empresa: EstadoEmpresa | None = None
 
 
@@ -40,5 +42,6 @@ class EmpresaResponse(BaseModel):
     correo_contacto: str | None = None
     estado_empresa: str
     tipo_tramite: str | None = None
+    id_tipo_unidad_receptora: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
