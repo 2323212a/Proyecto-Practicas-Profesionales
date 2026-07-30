@@ -49,6 +49,8 @@ export interface ReportesAlumnoResponse {
   estado_alumno: string;
   horas_actuales: number;
   horas_meta: number;
+  origen_regla: "regla_practica_carrera" | "tipo_practica" | "sin_configurar";
+  advertencia_regla: string | null;
   asignacion: AsignacionReporteAlumno | null;
   resumen: ResumenReportesAlumno;
   espacios: EspacioReporteAlumno[];

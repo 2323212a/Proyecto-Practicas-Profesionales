@@ -8,12 +8,12 @@ class SeleccionEmpresaCreate(BaseModel):
     id_alumno: int
     id_convocatoria: int
     id_vacante: int
-    prioridad: int = Field(ge=1, le=3)
+    prioridad: int = Field(ge=1, le=2)
     observaciones: str | None = None
 
 
 class SeleccionEmpresaUpdate(BaseModel):
-    prioridad: int | None = Field(default=None, ge=1, le=3)
+    prioridad: int | None = Field(default=None, ge=1, le=2)
     estado: str | None = None
     observaciones: str | None = None
 

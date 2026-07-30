@@ -22,7 +22,7 @@ class AsignacionModel(Base):
     id_asesor = Column(Integer, ForeignKey("personal_interno.id_personal"), nullable=True)
     fecha_asignacion = Column(DateTime, nullable=False, server_default=func.now())
     estado_asignacion = Column(
-        Enum("Activa", "Finalizada", "Cancelada"),
+        Enum("Pendiente", "Activa", "Cancelada", "Finalizada", "Rechazada"),
         nullable=False,
         default="Activa",
         server_default="Activa"

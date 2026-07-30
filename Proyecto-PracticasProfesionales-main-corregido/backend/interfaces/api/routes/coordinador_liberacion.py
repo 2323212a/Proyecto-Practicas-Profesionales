@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.regla_practica_carrera_service import obtener_regla_practica_para_alumno
 from app.services.notificacion_service import crear_notificacion
 from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_documento_liberacion
 from infrastructure.database.dependencies import obtener_db
@@ -36,7 +37,6 @@ router = APIRouter(
     prefix="/coordinador/liberacion",
     tags=["Coordinador - Liberacion"],
 )
-HORAS_META = 480
 UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
 UPLOAD_DIR = UPLOADS_DIR / "expedientes"
 MIMES_PERMITIDOS = {
@@ -166,6 +166,14 @@ def _expediente_aprobado(db: Session, id_alumno: int) -> bool:
 
 def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
     alumno = asignacion.alumno
+    regla_practica = obtener_regla_practica_para_alumno(db, alumno) if alumno is not None else None
+    horas_meta = regla_practica.horas_requeridas if regla_practica is not None else 0
+    origen_regla = regla_practica.origen_regla if regla_practica is not None else "sin_configurar"
+    advertencia_regla = (
+        regla_practica.advertencia
+        if regla_practica is not None
+        else "No hay una regla de práctica configurada para el alumno."
+    )
     horas_aprobadas = (
         db.query(func.coalesce(func.sum(HorasModel.horas_realizadas), 0))
         .filter(
@@ -224,7 +232,7 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
 
     requisitos = {
         "expediente_aprobado": _expediente_aprobado(db, asignacion.id_alumno),
-        "horas_completas": _float(horas_aprobadas) >= HORAS_META,
+        "horas_completas": horas_meta > 0 and _float(horas_aprobadas) >= horas_meta,
         "reportes_aprobados": reportes_pendientes == 0 and reportes_rechazados == 0,
         "evaluacion_asesor": evaluacion_asesor is not None,
         "evaluacion_empresa": evaluacion_empresa is not None,
@@ -249,7 +257,9 @@ def _estado_liberacion(db: Session, asignacion: AsignacionModel) -> dict:
         "estado_alumno": alumno.estado_alumno if alumno else None,
         "estado_asignacion": asignacion.estado_asignacion,
         "horas_aprobadas": _float(horas_aprobadas),
-        "horas_meta": HORAS_META,
+        "horas_meta": horas_meta,
+        "origen_regla": origen_regla,
+        "advertencia_regla": advertencia_regla,
         "reportes_pendientes": reportes_pendientes,
         "reportes_rechazados": reportes_rechazados,
         "incidencias_abiertas": incidencias_abiertas,

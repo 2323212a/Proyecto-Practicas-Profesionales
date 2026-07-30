@@ -281,19 +281,6 @@ def _tipos_practica_vacante(db: Session, vacante: VacanteModel) -> list[dict]:
         .order_by(TipoPracticaModel.orden.asc(), TipoPracticaModel.nombre.asc())
         .all()
     )
-    if not configuraciones and vacante.id_tipo_practica:
-        tipo = db.query(TipoPracticaModel).filter(TipoPracticaModel.id_tipo_practica == vacante.id_tipo_practica).first()
-        if tipo is not None:
-            configuraciones = [
-                VacanteTipoPracticaModel(
-                    id_vacante=vacante.id_vacante,
-                    id_tipo_practica=tipo.id_tipo_practica,
-                    cupos=vacante.cupos,
-                    activo=True,
-                    tipo_practica=tipo,
-                )
-            ]
-
     respuesta = []
     for config in configuraciones:
         usados = (
@@ -494,7 +481,11 @@ def _asegurar_vacante_editable_empresa(vacante: VacanteModel) -> None:
         raise HTTPException(status_code=400, detail="Esta vacante no puede editarse desde la empresa.")
 
 
-def _normalizar_tipos_vacante(datos: CrearVacanteUnidadRequest) -> list[TipoPracticaVacanteRequest]:
+def _normalizar_tipos_vacante(
+    datos: CrearVacanteUnidadRequest,
+    *,
+    validar_maximo_inicial: bool = True,
+) -> list[TipoPracticaVacanteRequest]:
     tipos = datos.tipos_practica or []
     if not tipos and datos.id_tipo_practica is not None:
         tipos = [TipoPracticaVacanteRequest(id_tipo_practica=datos.id_tipo_practica, cupos=datos.cupos or 0)]
@@ -505,11 +496,13 @@ def _normalizar_tipos_vacante(datos: CrearVacanteUnidadRequest) -> list[TipoPrac
     for item in tipos:
         if item.cupos <= 0:
             raise HTTPException(status_code=400, detail="Los cupos por tipo de práctica deben ser mayores a cero.")
+        if item.id_tipo_practica in tipos_por_id:
+            raise HTTPException(status_code=400, detail="No repitas el mismo tipo de práctica en la vacante.")
         tipos_por_id[item.id_tipo_practica] = item
     total = sum(item.cupos for item in tipos_por_id.values())
     if total < 1:
         raise HTTPException(status_code=400, detail="La vacante debe tener al menos un cupo.")
-    if total > 3:
+    if validar_maximo_inicial and total > 3:
         raise HTTPException(
             status_code=400,
             detail="Para más de 3 cupos debes solicitar autorización a Coordinación de Unidades.",
@@ -563,6 +556,11 @@ class TipoPracticaVacanteRequest(BaseModel):
     cupos: int
 
 
+class DetalleAmpliacionCuposRequest(BaseModel):
+    id_tipo_practica: int
+    cupos_solicitados: int
+
+
 class CrearVacanteUnidadRequest(BaseModel):
     id_convocatoria: int
     id_tipo_practica: int | None = None
@@ -580,7 +578,7 @@ class SolicitarAmpliacionCuposRequest(BaseModel):
     id_tipo_practica: int | None = None
     cupos_solicitados: int | None = None
     motivo: str
-    detalles: list[TipoPracticaVacanteRequest] = []
+    detalles: list[DetalleAmpliacionCuposRequest] = []
 
 
 class SolicitarParticipacionRequest(BaseModel):
@@ -1333,7 +1331,10 @@ def _solicitar_participacion_convocatoria(
         raise HTTPException(status_code=400, detail="Necesitas convenio vigente para seleccionar convocatoria.")
     convocatoria = (
         db.query(ConvocatoriaModel)
-        .filter(ConvocatoriaModel.id_convocatoria == datos.id_convocatoria, ConvocatoriaModel.estado != "Cerrada")
+        .filter(
+            ConvocatoriaModel.id_convocatoria == datos.id_convocatoria,
+            ConvocatoriaModel.estado == "Activa",
+        )
         .first()
     )
     if convocatoria is None:
@@ -1464,8 +1465,8 @@ def crear_vacante_unidad(
         cupos=cupos_total,
         aplica_todas_carreras=datos.aplica_todas_carreras,
         periodo=convocatoria.tipo_periodo,
-        estado_vacante="Con observaciones",
-        observaciones="Debes subir el Plan de Trabajo antes de enviar la vacante.",
+        estado_vacante="Pendiente",
+        observaciones=None,
     )
     db.add(vacante)
     db.flush()
@@ -1482,6 +1483,15 @@ def crear_vacante_unidad(
         db.add(VacanteCarreraModel(id_vacante=vacante.id_vacante, id_carrera=id_carrera))
     db.commit()
     db.refresh(vacante)
+    registrar_bitacora(
+        db,
+        None,
+        "Crear vacante",
+        "vacantes",
+        f"Vacante {vacante.id_vacante} creada para empresa {id_empresa}.",
+        "vacante",
+        vacante.id_vacante,
+    )
     return {
         "id_vacante": vacante.id_vacante,
         "id_empresa": vacante.id_empresa,
@@ -1525,7 +1535,10 @@ def descargar_formato_plan_trabajo_unidad(
 ):
     formato = (
         db.query(FormatoPlanTrabajoVacanteModel)
-        .filter(FormatoPlanTrabajoVacanteModel.id_formato_plan == id_formato_plan)
+        .filter(
+            FormatoPlanTrabajoVacanteModel.id_formato_plan == id_formato_plan,
+            FormatoPlanTrabajoVacanteModel.activo.is_(True),
+        )
         .first()
     )
     if formato is None:
@@ -1662,26 +1675,75 @@ def editar_vacante_unidad(
     if datos.id_convocatoria != vacante.id_convocatoria:
         raise HTTPException(status_code=400, detail="No se puede cambiar la convocatoria de una vacante existente.")
 
-    tipos_vacante = _normalizar_tipos_vacante(datos)
+    tipos_vacante = _normalizar_tipos_vacante(datos, validar_maximo_inicial=False)
     _validar_tipos_vacante(db, tipos_vacante)
     ids_carrera = _validar_carreras_vacante(db, datos.aplica_todas_carreras, datos.ids_carrera, vacante.convocatoria.tipo_periodo)
-    asignaciones_activas = (
-        db.query(func.count(AsignacionModel.id_asignacion))
-        .filter(AsignacionModel.id_vacante == id_vacante, AsignacionModel.estado_asignacion == "Activa")
-        .scalar()
-        or 0
+    configs_actuales = (
+        db.query(VacanteTipoPracticaModel)
+        .filter(VacanteTipoPracticaModel.id_vacante == id_vacante)
+        .all()
     )
+    total_actual = sum(config.cupos for config in configs_actuales if config.activo)
+    total_nuevo = sum(tipo.cupos for tipo in tipos_vacante)
+    if total_nuevo > max(total_actual, 3):
+        raise HTTPException(
+            status_code=400,
+            detail="Los incrementos por encima del límite inicial deben solicitarse mediante ampliación de cupos.",
+        )
+
+    ocupados_por_tipo = {
+        int(id_tipo): int(total)
+        for id_tipo, total in (
+            db.query(AsignacionModel.id_tipo_practica, func.count(AsignacionModel.id_asignacion))
+            .filter(
+                AsignacionModel.id_vacante == id_vacante,
+                AsignacionModel.estado_asignacion == "Activa",
+            )
+            .group_by(AsignacionModel.id_tipo_practica)
+            .all()
+        )
+        if id_tipo is not None
+    }
+    nuevos_por_tipo = {tipo.id_tipo_practica: tipo.cupos for tipo in tipos_vacante}
+    for id_tipo_practica, ocupados in ocupados_por_tipo.items():
+        if nuevos_por_tipo.get(id_tipo_practica, 0) < ocupados:
+            raise HTTPException(
+                status_code=400,
+                detail="No puedes eliminar un tipo ni reducir sus cupos por debajo de sus asignaciones activas.",
+            )
+
+    if not datos.aplica_todas_carreras:
+        carreras_asignadas = {
+            id_carrera
+            for (id_carrera,) in (
+                db.query(AlumnoModel.id_carrera)
+                .join(AsignacionModel, AsignacionModel.id_alumno == AlumnoModel.id_alumno)
+                .filter(
+                    AsignacionModel.id_vacante == id_vacante,
+                    AsignacionModel.estado_asignacion == "Activa",
+                )
+                .distinct()
+                .all()
+            )
+            if id_carrera is not None
+        }
+        if not carreras_asignadas.issubset(set(ids_carrera)):
+            raise HTTPException(
+                status_code=400,
+                detail="No puedes retirar carreras que tienen alumnos asignados activamente.",
+            )
 
     vacante.titulo = datos.titulo.strip()
     vacante.descripcion = datos.descripcion
     vacante.actividades = datos.actividades
     vacante.requisitos = datos.requisitos
     vacante.aplica_todas_carreras = datos.aplica_todas_carreras
-    if asignaciones_activas == 0:
-        vacante.id_tipo_practica = tipos_vacante[0].id_tipo_practica
-        vacante.cupos = sum(tipo.cupos for tipo in tipos_vacante)
-        db.query(VacanteTipoPracticaModel).filter(VacanteTipoPracticaModel.id_vacante == id_vacante).delete(synchronize_session=False)
-        for tipo in tipos_vacante:
+    vacante.id_tipo_practica = tipos_vacante[0].id_tipo_practica
+    vacante.cupos = total_nuevo
+    configs_por_tipo = {config.id_tipo_practica: config for config in configs_actuales}
+    for tipo in tipos_vacante:
+        config = configs_por_tipo.get(tipo.id_tipo_practica)
+        if config is None:
             db.add(
                 VacanteTipoPracticaModel(
                     id_vacante=id_vacante,
@@ -1690,11 +1752,26 @@ def editar_vacante_unidad(
                     activo=True,
                 )
             )
+        else:
+            config.cupos = tipo.cupos
+            config.activo = True
+    for id_tipo_practica, config in configs_por_tipo.items():
+        if id_tipo_practica not in nuevos_por_tipo:
+            config.activo = False
     db.query(VacanteCarreraModel).filter(VacanteCarreraModel.id_vacante == id_vacante).delete(synchronize_session=False)
     for id_carrera in ids_carrera:
         db.add(VacanteCarreraModel(id_vacante=id_vacante, id_carrera=id_carrera))
     db.commit()
     db.refresh(vacante)
+    registrar_bitacora(
+        db,
+        None,
+        "Editar vacante",
+        "vacantes",
+        f"Vacante {vacante.id_vacante} actualizada por la empresa.",
+        "vacante",
+        vacante.id_vacante,
+    )
     return _vacante_detalle_response(db, vacante)
 
 
@@ -1713,7 +1790,10 @@ def reenviar_vacante_unidad(
         raise HTTPException(status_code=404, detail="Vacante no encontrada para esta empresa.")
     _asegurar_vacante_editable_empresa(vacante)
     if _plan_trabajo_vacante(db, vacante) is None:
-        raise HTTPException(status_code=400, detail="Debes subir el Plan de Trabajo antes de enviar la vacante.")
+        raise HTTPException(
+            status_code=400,
+            detail="Debes subir el Plan de Trabajo antes de enviar la vacante a revisión.",
+        )
     if not _tipos_practica_vacante(db, vacante):
         raise HTTPException(status_code=400, detail="La vacante debe tener al menos un tipo de práctica.")
     if not vacante.aplica_todas_carreras and not _carreras_vacante(db, vacante):
@@ -1761,6 +1841,11 @@ def solicitar_ampliacion_cupos_vacante(
     )
     if vacante is None:
         raise HTTPException(status_code=404, detail="Vacante no encontrada para esta empresa.")
+    if vacante.estado_vacante not in {"Activa", "PrePadron"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede solicitar ampliación para vacantes Activas o en PrePadron.",
+        )
     if vacante.estado_vacante == "Cerrada":
         raise HTTPException(status_code=400, detail="No se puede solicitar ampliación para una vacante cerrada.")
     if vacante.estado_vacante in {"Rechazada", "Con observaciones"}:
@@ -1768,7 +1853,12 @@ def solicitar_ampliacion_cupos_vacante(
 
     detalles = datos.detalles or []
     if not detalles and datos.id_tipo_practica is not None and datos.cupos_solicitados is not None:
-        detalles = [TipoPracticaVacanteRequest(id_tipo_practica=datos.id_tipo_practica, cupos=datos.cupos_solicitados)]
+        detalles = [
+            DetalleAmpliacionCuposRequest(
+                id_tipo_practica=datos.id_tipo_practica,
+                cupos_solicitados=datos.cupos_solicitados,
+            )
+        ]
     if not detalles:
         raise HTTPException(status_code=400, detail="Indica los cupos adicionales por tipo de práctica.")
 
@@ -1783,13 +1873,13 @@ def solicitar_ampliacion_cupos_vacante(
     }
     detalles_por_tipo: dict[int, int] = {}
     for detalle in detalles:
-        if detalle.cupos <= 0:
+        if detalle.cupos_solicitados <= 0:
             raise HTTPException(status_code=400, detail="Los cupos solicitados deben ser mayores a cero.")
         if detalle.id_tipo_practica in detalles_por_tipo:
             raise HTTPException(status_code=400, detail="No repitas el mismo tipo de práctica en una solicitud.")
         if detalle.id_tipo_practica not in tipos_config:
             raise HTTPException(status_code=400, detail="El tipo de práctica no pertenece a esta vacante.")
-        detalles_por_tipo[detalle.id_tipo_practica] = detalle.cupos
+        detalles_por_tipo[detalle.id_tipo_practica] = detalle.cupos_solicitados
 
     pendiente = (
         db.query(SolicitudAmpliacionCuposVacanteModel)

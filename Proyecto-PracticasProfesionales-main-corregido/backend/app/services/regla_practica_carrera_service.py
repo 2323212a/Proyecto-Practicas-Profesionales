@@ -29,21 +29,42 @@ def obtener_regla_practica_para_alumno(db: Session, alumno: AlumnoModel) -> Regl
         .first()
     )
     if regla is not None:
+        horas_requeridas = regla.horas_requeridas or 0
         return ReglaPracticaAlumno(
             periodo_requerido=regla.periodo_requerido,
             creditos_minimos=regla.creditos_minimos,
-            horas_requeridas=regla.horas_requeridas,
-            origen_regla="carrera",
+            horas_requeridas=horas_requeridas,
+            origen_regla="regla_practica_carrera" if horas_requeridas > 0 else "sin_configurar",
+            advertencia=(
+                None
+                if horas_requeridas > 0
+                else (
+                    "La regla de práctica para tu carrera no tiene horas requeridas configuradas. "
+                    "Solicita revisión al administrador."
+                )
+            ),
         )
 
     tipo = alumno.tipo_practica
     if tipo is None:
         return None
 
+    if tipo.horas_requeridas and tipo.horas_requeridas > 0:
+        return ReglaPracticaAlumno(
+            periodo_requerido=tipo.semestre_requerido or 1,
+            creditos_minimos=tipo.creditos_minimos or 0,
+            horas_requeridas=tipo.horas_requeridas,
+            origen_regla="tipo_practica",
+            advertencia="No hay regla específica configurada para esta carrera y tipo de práctica.",
+        )
+
     return ReglaPracticaAlumno(
         periodo_requerido=tipo.semestre_requerido or 1,
         creditos_minimos=tipo.creditos_minimos or 0,
-        horas_requeridas=tipo.horas_requeridas or 480,
-        origen_regla="tipo_practica",
-        advertencia="No hay regla especifica configurada para esta carrera y tipo de practica.",
+        horas_requeridas=0,
+        origen_regla="sin_configurar",
+        advertencia=(
+            "La regla de práctica para tu carrera no tiene horas requeridas configuradas. "
+            "Solicita revisión al administrador."
+        ),
     )

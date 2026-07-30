@@ -41,6 +41,8 @@ export interface AlumnoConfirmacion {
   id_asignacion: number | null;
   empresa_asignada: string | null;
   vacante_asignada: string | null;
+  es_rezagado: boolean;
+  motivo_rezago: string | null;
   vacantes_disponibles: VacanteConfirmacion[];
   preferencias: PreferenciaConfirmacion[];
 }
@@ -72,6 +74,7 @@ export interface ConfirmarAsignacionRequest {
   id_vacante: number;
   id_asesor?: number | null;
   tipo_asignacion?: string;
+  motivo?: string | null;
 }
 
 export interface RechazarSeleccionRequest {

@@ -182,8 +182,10 @@ export function AlumnoReportes() {
   };
   const espacios = useMemo(() => datos?.espacios ?? [], [datos?.espacios]);
   const horasActuales = datos?.horas_actuales ?? 0;
-  const horasMeta = datos?.horas_meta ?? 480;
-  const progresoHoras = Math.min(Math.round((horasActuales / horasMeta) * 100), 100);
+  const horasMeta = datos?.horas_meta ?? 0;
+  const progresoHoras = horasMeta > 0
+    ? Math.min(Math.round((horasActuales / horasMeta) * 100), 100)
+    : 0;
 
   const entregadosControlados = useMemo(
     () => espacios.filter((espacio) => espacio.reporte !== null).length,
@@ -202,6 +204,12 @@ export function AlumnoReportes() {
       {error && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
           {error}
+        </div>
+      )}
+
+      {data?.advertencia_regla && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+          {data.advertencia_regla}
         </div>
       )}
 

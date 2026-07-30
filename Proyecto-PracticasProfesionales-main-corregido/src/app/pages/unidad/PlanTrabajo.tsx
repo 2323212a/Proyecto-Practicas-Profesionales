@@ -348,7 +348,12 @@ export function PlanTrabajo() {
   const tramite = textoTramite(datos?.empresa.tipo_tramite);
   const motivoVacante = datos?.empresa.motivo_bloqueo_vacante ?? datos?.empresa.motivo_bloqueo ?? "No disponible en este momento.";
   const cuposIniciales = form.tipos_practica.reduce((total, tipo) => total + Number(tipo.cupos || 0), 0);
-  const cuposExcedidos = cuposIniciales > 3;
+  const cuposConfiguradosAntesDeEditar = vacanteEditando?.tipos_practica?.reduce(
+    (totalTipos, tipo) => totalTipos + Number(tipo.cupos || 0),
+    0,
+  ) ?? 0;
+  const limiteCuposFormulario = Math.max(3, cuposConfiguradosAntesDeEditar);
+  const cuposExcedidos = cuposIniciales > limiteCuposFormulario;
   const convocatoriaSeleccionada =
     convocatoriasDisponibles.find((convocatoria) => convocatoria.id_convocatoria === form.id_convocatoria) ??
     convocatorias.find((convocatoria) => convocatoria.id_convocatoria === form.id_convocatoria) ??
@@ -392,9 +397,7 @@ export function PlanTrabajo() {
   }
 
   function abrirModalAmpliacion(vacante: VacanteUnidad) {
-    const tipos = vacante.tipos_practica?.length
-      ? vacante.tipos_practica
-      : [{ id_tipo_practica: vacante.id_tipo_practica, nombre: vacante.tipo_practica, cupos: vacante.cupos }];
+    const tipos = vacante.tipos_practica ?? [];
     setVacanteAmpliacion(vacante);
     setAmpliacionForm({
       detalles: tipos.map((tipo) => ({ id_tipo_practica: tipo.id_tipo_practica, cupos_solicitados: 0 })),
@@ -428,9 +431,10 @@ export function PlanTrabajo() {
       cupos: vacante.cupos,
       aplica_todas_carreras: vacante.aplica_todas_carreras ?? true,
       ids_carrera: vacante.carreras?.map((carrera) => carrera.id_carrera) ?? [],
-      tipos_practica: vacante.tipos_practica?.length
-        ? vacante.tipos_practica.map((tipo) => ({ id_tipo_practica: tipo.id_tipo_practica, cupos: tipo.cupos }))
-        : [{ id_tipo_practica: vacante.id_tipo_practica, cupos: vacante.cupos }],
+      tipos_practica: (vacante.tipos_practica ?? []).map((tipo) => ({
+        id_tipo_practica: tipo.id_tipo_practica,
+        cupos: tipo.cupos,
+      })),
     });
     setMostrarFormulario(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1198,9 +1202,7 @@ export function PlanTrabajo() {
 
         <div className="divide-y divide-gray-100">
           {vacantesFiltradas.map((vacante: VacanteUnidad) => {
-            const tiposVacante = vacante.tipos_practica?.length
-              ? vacante.tipos_practica
-              : [{ id_tipo_practica: vacante.id_tipo_practica, nombre: vacante.tipo_practica, cupos: vacante.cupos }];
+            const tiposVacante = vacante.tipos_practica ?? [];
             const tieneAmpliacionPendiente = (vacante.solicitudes_ampliacion ?? []).some((solicitud) => solicitud.estado === "Pendiente");
             const puedeSolicitarAmpliacion =
               ["Pendiente", "PrePadron", "Activa"].includes(vacante.estado_vacante) &&
@@ -1262,7 +1264,9 @@ export function PlanTrabajo() {
                   <div className="grid sm:grid-cols-3 gap-3 mt-4">
                     <div className="border rounded-xl p-3">
                       <div className="text-xs text-gray-500">Cupos totales</div>
-                      <div className="font-bold text-[#0d2b5e]">{vacante.cupos}</div>
+                      <div className="font-bold text-[#0d2b5e]">
+                        {(vacante.tipos_practica ?? []).reduce((totalTipos, tipo) => totalTipos + tipo.cupos, 0)}
+                      </div>
                     </div>
                     <div className="border rounded-xl p-3">
                       <div className="text-xs text-gray-500">Periodo</div>

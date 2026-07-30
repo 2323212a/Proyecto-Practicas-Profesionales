@@ -30,6 +30,8 @@ export interface AlumnoLiberacion {
   estado_asignacion: string;
   horas_aprobadas: number;
   horas_meta: number;
+  origen_regla: "regla_practica_carrera" | "tipo_practica" | "sin_configurar";
+  advertencia_regla: string | null;
   reportes_pendientes: number;
   reportes_rechazados: number;
   incidencias_abiertas: number;

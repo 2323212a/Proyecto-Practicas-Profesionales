@@ -16,7 +16,7 @@ import type { AlumnoConfirmacion, AsesorInterno } from "../../../domain/coordina
 import { getApiErrorMessage } from "../../../shared/utils/apiError";
 
 import type { StatCard } from "../../../shared/types/ui";
-type EstadoFiltro = "pendientes" | "asignados" | "todos" | "sin_opciones";
+type EstadoFiltro = "pendientes" | "asignados" | "todos" | "rezagados";
 
 export function CoordinadorAsignaciones() {
   const [alumnos, setAlumnos] = useState<AlumnoConfirmacion[]>([]);
@@ -27,6 +27,7 @@ export function CoordinadorAsignaciones() {
   const [selecciones, setSelecciones] = useState<Record<number, string>>({});
   const [reasignaciones, setReasignaciones] = useState<Record<number, string>>({});
   const [motivosReasignacion, setMotivosReasignacion] = useState<Record<number, string>>({});
+  const [motivosRezagado, setMotivosRezagado] = useState<Record<number, string>>({});
   const [asesoresSeleccionados, setAsesoresSeleccionados] = useState<Record<number, string>>({});
   const [secretariaAcademica, setSecretariaAcademica] = useState("");
   const [guardandoSecretaria, setGuardandoSecretaria] = useState(false);
@@ -88,7 +89,7 @@ export function CoordinadorAsignaciones() {
       total: alumnos.length,
       asignados: alumnos.filter((alumno) => alumno.ya_asignado).length,
       pendientes: pendientes.length,
-      sinOpciones: pendientes.filter((alumno) => !tieneOpciones(alumno)).length,
+      rezagados: pendientes.filter((alumno) => alumno.es_rezagado).length,
     };
   }, [alumnos]);
 
@@ -109,9 +110,7 @@ export function CoordinadorAsignaciones() {
         estadoFiltro === "todos" ||
         (estadoFiltro === "pendientes" && !alumno.ya_asignado) ||
         (estadoFiltro === "asignados" && alumno.ya_asignado) ||
-        (estadoFiltro === "sin_opciones" &&
-          !alumno.ya_asignado &&
-          !tieneOpciones(alumno));
+        (estadoFiltro === "rezagados" && alumno.es_rezagado);
 
       return coincideBusqueda && coincideEstado;
     });
@@ -156,6 +155,16 @@ export function CoordinadorAsignaciones() {
     if (!valor) return;
 
     const [idEmpresa, idVacante] = valor.split(":").map(Number);
+    const esAsignacionRezagado = alumno.es_rezagado && !tieneOpciones(alumno);
+    const motivo = (motivosRezagado[alumno.id_alumno] ?? "").trim();
+    if (esAsignacionRezagado && motivo.length < 3) {
+      alert("Escribe el motivo u observación para asignar al alumno rezagado.");
+      return;
+    }
+    if (esAsignacionRezagado && !asesoresSeleccionados[alumno.id_alumno]) {
+      alert("Selecciona un asesor interno para el alumno rezagado.");
+      return;
+    }
 
     try {
       setGuardando(alumno.id_alumno);
@@ -166,7 +175,8 @@ export function CoordinadorAsignaciones() {
         id_asesor: asesoresSeleccionados[alumno.id_alumno]
           ? Number(asesoresSeleccionados[alumno.id_alumno])
           : null,
-        tipo_asignacion: tieneOpciones(alumno) ? "Normal" : "Rezagado",
+        tipo_asignacion: esAsignacionRezagado ? "Rezagado" : "Normal",
+        motivo: esAsignacionRezagado ? motivo : null,
       });
       await cargarDatos();
     } catch (err: unknown) {
@@ -268,7 +278,7 @@ export function CoordinadorAsignaciones() {
               ["Alumnos", resumen.total, Users],
               ["Pendientes", resumen.pendientes, AlertTriangle],
               ["Asignados", resumen.asignados, CheckCircle2],
-              ["Sin cupo", resumen.sinOpciones, Building2],
+              ["Rezagados", resumen.rezagados, Building2],
             ] satisfies StatCard[]).map(([titulo, valor, Icon]) => (
               <div
                 key={titulo}
@@ -364,7 +374,7 @@ export function CoordinadorAsignaciones() {
           >
             <option value="pendientes">Pendientes</option>
             <option value="asignados">Asignados</option>
-            <option value="sin_opciones">Sin opciones disponibles</option>
+            <option value="rezagados">Alumnos rezagados</option>
             <option value="todos">Todos</option>
           </select>
         </div>
@@ -373,12 +383,17 @@ export function CoordinadorAsignaciones() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="font-bold text-[#0d2b5e]">
-            Solicitudes de asignacion
+            {estadoFiltro === "rezagados" ? "Alumnos rezagados" : "Solicitudes de asignacion"}
           </h3>
           <span className="text-xs text-gray-500">
             {filtrados.length} registros
           </span>
         </div>
+        {estadoFiltro === "rezagados" && (
+          <div className="px-5 py-3 border-b border-orange-100 bg-orange-50 text-sm text-orange-800">
+            Alumnos con expediente aprobado que aún no tienen asignación activa.
+          </div>
+        )}
 
         {cargando ? (
           <div className="px-5 py-10 text-sm text-gray-500">
@@ -405,6 +420,11 @@ export function CoordinadorAsignaciones() {
                         Asignado
                       </span>
                     )}
+                    {alumno.es_rezagado && (
+                      <span className="text-xs px-2 py-1 rounded-full bg-orange-50 text-orange-700">
+                        Rezagado
+                      </span>
+                    )}
                   </div>
                   <div className="text-sm text-gray-500">
                     {alumno.matricula}
@@ -414,6 +434,9 @@ export function CoordinadorAsignaciones() {
                   <div className="text-xs mt-3 text-gray-400">
                     Estado: {alumno.estado_alumno}
                   </div>
+                  {alumno.es_rezagado && alumno.motivo_rezago && (
+                    <div className="text-xs mt-2 text-orange-700">{alumno.motivo_rezago}</div>
+                  )}
                 </div>
 
                 <div>
@@ -431,7 +454,10 @@ export function CoordinadorAsignaciones() {
                       {alumno.id_asignacion && (
                         <div className="border-t border-green-100 pt-3 space-y-2">
                           <div className="text-xs font-semibold text-green-900">
-                            Cambiar empresa/vacante
+                            Reasignación extraordinaria
+                          </div>
+                          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                            Esta acción cancelará la asignación actual y creará una nueva asignación extraordinaria.
                           </div>
                           {alumno.vacantes_disponibles.length > 0 ? (
                             <>
@@ -461,7 +487,7 @@ export function CoordinadorAsignaciones() {
                                     [alumno.id_asignacion as number]: event.target.value,
                                   }))
                                 }
-                                placeholder="Motivo del cambio"
+                                placeholder="Motivo obligatorio"
                                 className="w-full border border-green-200 rounded-xl px-3 py-2 text-xs outline-none bg-white"
                               />
                             </>
@@ -567,7 +593,7 @@ export function CoordinadorAsignaciones() {
                         className="bg-[#1565c0] text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:bg-gray-300"
                       >
                         <RotateCcw className="w-4 h-4" />
-                        {reasignando === alumno.id_asignacion ? "Cambiando..." : "Cambiar empresa"}
+                        {reasignando === alumno.id_asignacion ? "Reasignando..." : "Reasignar alumno"}
                       </button>
                     </>
                   )}
@@ -583,23 +609,50 @@ export function CoordinadorAsignaciones() {
                           }))
                         }
                         className="border rounded-xl px-3 py-2 text-sm outline-none"
-                        disabled={!tieneOpciones(alumno)}
+                        disabled={!tieneOpciones(alumno) && alumno.vacantes_disponibles.length === 0}
                       >
-                        <option value="">Seleccionar vacante</option>
-                        {alumno.preferencias.flatMap((preferencia) =>
-                          preferencia.estado_seleccion !== "Pendiente"
-                            ? []
-                            : preferencia.vacantes.map((vacante) => (
-                            <option
-                              key={`${preferencia.id_empresa}:${vacante.id_vacante}`}
-                              value={`${preferencia.id_empresa}:${vacante.id_vacante}`}
-                            >
-                              {preferencia.prioridad}. {preferencia.empresa} -{" "}
-                              {vacante.titulo} ({vacante.cupos_disponibles} de {vacante.cupos})
-                            </option>
-                          ))
-                        )}
+                        <option value="">
+                          {tieneOpciones(alumno) ? "Seleccionar por prioridad" : "Asignación manual de rezagado"}
+                        </option>
+                        {tieneOpciones(alumno)
+                          ? alumno.preferencias.flatMap((preferencia) =>
+                              preferencia.estado_seleccion !== "Pendiente"
+                                ? []
+                                : preferencia.vacantes.map((vacante) => (
+                                    <option
+                                      key={`${preferencia.id_empresa}:${vacante.id_vacante}`}
+                                      value={`${preferencia.id_empresa}:${vacante.id_vacante}`}
+                                    >
+                                      {preferencia.prioridad}. {preferencia.empresa} -{" "}
+                                      {vacante.titulo} ({vacante.cupos_disponibles} de {vacante.cupos})
+                                    </option>
+                                  ))
+                            )
+                          : alumno.vacantes_disponibles.map((vacante) => (
+                              <option
+                                key={`rezagado:${vacante.id_vacante}`}
+                                value={`${vacante.id_empresa}:${vacante.id_vacante}`}
+                              >
+                                {vacante.empresa} - {vacante.titulo} ({vacante.cupos_disponibles} de {vacante.cupos})
+                              </option>
+                            ))}
                       </select>
+
+                      {alumno.es_rezagado && !tieneOpciones(alumno) && (
+                        <textarea
+                          value={motivosRezagado[alumno.id_alumno] ?? ""}
+                          onChange={(event) =>
+                            setMotivosRezagado((actuales) => ({
+                              ...actuales,
+                              [alumno.id_alumno]: event.target.value,
+                            }))
+                          }
+                          maxLength={1000}
+                          rows={3}
+                          placeholder="Motivo u observación obligatoria"
+                          className="border rounded-xl px-3 py-2 text-sm outline-none resize-none"
+                        />
+                      )}
 
                       <select
                         value={asesoresSeleccionados[alumno.id_alumno] ?? ""}
@@ -623,6 +676,10 @@ export function CoordinadorAsignaciones() {
                         onClick={() => confirmar(alumno)}
                         disabled={
                           !selecciones[alumno.id_alumno] ||
+                          (alumno.es_rezagado &&
+                            !tieneOpciones(alumno) &&
+                            (!motivosRezagado[alumno.id_alumno]?.trim() ||
+                              !asesoresSeleccionados[alumno.id_alumno])) ||
                           guardando === alumno.id_alumno
                         }
                         className="bg-[#1565c0] text-white rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 disabled:bg-gray-300"
@@ -630,7 +687,9 @@ export function CoordinadorAsignaciones() {
                         <Save className="w-4 h-4" />
                         {guardando === alumno.id_alumno
                           ? "Confirmando..."
-                          : "Confirmar asignacion"}
+                          : alumno.es_rezagado && !tieneOpciones(alumno)
+                            ? "Asignar rezagado"
+                            : "Confirmar asignacion"}
                       </button>
                     </>
                   )}

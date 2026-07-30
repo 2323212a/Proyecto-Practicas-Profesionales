@@ -115,6 +115,12 @@ export function AlumnoLiberacion() {
         <div className="bg-white rounded-2xl border p-5"><p className="text-sm text-gray-500">Incidencias abiertas</p><p className="text-2xl font-bold text-[#0d2b5e]">{alumno.incidencias_abiertas}</p></div>
       </div>
 
+      {alumno.advertencia_regla && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+          {alumno.advertencia_regla}
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
         <h3 className="font-bold text-[#0d2b5e] mb-4">Requisitos de liberacion</h3>
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">

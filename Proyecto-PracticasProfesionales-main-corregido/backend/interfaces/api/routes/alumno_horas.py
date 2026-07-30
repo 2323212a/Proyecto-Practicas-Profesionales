@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.regla_practica_carrera_service import obtener_regla_practica_para_alumno
 from app.services.notificacion_service import crear_notificacion
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import obtener_id_alumno_actual, requerir_alumno_actual_o_roles
+from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.horas import HorasModel
 from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
@@ -86,16 +88,35 @@ def crear_mis_horas_alumno(
 
 @router.get("/{id_alumno:int}")
 def listar_horas_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
+    alumno = (
+        db.query(AlumnoModel)
+        .options(joinedload(AlumnoModel.tipo_practica))
+        .filter(AlumnoModel.id_alumno == id_alumno)
+        .first()
+    )
+    if alumno is None:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    regla_practica = obtener_regla_practica_para_alumno(db, alumno)
+    total_meta = regla_practica.horas_requeridas if regla_practica is not None else 0
+    origen_regla = regla_practica.origen_regla if regla_practica is not None else "sin_configurar"
+    advertencia_regla = (
+        regla_practica.advertencia
+        if regla_practica is not None
+        else "No tienes un tipo de práctica configurado. Solicita revisión al administrador."
+    )
+
     asignacion = _asignacion_activa(db, id_alumno)
     if asignacion is None:
         return {
             "asignacion": None,
             "resumen": {
-                "total_meta": 480,
+                "total_meta": total_meta,
                 "aprobadas": 0,
                 "pendientes": 0,
                 "rechazadas": 0,
                 "progreso": 0,
+                "origen_regla": origen_regla,
+                "advertencia_regla": advertencia_regla,
             },
             "horas": [],
             "semanas": [],
@@ -117,7 +138,6 @@ def listar_horas_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
         for item in horas
         if item.estado_horas == "Rechazada"
     )
-    total_meta = 480
     progreso = round((aprobadas / total_meta) * 100) if total_meta else 0
 
     semanas_map = defaultdict(float)
@@ -139,6 +159,8 @@ def listar_horas_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
             "pendientes": pendientes,
             "rechazadas": rechazadas,
             "progreso": progreso,
+            "origen_regla": origen_regla,
+            "advertencia_regla": advertencia_regla,
         },
         "horas": [_horas_response(item) for item in horas],
         "semanas": [

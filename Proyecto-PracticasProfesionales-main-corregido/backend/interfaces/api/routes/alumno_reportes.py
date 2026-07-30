@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.services.regla_practica_carrera_service import obtener_regla_practica_para_alumno
 from app.services.notificacion_service import crear_notificacion
 from app.services.upload_security import normalizar_nombre_archivo, resolver_archivo_en_uploads, validar_documento_usuario
 from infrastructure.database.dependencies import obtener_db
@@ -33,18 +34,14 @@ router = APIRouter(
 )
 UPLOADS_DIR = Path(__file__).resolve().parents[3] / "uploads"
 UPLOAD_DIR = UPLOADS_DIR / "expedientes"
-HORAS_META = 480
-
 REPORTES_CONFIG = {
     "Parcial": {
         "titulo": "Reporte parcial",
         "descripcion": "Se habilita cuando cumples la mitad de tus horas aprobadas.",
-        "horas_requeridas": HORAS_META // 2,
     },
     "Final": {
         "titulo": "Reporte final",
         "descripcion": "Se habilita al completar tus horas de practicas.",
-        "horas_requeridas": HORAS_META,
     },
 }
 
@@ -213,6 +210,7 @@ def _file_response_segura(ruta_archivo: str | None, nombre_archivo: str | None):
 def _espacios_response(
     reportes: list[ReporteModel],
     horas_actuales: float,
+    horas_meta: int,
     puede_subir: bool,
     motivo_fase: str | None,
 ):
@@ -220,7 +218,7 @@ def _espacios_response(
     espacios = []
     for tipo, config in REPORTES_CONFIG.items():
         reporte = por_tipo.get(tipo)
-        horas_requeridas = config["horas_requeridas"]
+        horas_requeridas = horas_meta / 2 if tipo == "Parcial" else horas_meta
         desbloqueado = puede_subir and horas_actuales >= horas_requeridas
         motivo_bloqueo = None
         puede_enviar = desbloqueado
@@ -292,9 +290,22 @@ def descargar_reporte_alumno_seguro(
 
 @router.get("/{id_alumno:int}")
 def listar_reportes_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
-    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == id_alumno).first()
+    alumno = (
+        db.query(AlumnoModel)
+        .options(joinedload(AlumnoModel.tipo_practica))
+        .filter(AlumnoModel.id_alumno == id_alumno)
+        .first()
+    )
     if alumno is None:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    regla_practica = obtener_regla_practica_para_alumno(db, alumno)
+    horas_meta = regla_practica.horas_requeridas if regla_practica is not None else 0
+    origen_regla = regla_practica.origen_regla if regla_practica is not None else "sin_configurar"
+    advertencia_regla = (
+        regla_practica.advertencia
+        if regla_practica is not None
+        else "No tienes un tipo de práctica configurado. Solicita revisión al administrador."
+    )
 
     asignacion = _asignacion_activa(db, id_alumno)
     puede_subir, motivo_bloqueo = _validar_fases_iniciales(db, alumno, asignacion)
@@ -311,7 +322,9 @@ def listar_reportes_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
         "motivo_bloqueo": motivo_bloqueo,
         "estado_alumno": alumno.estado_alumno,
         "horas_actuales": horas_actuales,
-        "horas_meta": HORAS_META,
+        "horas_meta": horas_meta,
+        "origen_regla": origen_regla,
+        "advertencia_regla": advertencia_regla,
         "asignacion": (
             {
                 "id_asignacion": asignacion.id_asignacion,
@@ -329,7 +342,7 @@ def listar_reportes_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
             "aprobados": sum(1 for reporte in reportes if reporte.estado_reporte == "Aprobado"),
             "rechazados": sum(1 for reporte in reportes if reporte.estado_reporte == "Rechazado"),
         },
-        "espacios": _espacios_response(reportes, horas_actuales, puede_subir, motivo_bloqueo),
+        "espacios": _espacios_response(reportes, horas_actuales, horas_meta, puede_subir, motivo_bloqueo),
         "reportes": reportes_serializados,
     }
 
@@ -340,7 +353,12 @@ def subir_reporte_alumno(
     datos: SubirReporteAlumnoRequest,
     db: Session = Depends(obtener_db),
 ):
-    alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == id_alumno).first()
+    alumno = (
+        db.query(AlumnoModel)
+        .options(joinedload(AlumnoModel.tipo_practica))
+        .filter(AlumnoModel.id_alumno == id_alumno)
+        .first()
+    )
     if alumno is None:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
 
@@ -354,7 +372,9 @@ def subir_reporte_alumno(
         raise HTTPException(status_code=400, detail="El reporte debe ser Parcial o Final")
 
     horas_actuales = _horas_aprobadas(db, asignacion.id_asignacion)
-    horas_requeridas = REPORTES_CONFIG[tipo]["horas_requeridas"]
+    regla_practica = obtener_regla_practica_para_alumno(db, alumno)
+    horas_meta = regla_practica.horas_requeridas if regla_practica is not None else 0
+    horas_requeridas = horas_meta / 2 if tipo == "Parcial" else horas_meta
     if horas_actuales < horas_requeridas:
         raise HTTPException(status_code=403, detail=f"Necesitas {horas_requeridas:g} horas aprobadas para enviar este reporte")
 

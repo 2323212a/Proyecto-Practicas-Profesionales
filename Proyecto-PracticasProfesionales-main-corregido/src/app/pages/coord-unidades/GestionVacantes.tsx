@@ -167,6 +167,10 @@ export function GestionVacantes() {
 
   async function revisarAmpliacion(solicitud: NonNullable<VacanteRevision["solicitudes_ampliacion"]>[number], accion: "aprobar" | "rechazar") {
     const observaciones = window.prompt("Observaciones") ?? "";
+    if (accion === "rechazar" && observaciones.trim().length < 3) {
+      alert("Escribe el motivo del rechazo.");
+      return;
+    }
     const cupos_aprobados: Record<number, number> = {};
     if (accion === "aprobar") {
       for (const detalle of solicitud.detalles ?? []) {
@@ -238,9 +242,7 @@ export function GestionVacantes() {
       if (descripcion) formData.append("descripcion", descripcion);
       if (idConvocatoria) formData.append("id_convocatoria", String(Number(idConvocatoria)));
       formData.append("archivo", archivoFormato);
-      await apiClient.post("/coord-unidades/vacantes/formatos-plan-trabajo", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await apiClient.post("/coord-unidades/vacantes/formatos-plan-trabajo", formData);
       setFormatoForm({ nombre: "", descripcion: "", id_convocatoria: "" });
       setArchivoFormato(null);
       setArchivoFormatoKey((value) => value + 1);
@@ -445,7 +447,7 @@ export function GestionVacantes() {
                     Cupo
                   </div>
                   <p className="font-bold text-[#0d2b5e] mt-1">
-                    {vacante.cupos}
+                    {(vacante.tipos_practica ?? []).reduce((total, tipo) => total + tipo.cupos, 0)}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {vacante.cupo_ocupado} ocupado(s) por alumnos
@@ -473,7 +475,7 @@ export function GestionVacantes() {
               <div className="mt-4 border rounded-xl p-4">
                 <div className="text-xs font-semibold text-gray-500">Cupos por tipo</div>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {(vacante.tipos_practica?.length ? vacante.tipos_practica : [{ id_tipo_practica: vacante.id_tipo_practica, nombre: vacante.tipo_practica, cupos: vacante.cupos, cupos_usados: vacante.cupo_ocupado, cupos_disponibles: Math.max(vacante.cupos - vacante.cupo_ocupado, 0) }]).map((tipo) => (
+                  {(vacante.tipos_practica ?? []).map((tipo) => (
                     <span key={tipo.id_tipo_practica} className="bg-blue-50 text-blue-700 rounded-full px-3 py-1 text-xs">
                       {tipo.nombre ?? "Tipo"}: {tipo.cupos_disponibles}/{tipo.cupos}
                     </span>
@@ -496,7 +498,7 @@ export function GestionVacantes() {
                       <p className="text-xs text-gray-600 mt-1">
                         {vacante.plan_trabajo
                           ? `${vacante.plan_trabajo.nombre_archivo} · ${vacante.plan_trabajo.estado_documento}`
-                          : "La empresa todavía no sube el Plan de Trabajo."}
+                          : "Sin Plan de Trabajo"}
                       </p>
                     </div>
                   </div>
@@ -507,7 +509,7 @@ export function GestionVacantes() {
                       className="flex items-center gap-1 border border-green-200 bg-white text-green-700 rounded-lg px-3 py-1.5 text-xs font-semibold"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Descargar
+                      Descargar Plan de Trabajo
                     </button>
                   )}
                 </div>

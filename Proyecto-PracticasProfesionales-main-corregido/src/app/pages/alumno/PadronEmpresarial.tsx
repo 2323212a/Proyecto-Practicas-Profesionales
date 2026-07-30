@@ -12,7 +12,6 @@ import {
   Phone,
   Save,
   Search,
-  Star,
   X,
 } from "lucide-react";
 
@@ -51,8 +50,8 @@ type ElegibilidadAcademica = {
     periodo_requerido: number;
     creditos_minimos: number;
     horas_requeridas: number;
-    origen_regla: "carrera" | "tipo_practica";
-    advertencia?: string | null;
+    origen_regla: "regla_practica_carrera" | "tipo_practica" | "sin_configurar";
+    advertencia_regla?: string | null;
   } | null;
 };
 
@@ -78,11 +77,11 @@ export function PadronEmpresarial() {
   const [seleccionadas, setSeleccionadas] = useState<number[]>([]);
   const [solicitudes, setSolicitudes] = useState<SeleccionEmpresaAlumno[]>([]);
   const [detalle, setDetalle] = useState<EmpresaGrupo | null>(null);
-  const [vacantePriorizada, setVacantePriorizada] = useState<number | null>(null);
   const [puedeSeleccionar, setPuedeSeleccionar] = useState(false);
   const [motivoBloqueo, setMotivoBloqueo] = useState<string | null>(null);
   const [elegibilidad, setElegibilidad] = useState<ElegibilidadAcademica | null>(null);
-  const [estadoAlumno, setEstadoAlumno] = useState("");
+  const [estadoExpediente, setEstadoExpediente] = useState<string | null>(null);
+  const [hayPadronPublicado, setHayPadronPublicado] = useState(false);
   const [empresaAsignada, setEmpresaAsignada] = useState<EmpresaAsignadaAlumno | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [cargando, setCargando] = useState(true);
@@ -108,8 +107,13 @@ export function PadronEmpresarial() {
       const data = await gestionPadronUseCase.obtener(idAlumno);
       setPuedeSeleccionar(data.puede_seleccionar);
       setMotivoBloqueo(data.motivo_bloqueo);
-      setElegibilidad({ alumno: data.alumno, tipo_practica: data.tipo_practica });
-      setEstadoAlumno(data.estado_alumno);
+      setElegibilidad({
+        alumno: data.alumno,
+        tipo_practica: data.tipo_practica,
+        regla_practica: data.regla_practica,
+      });
+      setEstadoExpediente(data.estado_expediente);
+      setHayPadronPublicado(data.hay_padron_publicado);
       setEmpresaAsignada(data.empresa_asignada);
       setVacantes(data.vacantes);
       setSolicitudes(data.selecciones);
@@ -174,12 +178,11 @@ export function PadronEmpresarial() {
     if (!puedeSeleccionar) return;
     if (seleccionadas.includes(idVacante)) {
       setSeleccionadas(seleccionadas.filter((id) => id !== idVacante));
-      if (vacantePriorizada === idVacante) setVacantePriorizada(null);
       return;
     }
 
     const vacante = vacantes.find((item) => item.id_vacante === idVacante);
-    if (!vacante || cuposDisponibles(vacante) <= 0 || seleccionadas.length >= 3) return;
+    if (!vacante || cuposDisponibles(vacante) <= 0 || seleccionadas.length >= 2) return;
     setSeleccionadas([...seleccionadas, idVacante]);
   }
 
@@ -206,9 +209,9 @@ export function PadronEmpresarial() {
           id_vacante: idVacante,
           prioridad: index + 1,
         })),
-        vacantePriorizada,
+        seleccionadas[0] ?? null,
       );
-      alert("Preferencias guardadas correctamente");
+      alert("Selección guardada correctamente.");
       await cargarPadron();
     } catch (err) {
       console.error(err);
@@ -223,10 +226,14 @@ export function PadronEmpresarial() {
     .filter(Boolean) as VacantePadron[];
   const mensajePadronVacio =
     puedeSeleccionar && vacantes.length === 0
-      ? "El padron aun no ha sido publicado por Coordinacion de Unidades Receptoras."
+      ? (
+          hayPadronPublicado
+            ? "No hay vacantes disponibles compatibles con tu carrera y tipo de práctica."
+            : "El padrón aún no ha sido publicado por Coordinación de Unidades Receptoras."
+        )
       : "No hay vacantes disponibles con los filtros seleccionados.";
 
-  if (!cargando && estadoAlumno === "Asignado") {
+  if (!cargando && empresaAsignada) {
     return (
       <div className="space-y-6">
         <div>
@@ -294,7 +301,7 @@ export function PadronEmpresarial() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#0d2b5e]">Padron Empresarial</h1>
-        <p className="text-gray-500 text-sm mt-1">Consulta vacantes activas y selecciona hasta 3 opciones para tus practicas profesionales.</p>
+        <p className="text-gray-500 text-sm mt-1">Consulta vacantes activas y selecciona hasta 2 opciones para tus prácticas profesionales.</p>
       </div>
 
       {error && <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">{error}</div>}
@@ -316,7 +323,10 @@ export function PadronEmpresarial() {
           <AlertTriangle className="w-5 h-5 text-orange-600 mt-0.5" />
           <div className="flex-1">
             <div className="font-semibold text-orange-700 text-sm">Proceso no disponible</div>
-            <div className="text-orange-700 text-xs mt-1">{motivoBloqueo} Estado actual: {estadoAlumno || "Sin estado"}.</div>
+            <div className="text-orange-700 text-xs mt-1">{motivoBloqueo}</div>
+            {estadoExpediente && !motivoBloqueo?.includes("Estado actual:") && (
+              <div className="text-orange-700 text-xs mt-1">Estado documental: {estadoExpediente}.</div>
+            )}
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4 text-xs">
               <DatoElegibilidad titulo="Tipo de practica" valor={elegibilidad?.tipo_practica?.nombre ?? "Sin asignar"} />
               <DatoElegibilidad titulo="Periodo" valor={elegibilidad?.alumno?.periodo_practica ?? "Sin registrar"} />
@@ -334,10 +344,16 @@ export function PadronEmpresarial() {
               />
               <DatoElegibilidad titulo="Horas requeridas" valor={String(requisitoPractica?.horas_requeridas ?? elegibilidad?.tipo_practica?.horas_requeridas ?? "Sin configurar")} />
             </div>
-            {requisitoPractica?.advertencia && (
-              <div className="text-xs text-orange-700 mt-3">{requisitoPractica.advertencia}</div>
+            {requisitoPractica?.advertencia_regla && (
+              <div className="text-xs text-orange-700 mt-3">{requisitoPractica.advertencia_regla}</div>
             )}
           </div>
+        </div>
+      )}
+
+      {puedeSeleccionar && requisitoPractica?.advertencia_regla && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-xs text-orange-700">
+          {requisitoPractica.advertencia_regla}
         </div>
       )}
 
@@ -384,31 +400,27 @@ export function PadronEmpresarial() {
         <div className="space-y-6">
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sticky top-24">
             <h3 className="font-bold text-[#0d2b5e] mb-2">Mis opciones</h3>
-            <p className="text-sm text-gray-500 mb-5">Selecciona hasta 3 vacantes en orden de preferencia.</p>
+            <p className="text-sm text-gray-500 mb-5">Selecciona hasta 2 vacantes en orden de preferencia.</p>
 
             <div className="space-y-3">
-              {[0, 1, 2].map((i) => {
+              {[0, 1].map((i) => {
                 const vacante = opciones[i];
-                const priorizada = vacante && vacantePriorizada === vacante.id_vacante;
                 return (
-                  <div key={i} className={`border rounded-xl p-4 flex items-center gap-3 ${priorizada ? "bg-yellow-50 border-yellow-300" : "bg-white"}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${priorizada ? "bg-yellow-100 text-yellow-700" : "bg-blue-50 text-[#1565c0]"}`}>
-                      {priorizada ? <Star className="w-4 h-4" /> : i + 1}
+                  <div key={i} className="border rounded-xl p-4 flex items-center gap-3 bg-white">
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold bg-blue-50 text-[#1565c0]">
+                      {i + 1}
                     </div>
                     <div className="flex-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#1565c0]">
+                        {i === 0 ? "Primera opción" : "Segunda opción"}
+                      </p>
                       {vacante ? (
                         <>
                           <p className="font-semibold text-[#0d2b5e] text-sm">{vacante.titulo}</p>
                           <p className="text-xs text-gray-500">{vacante.empresa}</p>
-                          <button
-                            onClick={() => setVacantePriorizada(vacantePriorizada === vacante.id_vacante ? null : vacante.id_vacante)}
-                            className="text-xs text-yellow-700 font-semibold mt-1"
-                          >
-                            {priorizada ? "Quitar prioridad" : "Marcar priorizada"}
-                          </button>
                         </>
                       ) : (
-                        <p className="text-sm text-gray-400">Opcion pendiente</p>
+                        <p className="text-sm text-gray-400">{i === 0 ? "Primera opción" : "Segunda opción"}</p>
                       )}
                     </div>
                   </div>
@@ -418,7 +430,7 @@ export function PadronEmpresarial() {
 
             <button
               onClick={guardarPreferencias}
-              disabled={guardando || seleccionadas.length === 0 || !puedeSeleccionar}
+              disabled={guardando || seleccionadas.length === 0 || seleccionadas.length > 2 || !puedeSeleccionar}
               className="mt-5 w-full bg-[#1565c0] text-white rounded-xl py-2 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-4 h-4" />
@@ -510,7 +522,7 @@ function EmpresaCard({
           const selected = seleccionadas.includes(vacante.id_vacante);
           const solicitud = solicitudesPorVacante[vacante.id_vacante];
           const sinCupo = cuposDisponibles(vacante) <= 0;
-          const disabled = !puedeSeleccionar || (!selected && (sinCupo || seleccionadas.length >= 3));
+          const disabled = !puedeSeleccionar || (!selected && (sinCupo || seleccionadas.length >= 2));
           return (
             <div key={vacante.id_vacante} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
               <div className="flex items-start justify-between gap-3">
@@ -590,7 +602,7 @@ function DetalleEmpresa({
           <div className="space-y-3 mt-3">
             {empresa.vacantes.map((vacante) => {
               const selected = seleccionadas.includes(vacante.id_vacante);
-              const disabled = !puedeSeleccionar || (!selected && cuposDisponibles(vacante) <= 0);
+              const disabled = !puedeSeleccionar || (!selected && (cuposDisponibles(vacante) <= 0 || seleccionadas.length >= 2));
               return (
                 <div key={vacante.id_vacante} className="border rounded-xl p-4">
                   <div className="flex items-start justify-between gap-3">

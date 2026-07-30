@@ -41,7 +41,7 @@ export interface IncidenciaPractica {
   alumno: string;
   matricula: string | null;
   empresa: string;
-  reportante: "Alumno" | "Empresa" | "Docente" | "Coordinacion";
+  reportante: "Alumno" | "Empresa" | "Asesor" | "Coordinacion";
   tipo_incidencia: string;
   prioridad: PrioridadIncidencia;
   descripcion: string;

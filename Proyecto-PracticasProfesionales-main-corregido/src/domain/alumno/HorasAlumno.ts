@@ -12,6 +12,8 @@ export interface ResumenHorasAlumno {
   pendientes: number;
   rechazadas: number;
   progreso: number;
+  origen_regla: "regla_practica_carrera" | "tipo_practica" | "sin_configurar";
+  advertencia_regla: string | null;
 }
 
 export interface RegistroHorasAlumno {

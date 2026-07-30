@@ -58,6 +58,10 @@ export interface PadronAlumnoResponse {
   puede_seleccionar: boolean;
   motivo_bloqueo: string | null;
   estado_alumno: string;
+  estado_proceso: string;
+  estado_expediente: "Pendiente" | "En Revisión" | "Aprobado" | "Rechazado" | null;
+  documentacion_aprobada: boolean;
+  hay_padron_publicado: boolean;
   alumno?: {
     semestre: number | null;
     creditos_aprobados: number;
@@ -74,8 +78,8 @@ export interface PadronAlumnoResponse {
     periodo_requerido: number;
     creditos_minimos: number;
     horas_requeridas: number;
-    origen_regla: "carrera" | "tipo_practica";
-    advertencia?: string | null;
+    origen_regla: "regla_practica_carrera" | "tipo_practica" | "sin_configurar";
+    advertencia_regla?: string | null;
   } | null;
   convocatoria: {
     id_convocatoria: number;

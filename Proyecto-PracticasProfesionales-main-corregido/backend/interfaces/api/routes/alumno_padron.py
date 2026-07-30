@@ -32,27 +32,31 @@ router = APIRouter(
 
 class PreferenciaVacante(BaseModel):
     id_vacante: int
-    prioridad: int = Field(ge=1, le=3)
+    prioridad: int = Field(ge=1, le=2)
 
 
 class GuardarPreferenciasRequest(BaseModel):
-    preferencias: list[PreferenciaVacante] = Field(min_length=1, max_length=3)
+    preferencias: list[PreferenciaVacante] = Field(min_length=1, max_length=2)
     id_vacante_prioritaria: int | None = None
 
 
-def _expediente_actual_aprobado(db: Session, alumno: AlumnoModel) -> ExpedienteModel | None:
+def _expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel | None:
     return (
         db.query(ExpedienteModel)
         .join(ConvocatoriaModel, ConvocatoriaModel.id_convocatoria == ExpedienteModel.id_convocatoria)
         .filter(
             ExpedienteModel.id_alumno == alumno.id_alumno,
-            ExpedienteModel.estado_expediente == "Aprobado",
             ConvocatoriaModel.estado == "Activa",
             ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
         )
         .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ExpedienteModel.fecha_creacion.desc())
         .first()
     )
+
+
+def _expediente_actual_aprobado(db: Session, alumno: AlumnoModel) -> ExpedienteModel | None:
+    expediente = _expediente_actual(db, alumno)
+    return expediente if expediente is not None and expediente.estado_expediente == "Aprobado" else None
 
 
 def _cupos_usados(db: Session, id_vacante: int, id_tipo_practica: int | None = None) -> int:
@@ -82,16 +86,7 @@ def _config_tipo_vacante(db: Session, vacante: VacanteModel, id_tipo_practica: i
         )
         .first()
     )
-    if config is not None:
-        return config
-    if vacante.id_tipo_practica == id_tipo_practica:
-        return VacanteTipoPracticaModel(
-            id_vacante=vacante.id_vacante,
-            id_tipo_practica=id_tipo_practica,
-            cupos=vacante.cupos,
-            activo=True,
-        )
-    return None
+    return config
 
 
 def _vacante_permite_carrera(db: Session, vacante: VacanteModel, id_carrera: int | None) -> bool:
@@ -168,7 +163,7 @@ def _validar_elegibilidad_practica(db: Session, alumno: AlumnoModel):
                 "creditos_minimos": regla.creditos_minimos,
                 "horas_requeridas": regla.horas_requeridas,
                 "origen_regla": regla.origen_regla,
-                "advertencia": regla.advertencia,
+                "advertencia_regla": regla.advertencia,
             }
             if regla
             else None
@@ -272,12 +267,22 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
     if alumno is None:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
 
-    expediente_actual = _expediente_actual_aprobado(db, alumno)
+    expediente_actual = _expediente_actual(db, alumno)
     convocatoria = expediente_actual.convocatoria if expediente_actual else None
-    vacantes = _query_vacantes_compatibles(
-        db,
-        alumno,
-        convocatoria.id_convocatoria if convocatoria else None,
+    expediente_aprobado = expediente_actual is not None and expediente_actual.estado_expediente == "Aprobado"
+    hay_padron_publicado = bool(
+        convocatoria is not None
+        and db.query(VacanteModel)
+        .filter(
+            VacanteModel.id_convocatoria == convocatoria.id_convocatoria,
+            VacanteModel.estado_vacante == "Activa",
+        )
+        .first()
+    )
+    vacantes = (
+        _query_vacantes_compatibles(db, alumno, convocatoria.id_convocatoria)
+        if expediente_aprobado and convocatoria is not None
+        else []
     )
     vacantes = [
         vacante
@@ -295,7 +300,10 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
     selecciones = (
         db.query(SeleccionEmpresaModel)
         .options(joinedload(SeleccionEmpresaModel.vacante).joinedload(VacanteModel.empresa))
-        .filter(SeleccionEmpresaModel.id_alumno == id_alumno)
+        .filter(
+            SeleccionEmpresaModel.id_alumno == id_alumno,
+            SeleccionEmpresaModel.prioridad <= 2,
+        )
         .order_by(SeleccionEmpresaModel.prioridad.asc())
         .all()
     )
@@ -316,7 +324,6 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
     )
 
     elegibilidad = _validar_elegibilidad_practica(db, alumno)
-    expediente_aprobado = expediente_actual is not None
     ventana_seleccion_abierta = False
     motivo_calendario = None
     if convocatoria is not None:
@@ -330,7 +337,14 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
     if asignacion is not None:
         motivo_bloqueo = "Ya tienes una empresa asignada para esta convocatoria."
     elif not expediente_aprobado:
-        motivo_bloqueo = "Tu expediente documental debe estar aprobado por coordinacion antes de seleccionar vacante."
+        motivo_bloqueo = (
+            "No tienes expediente documental registrado para esta convocatoria."
+            if expediente_actual is None
+            else (
+                "Tu expediente documental aún no está aprobado por Coordinación. "
+                f"Estado actual: {expediente_actual.estado_expediente}."
+            )
+        )
     elif not ventana_seleccion_abierta:
         motivo_bloqueo = motivo_calendario
     elif not elegibilidad["elegible"]:
@@ -341,8 +355,17 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
         "puede_seleccionar": puede_seleccionar,
         "motivo_bloqueo": motivo_bloqueo,
         "estado_alumno": alumno.estado_alumno,
+        "estado_proceso": (
+            "Asignado"
+            if asignacion is not None
+            else ("Selección habilitada" if puede_seleccionar else "Bloqueado")
+        ),
+        "estado_expediente": expediente_actual.estado_expediente if expediente_actual else None,
+        "documentacion_aprobada": expediente_aprobado,
+        "hay_padron_publicado": hay_padron_publicado,
         "alumno": elegibilidad["alumno"],
         "tipo_practica": elegibilidad["tipo_practica"],
+        "regla_practica": elegibilidad["regla_practica"],
         "convocatoria": (
             {
                 "id_convocatoria": convocatoria.id_convocatoria,
@@ -399,13 +422,13 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
                 "telefono": vacante.empresa.telefono if vacante.empresa else None,
                 "id_convocatoria": vacante.id_convocatoria,
                 "convocatoria": vacante.convocatoria.nombre if vacante.convocatoria else None,
-                "id_tipo_practica": vacante.id_tipo_practica,
-                "tipo_practica": vacante.tipo_practica.nombre if vacante.tipo_practica else None,
+                "id_tipo_practica": alumno.id_tipo_practica,
+                "tipo_practica": alumno.tipo_practica.nombre if alumno.tipo_practica else None,
                 "titulo": vacante.titulo,
                 "descripcion": vacante.descripcion,
                 "actividades": vacante.actividades,
                 "requisitos": vacante.requisitos,
-                "cupos": (_config_tipo_vacante(db, vacante, alumno.id_tipo_practica).cupos if _config_tipo_vacante(db, vacante, alumno.id_tipo_practica) else vacante.cupos),
+                "cupos": _config_tipo_vacante(db, vacante, alumno.id_tipo_practica).cupos,
                 "cupos_usados": _cupos_usados(db, vacante.id_vacante, alumno.id_tipo_practica),
                 "periodo": vacante.periodo,
                 "estado_vacante": vacante.estado_vacante,
@@ -442,10 +465,23 @@ def guardar_preferencias_alumno(
     )
     if alumno is None:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
+    if alumno.estado_alumno != "Activo":
+        raise HTTPException(status_code=403, detail="Tu estatus de alumno no está activo")
     expediente_actual = _expediente_actual_aprobado(db, alumno)
     convocatoria = expediente_actual.convocatoria if expediente_actual else None
     if convocatoria is None:
         raise HTTPException(status_code=400, detail="El expediente documental debe estar aprobado antes de guardar preferencias")
+    asignacion_activa = (
+        db.query(AsignacionModel)
+        .filter(
+            AsignacionModel.id_alumno == id_alumno,
+            AsignacionModel.id_convocatoria == convocatoria.id_convocatoria,
+            AsignacionModel.estado_asignacion == "Activa",
+        )
+        .first()
+    )
+    if asignacion_activa is not None:
+        raise HTTPException(status_code=409, detail="Ya tienes una asignación activa en esta convocatoria")
     try:
         validar_etapa_actual(convocatoria, "seleccion")
     except HTTPException as exc:
@@ -464,6 +500,8 @@ def guardar_preferencias_alumno(
         raise HTTPException(status_code=400, detail="No se puede repetir la misma vacante")
     if len(prioridades) != len(set(prioridades)):
         raise HTTPException(status_code=400, detail="No se puede repetir la prioridad")
+    if set(prioridades) != set(range(1, len(prioridades) + 1)):
+        raise HTTPException(status_code=400, detail="Las prioridades deben iniciar en 1 y ser consecutivas")
     if datos.id_vacante_prioritaria is not None and datos.id_vacante_prioritaria not in ids_vacantes:
         raise HTTPException(status_code=400, detail="La vacante prioritaria debe estar dentro de las preferencias")
 
@@ -509,4 +547,4 @@ def guardar_preferencias_alumno(
         )
 
     db.commit()
-    return {"mensaje": "Preferencias guardadas correctamente"}
+    return {"mensaje": "Selección guardada correctamente."}

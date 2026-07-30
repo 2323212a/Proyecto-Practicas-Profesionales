@@ -93,11 +93,13 @@ export function HorasAcumuladas() {
   }
 
   const resumen = data?.resumen ?? {
-    total_meta: 480,
+    total_meta: 0,
     aprobadas: 0,
     pendientes: 0,
     rechazadas: 0,
     progreso: 0,
+    origen_regla: "sin_configurar" as const,
+    advertencia_regla: null,
   };
 
   const restantes = Math.max(resumen.total_meta - resumen.aprobadas, 0);
@@ -116,6 +118,12 @@ export function HorasAcumuladas() {
       {error && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
           {error}
+        </div>
+      )}
+
+      {resumen.advertencia_regla && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+          {resumen.advertencia_regla}
         </div>
       )}
 

@@ -33,6 +33,7 @@ from infrastructure.email.email_service import (
 from infrastructure.security.auth_dependencies import requerir_roles
 from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
+from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.convenio import ConvenioModel
 from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
@@ -337,6 +338,19 @@ def subir_formato_plan_trabajo(
     carpeta.mkdir(parents=True, exist_ok=True)
     ruta = carpeta / f"{secrets.token_hex(12)}_{nombre_seguro}"
     ruta.write_bytes(contenido)
+    anteriores_query = db.query(FormatoPlanTrabajoVacanteModel).filter(
+        FormatoPlanTrabajoVacanteModel.activo.is_(True)
+    )
+    if id_convocatoria_valor is None:
+        anteriores_query = anteriores_query.filter(FormatoPlanTrabajoVacanteModel.id_convocatoria.is_(None))
+    else:
+        anteriores_query = anteriores_query.filter(
+            FormatoPlanTrabajoVacanteModel.id_convocatoria == id_convocatoria_valor
+        )
+    anteriores_query.update(
+        {FormatoPlanTrabajoVacanteModel.activo: False},
+        synchronize_session=False,
+    )
     formato = FormatoPlanTrabajoVacanteModel(
         id_convocatoria=id_convocatoria_valor,
         nombre=nombre_limpio,
@@ -349,6 +363,18 @@ def subir_formato_plan_trabajo(
     db.add(formato)
     db.commit()
     db.refresh(formato)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Reemplazar formato de Plan de Trabajo",
+        "vacantes",
+        (
+            f"Formato oficial {formato.id_formato_plan} activado para "
+            f"{'uso general' if formato.id_convocatoria is None else f'convocatoria {formato.id_convocatoria}'}."
+        ),
+        "formato_plan_trabajo_vacante",
+        formato.id_formato_plan,
+    )
     return _formato_plan_response(formato)
 
 
@@ -357,6 +383,20 @@ def activar_formato_plan_trabajo(id_formato_plan: int, db: Session = Depends(obt
     formato = db.query(FormatoPlanTrabajoVacanteModel).filter(FormatoPlanTrabajoVacanteModel.id_formato_plan == id_formato_plan).first()
     if formato is None:
         raise HTTPException(status_code=404, detail="Formato no encontrado")
+    activos_query = db.query(FormatoPlanTrabajoVacanteModel).filter(
+        FormatoPlanTrabajoVacanteModel.activo.is_(True),
+        FormatoPlanTrabajoVacanteModel.id_formato_plan != formato.id_formato_plan,
+    )
+    if formato.id_convocatoria is None:
+        activos_query = activos_query.filter(FormatoPlanTrabajoVacanteModel.id_convocatoria.is_(None))
+    else:
+        activos_query = activos_query.filter(
+            FormatoPlanTrabajoVacanteModel.id_convocatoria == formato.id_convocatoria
+        )
+    activos_query.update(
+        {FormatoPlanTrabajoVacanteModel.activo: False},
+        synchronize_session=False,
+    )
     formato.activo = True
     db.commit()
     return _formato_plan_response(formato)
@@ -374,7 +414,14 @@ def desactivar_formato_plan_trabajo(id_formato_plan: int, db: Session = Depends(
 
 @vacantes_router.get("/formatos-plan-trabajo/{id_formato_plan:int}/archivo")
 def descargar_formato_plan_trabajo_coord(id_formato_plan: int, db: Session = Depends(obtener_db)):
-    formato = db.query(FormatoPlanTrabajoVacanteModel).filter(FormatoPlanTrabajoVacanteModel.id_formato_plan == id_formato_plan).first()
+    formato = (
+        db.query(FormatoPlanTrabajoVacanteModel)
+        .filter(
+            FormatoPlanTrabajoVacanteModel.id_formato_plan == id_formato_plan,
+            FormatoPlanTrabajoVacanteModel.activo.is_(True),
+        )
+        .first()
+    )
     if formato is None:
         raise HTTPException(status_code=404, detail="Formato no encontrado")
     ruta = resolver_archivo_en_uploads(formato.ruta_archivo, UPLOADS_DIR)
@@ -908,31 +955,6 @@ def listar_vacantes_revision(db: Session = Depends(obtener_db)):
                     VacanteTipoPracticaModel.activo.is_(True),
                 )
                 .all()
-            ]
-            or [
-                {
-                    "id_tipo_practica": vacante.id_tipo_practica,
-                    "nombre": tipos_practica.get(vacante.id_tipo_practica),
-                    "cupos": vacante.cupos,
-                    "cupos_usados": db.query(AsignacionModel)
-                    .filter(
-                        AsignacionModel.id_vacante == vacante.id_vacante,
-                        AsignacionModel.id_tipo_practica == vacante.id_tipo_practica,
-                        AsignacionModel.estado_asignacion == "Activa",
-                    )
-                    .count(),
-                    "cupos_disponibles": max(
-                        vacante.cupos
-                        - db.query(AsignacionModel)
-                        .filter(
-                            AsignacionModel.id_vacante == vacante.id_vacante,
-                            AsignacionModel.id_tipo_practica == vacante.id_tipo_practica,
-                            AsignacionModel.estado_asignacion == "Activa",
-                        )
-                        .count(),
-                        0,
-                    ),
-                }
             ],
             "solicitudes_ampliacion": [
                 {
@@ -1104,6 +1126,45 @@ def _notificar_empresa_ampliacion(db: Session, solicitud: SolicitudAmpliacionCup
         )
 
 
+def _validar_vacante_publicable(db: Session, vacante: VacanteModel) -> None:
+    configuraciones = (
+        db.query(VacanteTipoPracticaModel)
+        .join(TipoPracticaModel, TipoPracticaModel.id_tipo_practica == VacanteTipoPracticaModel.id_tipo_practica)
+        .filter(
+            VacanteTipoPracticaModel.id_vacante == vacante.id_vacante,
+            VacanteTipoPracticaModel.activo.is_(True),
+            TipoPracticaModel.activo.is_(True),
+        )
+        .all()
+    )
+    if not configuraciones or any(config.cupos <= 0 for config in configuraciones):
+        raise HTTPException(status_code=400, detail="La vacante debe tener tipos de práctica activos con cupos válidos.")
+    if vacante.convocatoria is None:
+        raise HTTPException(status_code=400, detail="La vacante no tiene una convocatoria válida.")
+    carreras_compatibles = (
+        db.query(CarreraModel.id_carrera)
+        .filter(
+            CarreraModel.estado == "Activa",
+            CarreraModel.tipo_periodo == vacante.convocatoria.tipo_periodo,
+        )
+        .all()
+    )
+    ids_compatibles = {id_carrera for (id_carrera,) in carreras_compatibles}
+    if not ids_compatibles:
+        raise HTTPException(status_code=400, detail="No existen carreras activas compatibles con la convocatoria.")
+    if not vacante.aplica_todas_carreras:
+        ids_configurados = {
+            id_carrera
+            for (id_carrera,) in (
+                db.query(VacanteCarreraModel.id_carrera)
+                .filter(VacanteCarreraModel.id_vacante == vacante.id_vacante)
+                .all()
+            )
+        }
+        if not ids_configurados or not ids_configurados.issubset(ids_compatibles):
+            raise HTTPException(status_code=400, detail="La vacante debe tener carreras activas compatibles con la convocatoria.")
+
+
 @router.post("/vacantes/solicitudes-ampliacion/{id_solicitud:int}/aprobar")
 def aprobar_solicitud_ampliacion_vacante(
     id_solicitud: int,
@@ -1124,7 +1185,7 @@ def aprobar_solicitud_ampliacion_vacante(
     if solicitud.detalles and datos and datos.cupos_aprobados:
         por_tipo = {int(id_tipo): cupos for id_tipo, cupos in datos.cupos_aprobados.items()}
         for detalle in solicitud.detalles:
-            aprobados = int(por_tipo.get(detalle.id_tipo_practica, detalle.cupos_solicitados))
+            aprobados = int(por_tipo.get(detalle.id_tipo_practica, 0))
             if aprobados < 0 or aprobados > detalle.cupos_solicitados:
                 raise HTTPException(status_code=400, detail="Los cupos aprobados deben estar entre 0 y los solicitados.")
             detalle.cupos_aprobados = aprobados
@@ -1163,10 +1224,13 @@ def rechazar_solicitud_ampliacion_vacante(
         raise HTTPException(status_code=404, detail="Solicitud de ampliación no encontrada")
     if solicitud.estado != "Pendiente":
         raise HTTPException(status_code=400, detail="La solicitud ya fue revisada")
+    observaciones = " ".join(((datos.observaciones if datos else None) or "").split())
+    if len(observaciones) < 3:
+        raise HTTPException(status_code=422, detail="El motivo del rechazo es obligatorio")
     solicitud.estado = "Rechazada"
     solicitud.fecha_revision = datetime.now()
     solicitud.revisada_por = usuario_actual.id_usuario
-    solicitud.observaciones = datos.observaciones if datos else None
+    solicitud.observaciones = observaciones
     for detalle in solicitud.detalles:
         detalle.estado = "Rechazada"
         detalle.cupos_aprobados = 0
@@ -1285,12 +1349,15 @@ def cambiar_estado_vacante(
     }
     if datos.estado_vacante not in transiciones.get(vacante.estado_vacante, set()):
         raise HTTPException(status_code=400, detail="Transicion de vacante no permitida")
+    if datos.estado_vacante in {"Con observaciones", "Rechazada"} and not (datos.observaciones or "").strip():
+        raise HTTPException(status_code=422, detail="El motivo u observación es obligatorio")
 
     if datos.estado_vacante == "PrePadron":
         if _plan_trabajo_vacante(db, vacante) is None:
             raise HTTPException(status_code=400, detail="La vacante no tiene Plan de Trabajo cargado.")
         validar_etapa_actual(vacante.convocatoria, "empresas")
         validar_habilitacion_empresa_para_vacantes(db, vacante.empresa)
+        _validar_vacante_publicable(db, vacante)
     if datos.estado_vacante == "Activa":
         raise HTTPException(status_code=400, detail="La liberacion a Activa se realiza desde Padron Empresarial.")
 
@@ -1308,6 +1375,15 @@ def cambiar_estado_vacante(
         )
     db.commit()
     db.refresh(vacante)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        f"Cambiar vacante a {datos.estado_vacante}",
+        "vacantes",
+        f"Vacante {vacante.id_vacante} actualizada a {datos.estado_vacante}.",
+        "vacante",
+        vacante.id_vacante,
+    )
     return {"mensaje": "Estado de vacante actualizado", "estado_vacante": vacante.estado_vacante}
 
 
@@ -1315,16 +1391,28 @@ def cambiar_estado_vacante(
 def liberar_prepadron(
     filtros: LiberarPrepadronRequest | None = None,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
     filtros = filtros or LiberarPrepadronRequest()
     query = db.query(VacanteModel).filter(VacanteModel.estado_vacante == "PrePadron")
     if filtros.id_convocatoria is not None:
         query = query.filter(VacanteModel.id_convocatoria == filtros.id_convocatoria)
     if filtros.id_tipo_practica is not None:
-        query = query.filter(VacanteModel.id_tipo_practica == filtros.id_tipo_practica)
+        query = (
+            query.join(
+                VacanteTipoPracticaModel,
+                VacanteTipoPracticaModel.id_vacante == VacanteModel.id_vacante,
+            )
+            .filter(
+                VacanteTipoPracticaModel.id_tipo_practica == filtros.id_tipo_practica,
+                VacanteTipoPracticaModel.activo.is_(True),
+            )
+            .distinct()
+        )
 
     vacantes = query.all()
     liberadas = 0
+    ids_liberadas: list[int] = []
     for vacante in vacantes:
         if (
             vacante.empresa.estado_empresa == "Activa"
@@ -1332,11 +1420,32 @@ def liberar_prepadron(
             try:
                 validar_etapa_actual(vacante.convocatoria, "empresas")
                 validar_habilitacion_empresa_para_vacantes(db, vacante.empresa)
+                _validar_vacante_publicable(db, vacante)
                 vacante.estado_vacante = "Activa"
+                vacante.fecha_revision = datetime.now()
+                vacante.revisada_por = usuario_actual.id_usuario
+                for responsable in vacante.empresa.responsables:
+                    crear_notificacion(
+                        db,
+                        responsable.id_usuario,
+                        "Vacante publicada",
+                        f"Tu vacante {vacante.titulo} fue publicada en el padrón empresarial.",
+                    )
                 liberadas += 1
+                ids_liberadas.append(vacante.id_vacante)
             except HTTPException:
                 continue
     db.commit()
+    for id_vacante in ids_liberadas:
+        registrar_bitacora(
+            db,
+            usuario_actual.id_usuario,
+            "Publicar vacante",
+            "vacantes",
+            f"Vacante {id_vacante} liberada de PrePadron a Activa.",
+            "vacante",
+            id_vacante,
+        )
     return {"mensaje": "Pre-padron liberado", "vacantes_liberadas": liberadas}
 
 
