@@ -197,6 +197,16 @@ type EtapaConvocatoria = {
 
 type CampoFechaConvocatoria = EtapaConvocatoria["inicioCampo"] | EtapaConvocatoria["cierreCampo"];
 
+type BloqueConvocatoria = {
+  orden: number;
+  nombre: string;
+  descripcion: string;
+  nota?: string;
+  inicioCampo: CampoFechaConvocatoria;
+  cierreCampo: CampoFechaConvocatoria;
+  etapas: Array<{ inicioCampo: CampoFechaConvocatoria; cierreCampo: CampoFechaConvocatoria }>;
+};
+
 type EstadoFecha = "valida" | "incompleta" | "conflicto";
 
 type ValidacionFecha = {
@@ -269,6 +279,85 @@ const etapasConvocatoria: EtapaConvocatoria[] = [
     cierreCampo: "fecha_cierre_cierre",
   },
 ];
+
+const bloquesConvocatoria: BloqueConvocatoria[] = [
+  {
+    orden: 1,
+    nombre: "Registro y preparación",
+    descripcion: "Registro de empresas, carga documental y validación inicial.",
+    inicioCampo: "fecha_inicio_empresas",
+    cierreCampo: "fecha_cierre_validacion",
+    etapas: [
+      { inicioCampo: "fecha_inicio_empresas", cierreCampo: "fecha_cierre_empresas" },
+      { inicioCampo: "fecha_inicio_documentos", cierreCampo: "fecha_cierre_documentos" },
+      { inicioCampo: "fecha_inicio_validacion", cierreCampo: "fecha_cierre_validacion" },
+    ],
+  },
+  {
+    orden: 2,
+    nombre: "Selección y asignación",
+    descripcion: "Selección de vacantes, asignación formal y atención de alumnos rezagados.",
+    nota: "Incluye atención de alumnos rezagados mediante reasignación extraordinaria.",
+    inicioCampo: "fecha_inicio_seleccion",
+    cierreCampo: "fecha_cierre_asignacion",
+    etapas: [
+      { inicioCampo: "fecha_inicio_seleccion", cierreCampo: "fecha_cierre_seleccion" },
+      { inicioCampo: "fecha_inicio_asignacion", cierreCampo: "fecha_cierre_asignacion" },
+    ],
+  },
+  {
+    orden: 3,
+    nombre: "Desarrollo de prácticas",
+    descripcion: "Prácticas, horas, reportes, seguimiento, incidencias y reasignaciones extraordinarias.",
+    nota: "Permite seguimiento, incidencias y cambios extraordinarios de empresa cuando sean autorizados.",
+    inicioCampo: "fecha_inicio_practicas",
+    cierreCampo: "fecha_cierre_practicas",
+    etapas: [
+      { inicioCampo: "fecha_inicio_practicas", cierreCampo: "fecha_cierre_practicas" },
+    ],
+  },
+  {
+    orden: 4,
+    nombre: "Cierre",
+    descripcion: "Evaluaciones, liberación y cierre administrativo.",
+    inicioCampo: "fecha_inicio_cierre",
+    cierreCampo: "fecha_cierre_cierre",
+    etapas: [
+      { inicioCampo: "fecha_inicio_cierre", cierreCampo: "fecha_cierre_cierre" },
+    ],
+  },
+];
+
+function desplazarFechaDias(fecha: string, dias: number) {
+  const valor = new Date(`${fecha}T12:00:00`);
+  valor.setDate(valor.getDate() + dias);
+  return valor.toISOString().slice(0, 10);
+}
+
+function distribuirFechasBloque(
+  form: Convocatoria,
+  bloque: BloqueConvocatoria,
+  inicio: string | null,
+  cierre: string | null
+): Convocatoria {
+  const siguiente: Convocatoria = { ...form };
+  siguiente[bloque.inicioCampo] = inicio as never;
+  siguiente[bloque.cierreCampo] = cierre as never;
+  if (!inicio || !cierre || inicio > cierre) return siguiente;
+
+  const inicioFecha = new Date(`${inicio}T12:00:00`);
+  const cierreFecha = new Date(`${cierre}T12:00:00`);
+  const dias = Math.round((cierreFecha.getTime() - inicioFecha.getTime()) / 86_400_000);
+  const cantidad = bloque.etapas.length;
+
+  bloque.etapas.forEach((etapa, indice) => {
+    const inicioOffset = Math.floor((indice * dias) / cantidad);
+    const cierreOffset = Math.floor(((indice + 1) * dias) / cantidad);
+    siguiente[etapa.inicioCampo] = desplazarFechaDias(inicio, inicioOffset) as never;
+    siguiente[etapa.cierreCampo] = desplazarFechaDias(inicio, cierreOffset) as never;
+  });
+  return siguiente;
+}
 
 function validarCalendarioConvocatoria(form: Convocatoria): string | null {
   for (const { inicioCampo, cierreCampo } of etapasConvocatoria) {
@@ -829,6 +918,7 @@ export function AdminCatalogos() {
   const [error, setError] = useState("");
   const [catalogoActivo, setCatalogoActivo] = useState<CatalogoActivo>(null);
   const [modoEdicion, setModoEdicion] = useState(false);
+  const [modoAvanzadoConvocatoria, setModoAvanzadoConvocatoria] = useState(false);
   const [carreraForm, setCarreraForm] = useState<Carrera>(carreraInicial);
   const [convocatoriaForm, setConvocatoriaForm] = useState<Convocatoria>(convocatoriaInicial);
   const [tipoPracticaForm, setTipoPracticaForm] = useState<TipoPractica>(tipoPracticaInicial);
@@ -865,6 +955,7 @@ export function AdminCatalogos() {
     setConvocatoriaForm(convocatoriaInicial);
     setTipoPracticaForm(tipoPracticaInicial);
     setReglaPracticaForm(reglaPracticaInicial);
+    setModoAvanzadoConvocatoria(false);
   }
 
   function abrirCatalogo(tipo: CatalogoActivo) {
@@ -1360,6 +1451,7 @@ export function AdminCatalogos() {
 
   function repetirCicloConvocatoria(convocatoria: Convocatoria) {
     setModoEdicion(false);
+    setModoAvanzadoConvocatoria(false);
     setConvocatoriaForm({
       ...convocatoria,
       id_convocatoria: 0,
@@ -1996,16 +2088,25 @@ export function AdminCatalogos() {
                       <div>
                         <h5 className="font-bold text-sm text-[#0d2b5e] flex items-center gap-2">
                           <CalendarDays className="w-4 h-4" />
-                          Calendario por etapas
+                          {modoAvanzadoConvocatoria ? "Configuración avanzada" : "Calendario simplificado"}
                         </h5>
                         <p className="text-xs text-gray-500 mt-1">
-                          Fechas que habilitan cada etapa del proceso. El calendario operativo puede iniciar antes del periodo academico.
+                          {modoAvanzadoConvocatoria
+                            ? "Ajusta las 8 fases internas del proceso."
+                            : "El modo básico agrupa las etapas para facilitar la administración. El modo avanzado permite ajustar fechas internas del proceso."}
                         </p>
                         <p className="text-xs text-[#1565c0] mt-1">
                           Conflictos solo contra convocatorias {tipoPeriodoPlural} activas.
                         </p>
                       </div>
                       <div className="flex flex-col items-start lg:items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setModoAvanzadoConvocatoria((actual) => !actual)}
+                          className="text-xs font-semibold px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-[#1565c0] hover:bg-blue-100"
+                        >
+                          {modoAvanzadoConvocatoria ? "Volver al modo básico" : "Ver configuración avanzada"}
+                        </button>
                         <div className="flex flex-wrap gap-2">
                           <span className="inline-flex items-center gap-1 text-xs text-green-700">
                             <span className="w-2 h-2 rounded-full bg-green-500" />
@@ -2049,6 +2150,100 @@ export function AdminCatalogos() {
                     )}
                   </div>
 
+                      {!modoAvanzadoConvocatoria && (
+                        <div className="p-4 space-y-4">
+                          <div className="border border-blue-100 bg-blue-50/40 rounded-xl p-4">
+                            <div className="font-bold text-sm text-[#0d2b5e]">Periodo general</div>
+                            <p className="text-xs text-gray-600 mt-1">
+                              El periodo general representa el calendario operativo de la convocatoria. Puede iniciar antes del semestre o cuatrimestre para permitir registro, documentación y validación previa.
+                            </p>
+                            <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                              <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha inicio</span>
+                                <input
+                                  type="date"
+                                  required
+                                  value={convocatoriaForm.fecha_inicio_general ?? ""}
+                                  onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, fecha_inicio_general: event.target.value || null })}
+                                  className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha cierre</span>
+                                <input
+                                  type="date"
+                                  required
+                                  min={convocatoriaForm.fecha_inicio_general ?? undefined}
+                                  value={convocatoriaForm.fecha_cierre_general ?? ""}
+                                  onChange={(event) => setConvocatoriaForm({ ...convocatoriaForm, fecha_cierre_general: event.target.value || null })}
+                                  className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm"
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="grid lg:grid-cols-2 gap-3">
+                            {bloquesConvocatoria.map((bloque) => {
+                              const inicio = convocatoriaForm[bloque.inicioCampo] as string | null;
+                              const cierre = convocatoriaForm[bloque.cierreCampo] as string | null;
+                              return (
+                                <div key={bloque.nombre} className="border border-gray-200 rounded-xl p-4">
+                                  <div className="flex items-start gap-3">
+                                    <span className="w-8 h-8 shrink-0 rounded-full bg-blue-50 text-[#1565c0] text-sm font-bold flex items-center justify-center">
+                                      {bloque.orden}
+                                    </span>
+                                    <div>
+                                      <div className="font-bold text-sm text-[#0d2b5e]">{bloque.nombre}</div>
+                                      <p className="text-xs text-gray-600 mt-1">{bloque.descripcion}</p>
+                                      {bloque.nota && <p className="text-xs text-[#1565c0] mt-2">{bloque.nota}</p>}
+                                    </div>
+                                  </div>
+                                  <div className="grid sm:grid-cols-2 gap-2 mt-4">
+                                    <label className="block">
+                                      <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha inicio</span>
+                                      <input
+                                        type="date"
+                                        required
+                                        value={inicio ?? ""}
+                                        onChange={(event) => setConvocatoriaForm(distribuirFechasBloque(
+                                          convocatoriaForm,
+                                          bloque,
+                                          event.target.value || null,
+                                          cierre
+                                        ))}
+                                        className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm"
+                                      />
+                                    </label>
+                                    <label className="block">
+                                      <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha cierre</span>
+                                      <input
+                                        type="date"
+                                        required
+                                        min={inicio ?? undefined}
+                                        value={cierre ?? ""}
+                                        onChange={(event) => setConvocatoriaForm(distribuirFechasBloque(
+                                          convocatoriaForm,
+                                          bloque,
+                                          inicio,
+                                          event.target.value || null
+                                        ))}
+                                        className="mt-1 w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-sm"
+                                      />
+                                    </label>
+                                  </div>
+                                  {bloque.etapas.length > 1 && inicio && cierre && (
+                                    <p className="text-[11px] text-green-700 mt-2">
+                                      Las fechas internas se distribuyen automáticamente y conservan el orden.
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {modoAvanzadoConvocatoria && (
                       <div className="p-4 grid lg:grid-cols-2 gap-3">
                     {etapasConvocatoria.map((etapa) => {
                       const validacionInicio = validarCampoFecha(
@@ -2120,6 +2315,7 @@ export function AdminCatalogos() {
                       );
                     })}
                       </div>
+                      )}
                     </div>
 
                     <details className="border border-gray-200 rounded-xl bg-gray-50/50">
@@ -2199,6 +2395,7 @@ export function AdminCatalogos() {
                         <button
                           onClick={() => {
                             setModoEdicion(true);
+                            setModoAvanzadoConvocatoria(false);
                             setConvocatoriaForm(convocatoria);
                           }}
                           className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg"

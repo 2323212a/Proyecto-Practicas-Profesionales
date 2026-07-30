@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -30,6 +30,83 @@ FECHAS_OBLIGATORIAS = [
     *[campo for par in ETAPAS_CON_FECHAS.values() for campo in par],
 ]
 
+BLOQUES_CONVOCATORIA = (
+    {
+        "nombre": "Registro y preparación",
+        "descripcion": "Registro de empresas, carga documental y validación inicial.",
+        "inicio_campo": "fecha_inicio_empresas",
+        "cierre_campo": "fecha_cierre_validacion",
+        "etapas": ("empresas", "documentos", "validacion"),
+    },
+    {
+        "nombre": "Selección y asignación",
+        "descripcion": "Selección de vacantes, asignación formal y atención de alumnos rezagados.",
+        "inicio_campo": "fecha_inicio_seleccion",
+        "cierre_campo": "fecha_cierre_asignacion",
+        "etapas": ("seleccion", "asignacion"),
+    },
+    {
+        "nombre": "Desarrollo de prácticas",
+        "descripcion": "Prácticas, horas, reportes, seguimiento, incidencias y reasignaciones extraordinarias.",
+        "inicio_campo": "fecha_inicio_practicas",
+        "cierre_campo": "fecha_cierre_practicas",
+        "etapas": ("practicas",),
+    },
+    {
+        "nombre": "Cierre",
+        "descripcion": "Evaluaciones, liberación y cierre administrativo.",
+        "inicio_campo": "fecha_inicio_cierre",
+        "cierre_campo": "fecha_cierre_cierre",
+        "etapas": ("cierre",),
+    },
+)
+
+
+def obtener_bloques_convocatoria(convocatoria) -> list[dict]:
+    """Proyecta las fechas existentes de la convocatoria en los cuatro bloques visuales."""
+    return [
+        {
+            **bloque,
+            "inicio": getattr(convocatoria, bloque["inicio_campo"], None),
+            "cierre": getattr(convocatoria, bloque["cierre_campo"], None),
+        }
+        for bloque in BLOQUES_CONVOCATORIA
+    ]
+
+
+def validar_bloques_basicos(convocatoria) -> None:
+    """Valida los límites de los cuatro bloques sin requerir columnas nuevas."""
+    bloques = obtener_bloques_convocatoria(convocatoria)
+    if any(bloque["inicio"] is None or bloque["cierre"] is None for bloque in bloques):
+        raise HTTPException(status_code=409, detail="La convocatoria no tiene calendario completo.")
+    for bloque in bloques:
+        if bloque["inicio"] > bloque["cierre"]:
+            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de bloques.")
+    for anterior, siguiente in zip(bloques, bloques[1:]):
+        if siguiente["inicio"] < anterior["cierre"]:
+            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de bloques.")
+
+
+def distribuir_fechas_bloque_basico(
+    inicio: date,
+    cierre: date,
+    etapas: tuple[str, ...],
+) -> dict[str, date]:
+    """Distribuye un rango en orden; en rangos cortos las subetapas pueden compartir fecha."""
+    if inicio > cierre:
+        raise HTTPException(status_code=400, detail="El cierre del bloque no puede ser anterior al inicio.")
+    if not etapas or any(etapa not in ETAPAS_CON_FECHAS for etapa in etapas):
+        raise HTTPException(status_code=400, detail="El bloque contiene etapas no válidas.")
+
+    dias = (cierre - inicio).days
+    cantidad = len(etapas)
+    fechas: dict[str, date] = {}
+    for indice, etapa in enumerate(etapas):
+        campo_inicio, campo_cierre = ETAPAS_CON_FECHAS[etapa]
+        fechas[campo_inicio] = inicio + timedelta(days=(indice * dias) // cantidad)
+        fechas[campo_cierre] = inicio + timedelta(days=((indice + 1) * dias) // cantidad)
+    return fechas
+
 
 def validar_calendario_completo(convocatoria) -> None:
     if any(getattr(convocatoria, campo, None) is None for campo in FECHAS_OBLIGATORIAS):
@@ -38,6 +115,7 @@ def validar_calendario_completo(convocatoria) -> None:
 
 def validar_flujo_fechas(convocatoria) -> None:
     validar_calendario_completo(convocatoria)
+    validar_bloques_basicos(convocatoria)
 
     inicio_general = convocatoria.fecha_inicio_general
     cierre_general = convocatoria.fecha_cierre_general
