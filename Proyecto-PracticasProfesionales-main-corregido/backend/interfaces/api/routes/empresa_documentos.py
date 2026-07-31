@@ -154,8 +154,8 @@ def _convocatoria_empresa_documentos(db: Session, id_empresa: int) -> Convocator
         db.query(ConvocatoriaModel)
         .filter(
             ConvocatoriaModel.estado == "Activa",
-            ConvocatoriaModel.fecha_inicio_empresas <= hoy,
-            ConvocatoriaModel.fecha_cierre_empresas >= hoy,
+            ConvocatoriaModel.fecha_inicio_general <= hoy,
+            ConvocatoriaModel.fecha_cierre_general >= hoy,
         )
         .order_by(*_orden_fecha_inicio_general_mysql())
         .first()

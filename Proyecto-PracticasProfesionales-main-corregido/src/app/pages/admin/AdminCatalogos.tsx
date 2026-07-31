@@ -343,60 +343,84 @@ function distribuirFechasBloque(
   const siguiente: Convocatoria = { ...form };
   siguiente[bloque.inicioCampo] = inicio as never;
   siguiente[bloque.cierreCampo] = cierre as never;
-  if (!inicio || !cierre || inicio > cierre) return siguiente;
 
-  const inicioFecha = new Date(`${inicio}T12:00:00`);
-  const cierreFecha = new Date(`${cierre}T12:00:00`);
-  const dias = Math.round((cierreFecha.getTime() - inicioFecha.getTime()) / 86_400_000);
-  const cantidad = bloque.etapas.length;
+  const inicioCompatibilidad = inicio ? desplazarFechaDias(inicio, 0) : null;
+  const cierreCompatibilidad = cierre ? desplazarFechaDias(cierre, 0) : null;
 
-  bloque.etapas.forEach((etapa, indice) => {
-    const inicioOffset = Math.floor((indice * dias) / cantidad);
-    const cierreOffset = Math.floor(((indice + 1) * dias) / cantidad);
-    siguiente[etapa.inicioCampo] = desplazarFechaDias(inicio, inicioOffset) as never;
-    siguiente[etapa.cierreCampo] = desplazarFechaDias(inicio, cierreOffset) as never;
+  bloque.etapas.forEach((etapa) => {
+    siguiente[etapa.inicioCampo] = inicioCompatibilidad as never;
+    siguiente[etapa.cierreCampo] = cierreCompatibilidad as never;
   });
   return siguiente;
 }
 
-function validarCalendarioConvocatoria(form: Convocatoria): string | null {
-  for (const { inicioCampo, cierreCampo } of etapasConvocatoria) {
-    if (!form[inicioCampo] || !form[cierreCampo]) {
-      return "La convocatoria no tiene calendario completo.";
-    }
+function sincronizarFechasBloquesConvocatoria(form: Convocatoria): Convocatoria {
+  return bloquesConvocatoria.reduce((actual, bloque) => (
+    distribuirFechasBloque(
+      actual,
+      bloque,
+      form[bloque.inicioCampo] as string | null,
+      form[bloque.cierreCampo] as string | null
+    )
+  ), { ...form });
+}
+
+function obtenerCamposFechaCalendario() {
+  return [
+    { inicioCampo: "fecha_inicio_general" as CampoFechaConvocatoria, cierreCampo: "fecha_cierre_general" as CampoFechaConvocatoria, nombre: "Periodo general" },
+    ...bloquesConvocatoria.map((bloque) => ({
+      inicioCampo: bloque.inicioCampo,
+      cierreCampo: bloque.cierreCampo,
+      nombre: bloque.nombre,
+    })),
+  ];
+}
+
+function obtenerErrorFechasBloquesConvocatoria(form: Convocatoria): string | null {
+  if (!form.fecha_inicio_general || !form.fecha_cierre_general) {
+    return "Las fechas generales de la convocatoria son obligatorias.";
   }
 
-  const reglas = [
-    form.fecha_inicio_general! <= form.fecha_cierre_general!,
-    form.fecha_inicio_empresas! >= form.fecha_inicio_general!,
-    form.fecha_cierre_empresas! <= form.fecha_cierre_general!,
-    form.fecha_inicio_empresas! <= form.fecha_cierre_empresas!,
-    form.fecha_inicio_documentos! >= form.fecha_inicio_general!,
-    form.fecha_cierre_documentos! <= form.fecha_cierre_general!,
-    form.fecha_inicio_documentos! <= form.fecha_cierre_documentos!,
-    form.fecha_inicio_validacion! >= form.fecha_inicio_documentos!,
-    form.fecha_cierre_validacion! <= form.fecha_cierre_general!,
-    form.fecha_inicio_validacion! <= form.fecha_cierre_validacion!,
-    form.fecha_inicio_seleccion! >= form.fecha_cierre_validacion!,
-    form.fecha_cierre_seleccion! <= form.fecha_cierre_general!,
-    form.fecha_inicio_seleccion! <= form.fecha_cierre_seleccion!,
-    form.fecha_inicio_asignacion! >= form.fecha_cierre_seleccion!,
-    form.fecha_cierre_asignacion! <= form.fecha_cierre_general!,
-    form.fecha_inicio_asignacion! <= form.fecha_cierre_asignacion!,
-    form.fecha_inicio_practicas! >= form.fecha_cierre_asignacion!,
-    form.fecha_cierre_practicas! <= form.fecha_cierre_general!,
-    form.fecha_inicio_practicas! <= form.fecha_cierre_practicas!,
-    form.fecha_inicio_cierre! >= form.fecha_cierre_practicas!,
-    form.fecha_cierre_cierre! <= form.fecha_cierre_general!,
-    form.fecha_inicio_cierre! <= form.fecha_cierre_cierre!,
-  ];
+  if (form.fecha_inicio_general > form.fecha_cierre_general) {
+    return "La fecha de cierre general debe ser posterior al inicio.";
+  }
 
-  return reglas.every(Boolean) ? null : "El calendario de la convocatoria no respeta el flujo de etapas.";
+  let cierreAnterior: string | null = null;
+  for (const bloque of bloquesConvocatoria) {
+    const inicio = form[bloque.inicioCampo] as string | null;
+    const cierre = form[bloque.cierreCampo] as string | null;
+
+    if (!inicio || !cierre) {
+      return `Completa las fechas del bloque: ${bloque.nombre}.`;
+    }
+
+    if (inicio > cierre) {
+      return `La fecha de cierre del bloque ${bloque.nombre} debe ser posterior al inicio.`;
+    }
+
+    if (inicio < form.fecha_inicio_general || cierre > form.fecha_cierre_general) {
+      return `El bloque ${bloque.nombre} debe quedar dentro del periodo general.`;
+    }
+
+    if (cierreAnterior && inicio < cierreAnterior) {
+      return "Los bloques deben respetar el orden: Registro, Selección, Desarrollo y Cierre.";
+    }
+
+    cierreAnterior = cierre;
+  }
+
+  return null;
+}
+
+function validarCalendarioConvocatoria(form: Convocatoria): string | null {
+  return obtenerErrorFechasBloquesConvocatoria(form);
 }
 
 function obtenerResumenCalendario(form: Convocatoria) {
-  const completo = etapasConvocatoria.every(({ inicioCampo, cierreCampo }) => form[inicioCampo] && form[cierreCampo]);
-  const error = completo ? validarCalendarioConvocatoria(form) : "La convocatoria no tiene calendario completo.";
+  const completo = obtenerCamposFechaCalendario().every(
+    ({ inicioCampo, cierreCampo }) => form[inicioCampo] && form[cierreCampo]
+  );
+  const error = validarCalendarioConvocatoria(form);
   return {
     completo,
     flujoValido: !error,
@@ -425,35 +449,46 @@ function obtenerConflictosMismoTipo(form: Convocatoria, convocatorias: Convocato
   });
 }
 
-function obtenerEtapaPorCampo(campo: CampoFechaConvocatoria) {
-  return etapasConvocatoria.find((etapa) => etapa.inicioCampo === campo || etapa.cierreCampo === campo);
+function obtenerBloquePorCampo(campo: CampoFechaConvocatoria) {
+  return bloquesConvocatoria.find((bloque) => bloque.inicioCampo === campo || bloque.cierreCampo === campo);
 }
 
-function obtenerEtapaAnterior(etapa: EtapaConvocatoria) {
-  return etapasConvocatoria.find((item) => item.orden === etapa.orden - 1);
+function obtenerBloqueAnterior(bloque: BloqueConvocatoria) {
+  return bloquesConvocatoria.find((item) => item.orden === bloque.orden - 1);
+}
+
+function obtenerBloqueSiguiente(bloque: BloqueConvocatoria) {
+  return bloquesConvocatoria.find((item) => item.orden === bloque.orden + 1);
 }
 
 function obtenerFechaMinimaCampo(campo: CampoFechaConvocatoria, form: Convocatoria) {
-  const etapa = obtenerEtapaPorCampo(campo);
-  if (!etapa) return undefined;
-
-  if (campo === "fecha_cierre_general") return form.fecha_inicio_general ?? undefined;
   if (campo === "fecha_inicio_general") return undefined;
-  if (campo === etapa.cierreCampo) return (form[etapa.inicioCampo] as string | null) ?? undefined;
+  if (campo === "fecha_cierre_general") return form.fecha_inicio_general ?? undefined;
 
-  if (etapa.orden === 2) return form.fecha_inicio_general ?? undefined;
-  const etapaAnterior = obtenerEtapaAnterior(etapa);
-  return etapaAnterior ? ((form[etapaAnterior.cierreCampo] as string | null) ?? undefined) : undefined;
+  const bloque = obtenerBloquePorCampo(campo);
+  if (!bloque) return form.fecha_inicio_general ?? undefined;
+
+  if (campo === bloque.cierreCampo) {
+    return ((form[bloque.inicioCampo] as string | null) ?? form.fecha_inicio_general ?? undefined);
+  }
+
+  const bloqueAnterior = obtenerBloqueAnterior(bloque);
+  return ((bloqueAnterior ? form[bloqueAnterior.cierreCampo] as string | null : null) ?? form.fecha_inicio_general ?? undefined);
 }
 
 function obtenerFechaMaximaCampo(campo: CampoFechaConvocatoria, form: Convocatoria) {
-  const etapa = obtenerEtapaPorCampo(campo);
-  if (!etapa) return undefined;
-
   if (campo === "fecha_inicio_general") return form.fecha_cierre_general ?? undefined;
   if (campo === "fecha_cierre_general") return undefined;
-  if (campo === etapa.inicioCampo) return ((form[etapa.cierreCampo] as string | null) ?? form.fecha_cierre_general ?? undefined);
-  return form.fecha_cierre_general ?? undefined;
+
+  const bloque = obtenerBloquePorCampo(campo);
+  if (!bloque) return form.fecha_cierre_general ?? undefined;
+
+  if (campo === bloque.inicioCampo) {
+    return ((form[bloque.cierreCampo] as string | null) ?? form.fecha_cierre_general ?? undefined);
+  }
+
+  const bloqueSiguiente = obtenerBloqueSiguiente(bloque);
+  return ((bloqueSiguiente ? form[bloqueSiguiente.inicioCampo] as string | null : null) ?? form.fecha_cierre_general ?? undefined);
 }
 
 function validarCampoFecha(
@@ -464,41 +499,37 @@ function validarCampoFecha(
 ): ValidacionFecha {
   const min = obtenerFechaMinimaCampo(campo, form);
   const max = obtenerFechaMaximaCampo(campo, form);
-  const etapa = obtenerEtapaPorCampo(campo);
 
-  if (!valor || !etapa) {
+  if (!valor) {
     return { estado: "incompleta", mensaje: "Fecha pendiente.", min, max };
   }
 
-  const inicioEtapa = form[etapa.inicioCampo] as string | null;
-  const cierreEtapa = form[etapa.cierreCampo] as string | null;
-
-  if (campo === etapa.cierreCampo && inicioEtapa && valor < inicioEtapa) {
-    return { estado: "conflicto", mensaje: "El cierre no puede ser anterior al inicio.", min, max };
-  }
-
-  if (campo === etapa.inicioCampo && cierreEtapa && valor > cierreEtapa) {
-    return { estado: "conflicto", mensaje: "El cierre no puede ser anterior al inicio.", min, max };
-  }
-
   if (min && valor < min) {
-    const mensaje =
-      campo === etapa.inicioCampo
-        ? "Esta etapa no puede iniciar antes de que termine la etapa anterior."
-        : "El cierre no puede ser anterior al inicio.";
-    return { estado: "conflicto", mensaje, min, max };
+    return {
+      estado: "conflicto",
+      mensaje: campo.includes("inicio")
+        ? "La fecha no puede iniciar antes del rango permitido."
+        : "El cierre no puede ser anterior al inicio o al bloque anterior.",
+      min,
+      max,
+    };
   }
 
   if (max && valor > max) {
-    return { estado: "conflicto", mensaje: "La etapa debe estar dentro del periodo general.", min, max };
+    return {
+      estado: "conflicto",
+      mensaje: "La fecha se cruza con otro bloque o queda fuera del periodo permitido.",
+      min,
+      max,
+    };
   }
 
-  if (etapa.orden > 1) {
+  if (campo !== "fecha_inicio_general" && campo !== "fecha_cierre_general") {
     if (form.fecha_inicio_general && valor < form.fecha_inicio_general) {
-      return { estado: "conflicto", mensaje: "La etapa debe estar dentro del periodo general.", min, max };
+      return { estado: "conflicto", mensaje: "La fecha debe quedar dentro del periodo general.", min, max };
     }
     if (form.fecha_cierre_general && valor > form.fecha_cierre_general) {
-      return { estado: "conflicto", mensaje: "La etapa debe estar dentro del periodo general.", min, max };
+      return { estado: "conflicto", mensaje: "La fecha debe quedar dentro del periodo general.", min, max };
     }
   }
 
@@ -514,19 +545,35 @@ function validarCampoFecha(
     };
   }
 
-  return { estado: "valida", mensaje: "Fecha valida.", min, max };
+  return { estado: "valida", mensaje: "Fecha válida.", min, max };
 }
 
-function obtenerClaseInputFecha(validacion: ValidacionFecha) {
-  if (validacion.estado === "valida") return "border-green-300 bg-green-50/70 text-green-900 focus:border-green-500";
-  if (validacion.estado === "conflicto") return "border-red-300 bg-red-50/70 text-red-900 focus:border-red-500";
-  return "border-yellow-200 bg-yellow-50/40 text-gray-700 focus:border-yellow-400";
-}
+function obtenerEstadoBloque(form: Convocatoria, bloque: BloqueConvocatoria, convocatorias: Convocatoria[]) {
+  const inicio = form[bloque.inicioCampo] as string | null;
+  const cierre = form[bloque.cierreCampo] as string | null;
+  if (!inicio || !cierre) {
+    return {
+      texto: "Incompleto",
+      clase: "bg-yellow-50 text-yellow-700 border-yellow-200",
+      icono: AlertTriangle,
+    };
+  }
 
-function obtenerClaseMensajeFecha(validacion: ValidacionFecha) {
-  if (validacion.estado === "valida") return "text-green-700";
-  if (validacion.estado === "conflicto") return "text-red-700";
-  return "text-yellow-700";
+  const validacionInicio = validarCampoFecha(bloque.inicioCampo, inicio, form, convocatorias);
+  const validacionCierre = validarCampoFecha(bloque.cierreCampo, cierre, form, convocatorias);
+  if (validacionInicio.estado === "conflicto" || validacionCierre.estado === "conflicto") {
+    return {
+      texto: "Conflicto",
+      clase: "bg-red-50 text-red-700 border-red-200",
+      icono: AlertTriangle,
+    };
+  }
+
+  return {
+    texto: "Válido",
+    clase: "bg-green-50 text-green-700 border-green-200",
+    icono: CheckCircle2,
+  };
 }
 
 function obtenerEstadoEtapa(form: Convocatoria, etapa: EtapaConvocatoria, convocatorias: Convocatoria[]) {
@@ -539,6 +586,7 @@ function obtenerEstadoEtapa(form: Convocatoria, etapa: EtapaConvocatoria, convoc
       icono: AlertTriangle,
     };
   }
+
   const validacionInicio = validarCampoFecha(etapa.inicioCampo, inicio, form, convocatorias);
   const validacionCierre = validarCampoFecha(etapa.cierreCampo, cierre, form, convocatorias);
   if (validacionInicio.estado === "conflicto" || validacionCierre.estado === "conflicto") {
@@ -548,11 +596,24 @@ function obtenerEstadoEtapa(form: Convocatoria, etapa: EtapaConvocatoria, convoc
       icono: AlertTriangle,
     };
   }
+
   return {
-    texto: "Valida",
+    texto: "Válida",
     clase: "bg-green-50 text-green-700 border-green-200",
     icono: CheckCircle2,
   };
+}
+
+function obtenerClaseInputFecha(validacion: ValidacionFecha) {
+  if (validacion.estado === "valida") return "border-green-300 bg-green-50/70 text-green-900 focus:border-green-500";
+  if (validacion.estado === "conflicto") return "border-red-300 bg-red-50/70 text-red-900 focus:border-red-500";
+  return "border-yellow-200 bg-yellow-50/40 text-gray-700 focus:border-yellow-400";
+}
+
+function obtenerClaseMensajeFecha(validacion: ValidacionFecha) {
+  if (validacion.estado === "valida") return "text-green-700";
+  if (validacion.estado === "conflicto") return "text-red-700";
+  return "text-yellow-700";
 }
 
 type ClaveTipoPractica = "practicas_1" | "practicas_2" | "residencia";
@@ -918,9 +979,9 @@ export function AdminCatalogos() {
   const [error, setError] = useState("");
   const [catalogoActivo, setCatalogoActivo] = useState<CatalogoActivo>(null);
   const [modoEdicion, setModoEdicion] = useState(false);
-  const [modoAvanzadoConvocatoria, setModoAvanzadoConvocatoria] = useState(false);
   const [carreraForm, setCarreraForm] = useState<Carrera>(carreraInicial);
   const [convocatoriaForm, setConvocatoriaForm] = useState<Convocatoria>(convocatoriaInicial);
+  const [modoAvanzadoConvocatoria, setModoAvanzadoConvocatoria] = useState(false);
   const [tipoPracticaForm, setTipoPracticaForm] = useState<TipoPractica>(tipoPracticaInicial);
   const [reglaPracticaForm, setReglaPracticaForm] = useState<ReglaPracticaCarrera>(reglaPracticaInicial);
 
@@ -1233,38 +1294,40 @@ export function AdminCatalogos() {
       return;
     }
 
-    const errorCalendario = validarCalendarioConvocatoria(convocatoriaForm);
-    if (errorCalendario) {
-      setError(errorCalendario);
+    const errorFechas = obtenerErrorFechasBloquesConvocatoria(convocatoriaForm);
+    if (errorFechas) {
+      setError(errorFechas);
       return;
     }
 
-    if (obtenerConflictosMismoTipo(convocatoriaForm, convocatorias).length > 0) {
+    const convocatoriaNormalizada = sincronizarFechasBloquesConvocatoria(convocatoriaForm);
+
+    if (obtenerConflictosMismoTipo(convocatoriaNormalizada, convocatorias).length > 0) {
       setError("Existe una convocatoria del mismo tipo de periodo que se cruza con estas fechas.");
       return;
     }
 
     const data = {
-      nombre: convocatoriaForm.nombre.trim(),
-      tipo_periodo: convocatoriaForm.tipo_periodo,
-      estado: convocatoriaForm.estado,
-      fecha_inicio_general: convocatoriaForm.fecha_inicio_general || null,
-      fecha_cierre_general: convocatoriaForm.fecha_cierre_general || null,
-      fecha_inicio_empresas: convocatoriaForm.fecha_inicio_empresas || null,
-      fecha_cierre_empresas: convocatoriaForm.fecha_cierre_empresas || null,
-      fecha_inicio_documentos: convocatoriaForm.fecha_inicio_documentos || null,
-      fecha_cierre_documentos: convocatoriaForm.fecha_cierre_documentos || null,
-      fecha_inicio_validacion: convocatoriaForm.fecha_inicio_validacion || null,
-      fecha_cierre_validacion: convocatoriaForm.fecha_cierre_validacion || null,
-      fecha_inicio_seleccion: convocatoriaForm.fecha_inicio_seleccion || null,
-      fecha_cierre_seleccion: convocatoriaForm.fecha_cierre_seleccion || null,
-      fecha_inicio_asignacion: convocatoriaForm.fecha_inicio_asignacion || null,
-      fecha_cierre_asignacion: convocatoriaForm.fecha_cierre_asignacion || null,
-      fecha_inicio_practicas: convocatoriaForm.fecha_inicio_practicas || null,
-      fecha_cierre_practicas: convocatoriaForm.fecha_cierre_practicas || null,
-      fecha_inicio_cierre: convocatoriaForm.fecha_inicio_cierre || null,
-      fecha_cierre_cierre: convocatoriaForm.fecha_cierre_cierre || null,
-      observaciones: convocatoriaForm.observaciones?.trim() || null,
+      nombre: convocatoriaNormalizada.nombre.trim(),
+      tipo_periodo: convocatoriaNormalizada.tipo_periodo,
+      estado: convocatoriaNormalizada.estado,
+      fecha_inicio_general: convocatoriaNormalizada.fecha_inicio_general || null,
+      fecha_cierre_general: convocatoriaNormalizada.fecha_cierre_general || null,
+      fecha_inicio_empresas: convocatoriaNormalizada.fecha_inicio_empresas || null,
+      fecha_cierre_empresas: convocatoriaNormalizada.fecha_cierre_empresas || null,
+      fecha_inicio_documentos: convocatoriaNormalizada.fecha_inicio_documentos || null,
+      fecha_cierre_documentos: convocatoriaNormalizada.fecha_cierre_documentos || null,
+      fecha_inicio_validacion: convocatoriaNormalizada.fecha_inicio_validacion || null,
+      fecha_cierre_validacion: convocatoriaNormalizada.fecha_cierre_validacion || null,
+      fecha_inicio_seleccion: convocatoriaNormalizada.fecha_inicio_seleccion || null,
+      fecha_cierre_seleccion: convocatoriaNormalizada.fecha_cierre_seleccion || null,
+      fecha_inicio_asignacion: convocatoriaNormalizada.fecha_inicio_asignacion || null,
+      fecha_cierre_asignacion: convocatoriaNormalizada.fecha_cierre_asignacion || null,
+      fecha_inicio_practicas: convocatoriaNormalizada.fecha_inicio_practicas || null,
+      fecha_cierre_practicas: convocatoriaNormalizada.fecha_cierre_practicas || null,
+      fecha_inicio_cierre: convocatoriaNormalizada.fecha_inicio_cierre || null,
+      fecha_cierre_cierre: convocatoriaNormalizada.fecha_cierre_cierre || null,
+      observaciones: convocatoriaNormalizada.observaciones?.trim() || null,
     };
 
     try {
@@ -1475,22 +1538,25 @@ export function AdminCatalogos() {
       fecha_cierre_cierre: desplazarFechaAnios(convocatoria.fecha_cierre_cierre),
       fase_actual: "Programada",
     });
-    setMensaje("Vista previa generada. Revisa el calendario y confirma con Crear convocatoria.");
+    setMensaje("Vista previa generada. Revisa el periodo general y las fechas por bloque antes de crear la convocatoria.");
     setError("");
   }
 
   const columnasGuia = tipoCarga === "alumnos" ? columnasAlumnos : columnasPersonal;
   const errores = resultadoValidacion?.errores ?? resultadoImportacion?.errores ?? [];
   const puedeImportar = Boolean(resultadoValidacion && resultadoValidacion.errores.length === 0);
-  const resumenCalendario = obtenerResumenCalendario(convocatoriaForm);
   const conflictosMismoTipo = obtenerConflictosMismoTipo(convocatoriaForm, convocatorias);
+  const resumenCalendario = obtenerResumenCalendario(convocatoriaForm);
   const tipoPeriodoPlural = convocatoriaForm.tipo_periodo === "Semestral" ? "semestrales" : "cuatrimestrales";
-  const validacionesFechasConvocatoria = etapasConvocatoria.flatMap((etapa) => [
-    validarCampoFecha(etapa.inicioCampo, convocatoriaForm[etapa.inicioCampo] as string | null, convocatoriaForm, convocatorias),
-    validarCampoFecha(etapa.cierreCampo, convocatoriaForm[etapa.cierreCampo] as string | null, convocatoriaForm, convocatorias),
+  const validacionesFechasConvocatoria = obtenerCamposFechaCalendario().flatMap(({ inicioCampo, cierreCampo }) => [
+    validarCampoFecha(inicioCampo, convocatoriaForm[inicioCampo] as string | null, convocatoriaForm, convocatorias),
+    validarCampoFecha(cierreCampo, convocatoriaForm[cierreCampo] as string | null, convocatoriaForm, convocatorias),
   ]);
   const calendarioTieneConflictos = validacionesFechasConvocatoria.some((validacion) => validacion.estado === "conflicto");
-  const guardarConvocatoriaBloqueado = cargando || Boolean(resumenCalendario.error) || calendarioTieneConflictos;
+  const guardarConvocatoriaBloqueado =
+    cargando ||
+    Boolean(obtenerErrorFechasBloquesConvocatoria(convocatoriaForm)) ||
+    conflictosMismoTipo.length > 0;
   const carreraReglaSeleccionada = carreras.find((carrera) => carrera.id_carrera === reglaPracticaForm.id_carrera);
   const tipoReglaSeleccionado = tiposPractica.find((tipo) => tipo.id_tipo_practica === reglaPracticaForm.id_tipo_practica);
   const etiquetaPeriodoCarreraForm = carreraForm.tipo_periodo === "Cuatrimestral" ? "Duracion en cuatrimestres" : "Duracion en semestres";
@@ -2031,12 +2097,12 @@ export function AdminCatalogos() {
                         Configura datos generales y fechas del proceso.
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="hidden">
                       <span className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${resumenCalendario.completo ? "bg-green-50 text-green-700 border-green-200" : "bg-yellow-50 text-yellow-700 border-yellow-200"}`}>
-                        {resumenCalendario.completo ? "Calendario completo" : "Calendario incompleto"}
+                        {resumenCalendario.completo ? "Periodo configurado" : "Periodo pendiente"}
                       </span>
                       <span className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${resumenCalendario.flujoValido ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-                        {resumenCalendario.flujoValido ? "Flujo valido" : "Flujo invalido"}
+                        {resumenCalendario.flujoValido ? "Periodo correcto" : "Periodo incorrecto"}
                       </span>
                     </div>
                   </div>
@@ -2082,7 +2148,150 @@ export function AdminCatalogos() {
                       </div>
                     </div>
 
-                    <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                    <div className="border border-gray-200 rounded-2xl p-4 space-y-4">
+                      <div>
+                        <h5 className="font-bold text-sm text-[#0d2b5e] flex items-center gap-2">
+                          <CalendarDays className="w-4 h-4" />
+                          Periodo general
+                        </h5>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Las fechas generales delimitan el periodo operativo de la convocatoria.
+                        </p>
+                        <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                          {(() => {
+                            const validacionInicioGeneral = validarCampoFecha(
+                              "fecha_inicio_general",
+                              convocatoriaForm.fecha_inicio_general,
+                              convocatoriaForm,
+                              convocatorias
+                            );
+                            const validacionCierreGeneral = validarCampoFecha(
+                              "fecha_cierre_general",
+                              convocatoriaForm.fecha_cierre_general,
+                              convocatoriaForm,
+                              convocatorias
+                            );
+                            return (
+                              <>
+                                <label className="block">
+                                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha inicio general</span>
+                                  <input
+                                    type="date"
+                                    required
+                                    max={validacionInicioGeneral.max}
+                                    value={convocatoriaForm.fecha_inicio_general ?? ""}
+                                    onChange={(event) => setConvocatoriaForm({
+                                      ...convocatoriaForm,
+                                      fecha_inicio_general: event.target.value || null,
+                                    })}
+                                    className={`mt-1 w-full px-3 py-2 border-2 rounded-lg text-sm ${obtenerClaseInputFecha(validacionInicioGeneral)}`}
+                                  />
+                                  <p className={`mt-1 text-[11px] ${obtenerClaseMensajeFecha(validacionInicioGeneral)}`}>
+                                    {validacionInicioGeneral.mensaje}
+                                  </p>
+                                </label>
+                                <label className="block">
+                                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Fecha cierre general</span>
+                                  <input
+                                    type="date"
+                                    required
+                                    min={validacionCierreGeneral.min}
+                                    value={convocatoriaForm.fecha_cierre_general ?? ""}
+                                    onChange={(event) => setConvocatoriaForm({
+                                      ...convocatoriaForm,
+                                      fecha_cierre_general: event.target.value || null,
+                                    })}
+                                    className={`mt-1 w-full px-3 py-2 border-2 rounded-lg text-sm ${obtenerClaseInputFecha(validacionCierreGeneral)}`}
+                                  />
+                                  <p className={`mt-1 text-[11px] ${obtenerClaseMensajeFecha(validacionCierreGeneral)}`}>
+                                    {validacionCierreGeneral.mensaje}
+                                  </p>
+                                </label>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                      <div className="grid lg:grid-cols-2 gap-3">
+                        {bloquesConvocatoria.map((bloque) => {
+                          const inicio = convocatoriaForm[bloque.inicioCampo] as string | null;
+                          const cierre = convocatoriaForm[bloque.cierreCampo] as string | null;
+                          const validacionInicio = validarCampoFecha(bloque.inicioCampo, inicio, convocatoriaForm, convocatorias);
+                          const validacionCierre = validarCampoFecha(bloque.cierreCampo, cierre, convocatoriaForm, convocatorias);
+                          const estadoBloque = obtenerEstadoBloque(convocatoriaForm, bloque, convocatorias);
+                          const IconoEstado = estadoBloque.icono;
+
+                          return (
+                            <div key={bloque.nombre} className={`border rounded-xl p-4 space-y-4 ${estadoBloque.clase}`}>
+                              <div className="flex items-start gap-3">
+                                <span className="w-8 h-8 shrink-0 rounded-full bg-white/80 text-[#1565c0] text-sm font-bold flex items-center justify-center border border-current/20">
+                                  {bloque.orden}
+                                </span>
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="font-bold text-sm text-[#0d2b5e]">{bloque.nombre}</div>
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full bg-white/80 border border-current/20">
+                                      <IconoEstado className="w-3.5 h-3.5" />
+                                      {estadoBloque.texto}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-600 mt-1">{bloque.descripcion}</p>
+                                  {bloque.nota && <p className="text-xs text-[#1565c0] mt-2">{bloque.nota}</p>}
+                                </div>
+                              </div>
+                              <div className="grid sm:grid-cols-2 gap-2">
+                                <label className="block">
+                                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Inicio del bloque</span>
+                                  <input
+                                    type="date"
+                                    required
+                                    min={validacionInicio.min}
+                                    max={validacionInicio.max}
+                                    value={inicio ?? ""}
+                                    onChange={(event) => setConvocatoriaForm(distribuirFechasBloque(
+                                      convocatoriaForm,
+                                      bloque,
+                                      event.target.value || null,
+                                      cierre
+                                    ))}
+                                    className={`mt-1 w-full px-3 py-2 border-2 rounded-lg text-sm ${obtenerClaseInputFecha(validacionInicio)}`}
+                                  />
+                                  <p className={`mt-1 text-[11px] ${obtenerClaseMensajeFecha(validacionInicio)}`}>
+                                    {validacionInicio.mensaje}
+                                  </p>
+                                </label>
+                                <label className="block">
+                                  <span className="text-[11px] font-semibold text-gray-500 uppercase">Cierre del bloque</span>
+                                  <input
+                                    type="date"
+                                    required
+                                    min={validacionCierre.min}
+                                    max={validacionCierre.max}
+                                    value={cierre ?? ""}
+                                    onChange={(event) => setConvocatoriaForm(distribuirFechasBloque(
+                                      convocatoriaForm,
+                                      bloque,
+                                      inicio,
+                                      event.target.value || null
+                                    ))}
+                                    className={`mt-1 w-full px-3 py-2 border-2 rounded-lg text-sm ${obtenerClaseInputFecha(validacionCierre)}`}
+                                  />
+                                  <p className={`mt-1 text-[11px] ${obtenerClaseMensajeFecha(validacionCierre)}`}>
+                                    {validacionCierre.mensaje}
+                                  </p>
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="text-xs text-[#0d2b5e] bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-1">
+                        <p>Las etapas del proceso se gestionan por estado y reglas del sistema, no por subfases rígidas.</p>
+                        <p>Coordinación puede atender casos administrativos como rezagados y reasignaciones extraordinarias sin abrir una nueva fase.</p>
+                      </div>
+                    </div>
+
+                    <div className="hidden">
                       <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/80">
                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                       <div>
@@ -2093,7 +2302,7 @@ export function AdminCatalogos() {
                         <p className="text-xs text-gray-500 mt-1">
                           {modoAvanzadoConvocatoria
                             ? "Ajusta las 8 fases internas del proceso."
-                            : "El modo básico agrupa las etapas para facilitar la administración. El modo avanzado permite ajustar fechas internas del proceso."}
+                            : "Configuración heredada no disponible para edición."}
                         </p>
                         <p className="text-xs text-[#1565c0] mt-1">
                           Conflictos solo contra convocatorias {tipoPeriodoPlural} activas.
@@ -2105,7 +2314,7 @@ export function AdminCatalogos() {
                           onClick={() => setModoAvanzadoConvocatoria((actual) => !actual)}
                           className="text-xs font-semibold px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-[#1565c0] hover:bg-blue-100"
                         >
-                          {modoAvanzadoConvocatoria ? "Volver al modo básico" : "Ver configuración avanzada"}
+                          {modoAvanzadoConvocatoria ? "Ocultar detalle heredado" : "Detalle heredado"}
                         </button>
                         <div className="flex flex-wrap gap-2">
                           <span className="inline-flex items-center gap-1 text-xs text-green-700">
@@ -2123,10 +2332,10 @@ export function AdminCatalogos() {
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <span className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${resumenCalendario.completo ? "bg-green-50 text-green-700 border-green-200" : "bg-yellow-50 text-yellow-700 border-yellow-200"}`}>
-                            {resumenCalendario.completo ? "Calendario completo" : "Calendario incompleto"}
+                            {resumenCalendario.completo ? "Periodo configurado" : "Periodo pendiente"}
                           </span>
                           <span className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${resumenCalendario.flujoValido && !calendarioTieneConflictos ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-                            {resumenCalendario.flujoValido && !calendarioTieneConflictos ? "Flujo valido" : "Flujo invalido"}
+                            {resumenCalendario.flujoValido && !calendarioTieneConflictos ? "Periodo correcto" : "Periodo incorrecto"}
                           </span>
                         </div>
                       </div>
@@ -2134,7 +2343,7 @@ export function AdminCatalogos() {
                     <div className={`mt-3 text-xs rounded-lg px-3 py-2 border ${resumenCalendario.flujoValido && !calendarioTieneConflictos ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
                       <span className="font-semibold">Validacion del calendario: </span>
                       {resumenCalendario.flujoValido && !calendarioTieneConflictos
-                        ? "Calendario valido. Las etapas respetan el flujo."
+                        ? "Periodo general correcto."
                         : "Hay fechas en conflicto. Revisa los campos marcados en rojo."}
                     </div>
                     {resumenCalendario.error && (
@@ -2361,7 +2570,7 @@ export function AdminCatalogos() {
                     <div>
                       <h4 className="font-bold text-[#0d2b5e]">Convocatorias registradas</h4>
                       <p className="text-xs text-gray-500 mt-1">
-                        Cada convocatoria mantiene su calendario, estado y fase actual.
+                        Cada convocatoria se administra mediante su periodo general y estado.
                       </p>
                     </div>
                     <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-[#1565c0] border border-blue-100">
@@ -2386,9 +2595,6 @@ export function AdminCatalogos() {
                       <div className="flex flex-wrap items-center gap-2 mt-3">
                         <span className="text-xs px-2 py-1 rounded-full bg-blue-50 text-[#1565c0] font-semibold">
                           {convocatoria.tipo_periodo}
-                        </span>
-                        <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 font-semibold">
-                          {convocatoria.fase_actual}
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2 mt-4">

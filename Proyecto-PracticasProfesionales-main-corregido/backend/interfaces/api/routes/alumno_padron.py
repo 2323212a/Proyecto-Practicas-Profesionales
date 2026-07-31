@@ -119,9 +119,9 @@ def _mensaje_etapa_seleccion_no_disponible(convocatoria: ConvocatoriaModel | Non
     if convocatoria is None:
         return "La seleccion de vacantes aun no esta habilitada."
     hoy = date.today()
-    if convocatoria.fecha_inicio_seleccion and hoy < convocatoria.fecha_inicio_seleccion:
+    if convocatoria.fecha_inicio_general and hoy < convocatoria.fecha_inicio_general:
         return "La seleccion de vacantes aun no esta habilitada."
-    if convocatoria.fecha_cierre_seleccion and hoy > convocatoria.fecha_cierre_seleccion:
+    if convocatoria.fecha_cierre_general and hoy > convocatoria.fecha_cierre_general:
         return "El periodo de seleccion de vacantes ha finalizado."
     return detalle or "La seleccion de vacantes aun no esta habilitada."
 

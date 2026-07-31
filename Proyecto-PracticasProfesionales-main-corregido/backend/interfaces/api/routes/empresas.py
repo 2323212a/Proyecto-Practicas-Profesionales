@@ -87,8 +87,8 @@ def validar_registro_publico_habilitado(db: Session):
         db.query(ConvocatoriaModel)
         .filter(
             ConvocatoriaModel.estado == "Activa",
-            ConvocatoriaModel.fecha_inicio_empresas <= hoy,
-            ConvocatoriaModel.fecha_cierre_empresas >= hoy,
+            ConvocatoriaModel.fecha_inicio_general <= hoy,
+            ConvocatoriaModel.fecha_cierre_general >= hoy,
         )
         .order_by(ConvocatoriaModel.fecha_inicio_empresas.desc(), ConvocatoriaModel.id_convocatoria.desc())
         .first()

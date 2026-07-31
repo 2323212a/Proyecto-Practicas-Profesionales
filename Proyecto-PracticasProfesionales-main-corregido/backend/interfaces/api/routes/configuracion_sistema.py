@@ -99,7 +99,7 @@ def calcular_estado_inscripcion_empresas(convocatoria: ConvocatoriaModel | None)
         return "Cerrada", "La convocatoria no tiene fechas de registro de empresas."
 
     hoy = date.today()
-    if convocatoria.fecha_inicio_empresas <= hoy <= convocatoria.fecha_cierre_empresas:
+    if convocatoria.fecha_inicio_general <= hoy <= convocatoria.fecha_cierre_general:
         return "Abierta", "Dentro del periodo de registro de empresas de la convocatoria."
     return "Cerrada", "Fuera del periodo de registro de empresas de la convocatoria."
 

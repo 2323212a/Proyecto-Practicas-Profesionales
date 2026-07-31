@@ -199,9 +199,9 @@ def _convocatoria_basica_response(convocatoria: ConvocatoriaModel | None) -> dic
 
 def _etapa_empresas_convocatoria(convocatoria: ConvocatoriaModel) -> str:
     hoy = date.today()
-    if convocatoria.fecha_inicio_empresas and hoy < convocatoria.fecha_inicio_empresas:
+    if convocatoria.fecha_inicio_general and hoy < convocatoria.fecha_inicio_general:
         return "Próxima"
-    if convocatoria.fecha_cierre_empresas and hoy > convocatoria.fecha_cierre_empresas:
+    if convocatoria.fecha_cierre_general and hoy > convocatoria.fecha_cierre_general:
         return "Finalizada"
     return "Empresas"
 
@@ -209,7 +209,6 @@ def _etapa_empresas_convocatoria(convocatoria: ConvocatoriaModel) -> str:
 def _calendario_operativo_valido(convocatoria: ConvocatoriaModel) -> bool:
     rangos = [
         (convocatoria.fecha_inicio_general, convocatoria.fecha_cierre_general),
-        (convocatoria.fecha_inicio_empresas, convocatoria.fecha_cierre_empresas),
     ]
     return all(inicio is None or cierre is None or inicio <= cierre for inicio, cierre in rangos)
 
