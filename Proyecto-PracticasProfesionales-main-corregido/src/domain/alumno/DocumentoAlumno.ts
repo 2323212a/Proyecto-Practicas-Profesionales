@@ -71,6 +71,8 @@ export interface ConvocatoriaDisponibleAlumno {
   nombre: string;
   tipo_periodo: string;
   estado: string;
+  puede_inscribirse: boolean;
+  mensaje_inscripcion: string | null;
   fecha_inicio_documentos: string | null;
   fecha_cierre_documentos: string | null;
   fecha_inicio_validacion: string | null;

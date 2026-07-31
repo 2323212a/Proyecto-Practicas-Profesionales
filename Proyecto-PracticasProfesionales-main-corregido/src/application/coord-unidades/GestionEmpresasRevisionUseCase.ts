@@ -27,4 +27,8 @@ export class GestionEmpresasRevisionUseCase {
   rechazarSolicitud(idEmpresa: number, motivo: string, observaciones?: string): Promise<RechazarSolicitudResponse> {
     return this.repository.rechazarSolicitud(idEmpresa, motivo, observaciones);
   }
+
+  eliminarSolicitud(idEmpresa: number): Promise<void> {
+    return this.repository.eliminarSolicitud(idEmpresa);
+  }
 }

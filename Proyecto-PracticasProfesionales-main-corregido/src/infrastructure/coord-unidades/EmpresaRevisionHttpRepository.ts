@@ -35,4 +35,8 @@ export class EmpresaRevisionHttpRepository implements EmpresaRevisionRepository 
     });
     return data;
   }
+
+  async eliminarSolicitud(idEmpresa: number): Promise<void> {
+    await apiClient.delete(`/coord-unidades/empresas/${idEmpresa}/solicitud`);
+  }
 }

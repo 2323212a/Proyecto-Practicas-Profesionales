@@ -57,7 +57,11 @@ export function CargaDocumentos() {
     try {
       const respuesta = await gestionDocumentosAlumnoUseCase.listarConvocatoriasDisponibles();
       setConvocatorias(respuesta.convocatorias);
-      if (respuesta.mensaje) setError(respuesta.mensaje);
+      if (respuesta.mensaje) {
+        setError(respuesta.mensaje);
+      } else if (respuesta.convocatorias.length > 0) {
+        setError("");
+      }
     } catch (err) {
       console.error(err);
     }
@@ -169,15 +173,22 @@ export function CargaDocumentos() {
                   <div className="text-[11px] text-gray-500 mt-0.5">
                     {convocatoria.tipo_periodo} - Documentos: {fecha(convocatoria.fecha_inicio_documentos)} a {fecha(convocatoria.fecha_cierre_documentos)}
                   </div>
+                  <div className={"mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold " +
+                    (convocatoria.puede_inscribirse
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : "border-amber-200 bg-amber-50 text-amber-700")}
+                  >
+                    {convocatoria.mensaje_inscripcion}
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => void inscribirse(convocatoria.id_convocatoria)}
-                  disabled={inscribiendo !== null}
+                  disabled={inscribiendo !== null || !convocatoria.puede_inscribirse}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0d2b5e] px-3 py-2 text-[11px] font-bold text-white hover:bg-[#1565c0] disabled:opacity-50"
                 >
                   {inscribiendo === convocatoria.id_convocatoria ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                  Inscribirme
+                  {convocatoria.puede_inscribirse ? "Inscribirme" : "Inscripción no disponible"}
                 </button>
               </div>
             ))}

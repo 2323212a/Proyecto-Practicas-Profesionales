@@ -3,6 +3,7 @@ import secrets
 import string
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.identidad_importacion_service import archivar_alumno
 from fastapi import APIRouter, Depends,  HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -447,10 +448,11 @@ def _crear_perfil_usuario_admin(db: Session, usuario: UsuarioModel, datos: Usuar
     apellido_materno = _limpiar_texto(datos.apellido_materno)
     if not nombre:
         raise HTTPException(status_code=400, detail="El nombre es obligatorio")
-    if not apellido_paterno:
-        raise HTTPException(status_code=400, detail="El apellido paterno es obligatorio")
 
     if usuario.id_rol == 1:
+        nombre_completo = " ".join(
+            parte for parte in [nombre, apellido_paterno, apellido_materno] if parte
+        )
         if datos.id_carrera is None:
             raise HTTPException(status_code=400, detail="La carrera es obligatoria para Alumno")
         carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == datos.id_carrera).first()
@@ -467,9 +469,9 @@ def _crear_perfil_usuario_admin(db: Session, usuario: UsuarioModel, datos: Usuar
 
         alumno = AlumnoModel(
             id_usuario=usuario.id_usuario,
-            nombre=nombre,
-            apellido_paterno=apellido_paterno,
-            apellido_materno=apellido_materno,
+            nombre=nombre_completo,
+            apellido_paterno=None,
+            apellido_materno=None,
             matricula=_limpiar_texto(datos.matricula),
             id_carrera=datos.id_carrera,
             semestre=datos.semestre,
@@ -486,6 +488,8 @@ def _crear_perfil_usuario_admin(db: Session, usuario: UsuarioModel, datos: Usuar
         return
 
     if usuario.id_rol in (2, 3, 4, 6, 7):
+        if not apellido_paterno:
+            raise HTTPException(status_code=400, detail="El apellido paterno es obligatorio")
         personal = PersonalInternoModel(
             id_usuario=usuario.id_usuario,
             nombre=nombre,
@@ -643,14 +647,21 @@ def actualizar_perfil_usuario(
                 detail="Este usuario no tiene un perfil asociado. Revisa su creacion o usa la opcion correspondiente para completar el perfil.",
             )
 
-        for campo in ["nombre", "apellido_paterno"]:
-            if campo in payload:
-                valor = _limpiar_texto(payload[campo])
-                if not valor:
-                    raise HTTPException(status_code=400, detail=f"{campo} es obligatorio")
-                setattr(perfil, campo, valor)
-        if "apellido_materno" in payload:
-            perfil.apellido_materno = _limpiar_texto(payload["apellido_materno"])
+        if any(campo in payload for campo in ["nombre", "apellido_paterno", "apellido_materno"]):
+            nombre = _limpiar_texto(payload.get("nombre", perfil.nombre))
+            if not nombre:
+                raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+            perfil.nombre = " ".join(
+                parte
+                for parte in [
+                    nombre,
+                    _limpiar_texto(payload.get("apellido_paterno")),
+                    _limpiar_texto(payload.get("apellido_materno")),
+                ]
+                if parte
+            )
+            perfil.apellido_paterno = None
+            perfil.apellido_materno = None
 
         if "matricula" in payload:
             matricula = _limpiar_texto(payload["matricula"])
@@ -928,6 +939,10 @@ def eliminar_usuario_definitivamente(
     correo = usuario.correo
     if usuario.id_rol == 1:
         try:
+            alumno = db.query(AlumnoModel).filter(AlumnoModel.id_usuario == id_usuario).first()
+            if alumno is None:
+                raise HTTPException(status_code=404, detail="El perfil de alumno no existe.")
+            archivar_alumno(db, alumno, usuario.correo)
             registros_eliminados = _eliminar_registros_alumno(db, id_usuario)
             db.query(UsuarioModel).filter(
                 UsuarioModel.id_usuario == id_usuario

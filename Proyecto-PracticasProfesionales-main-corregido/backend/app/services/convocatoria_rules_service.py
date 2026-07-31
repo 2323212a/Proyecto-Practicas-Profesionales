@@ -236,10 +236,6 @@ def obtener_convocatorias_disponibles_para_alumno(db: Session, alumno: AlumnoMod
     )
     disponibles = []
     for convocatoria in convocatorias:
-        try:
-            validar_etapa_actual(convocatoria, "documentos")
-        except HTTPException:
-            continue
         existe_expediente = (
             db.query(ExpedienteModel)
             .filter(

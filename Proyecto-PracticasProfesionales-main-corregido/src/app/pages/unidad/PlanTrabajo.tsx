@@ -113,6 +113,29 @@ function obtenerMensajePlanTrabajoError(error: unknown, mensajeDefault: string) 
   return getApiErrorMessage(error, mensajeDefault);
 }
 
+function descargarArchivoBlob(blob: Blob, nombreArchivo: string) {
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombreArchivo || "plan_trabajo.pdf";
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function obtenerMensajeDescarga(error: unknown, mensajeDefault: string) {
+  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+    try {
+      const contenido = JSON.parse(await error.response.data.text()) as { detail?: unknown };
+      if (typeof contenido.detail === "string") return contenido.detail;
+    } catch {
+      return mensajeDefault;
+    }
+  }
+  return getApiErrorMessage(error, mensajeDefault);
+}
+
 export function PlanTrabajo() {
   const [datos, setDatos] = useState<VacantesUnidadResponse | null>(null);
   const [convocatorias, setConvocatorias] = useState<ConvocatoriaBasica[]>([]);
@@ -457,12 +480,10 @@ export function PlanTrabajo() {
   async function descargarPlanTrabajo(vacante: VacanteUnidad) {
     try {
       const { data } = await apiClient.get(`/unidad/vacantes/${vacante.id_vacante}/plan-trabajo/archivo`, { responseType: "blob" });
-      const url = URL.createObjectURL(data);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      descargarArchivoBlob(data, vacante.plan_trabajo?.nombre_archivo ?? "plan_trabajo.pdf");
     } catch (err) {
       console.error(err);
-      setError(getApiErrorMessage(err, "No fue posible descargar el Plan de Trabajo."));
+      setError(await obtenerMensajeDescarga(err, "No fue posible descargar el Plan de Trabajo."));
     }
   }
 
@@ -474,12 +495,10 @@ export function PlanTrabajo() {
         return;
       }
       const { data } = await apiClient.get(`/unidad/vacantes/formatos-plan-trabajo/${formato.id_formato_plan}/archivo`, { responseType: "blob" });
-      const url = URL.createObjectURL(data);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      descargarArchivoBlob(data, formato.nombre_archivo);
     } catch (err) {
       console.error(err);
-      setError(getApiErrorMessage(err, "No fue posible descargar el formato oficial."));
+      setError(await obtenerMensajeDescarga(err, "No fue posible descargar el formato oficial."));
     }
   }
 

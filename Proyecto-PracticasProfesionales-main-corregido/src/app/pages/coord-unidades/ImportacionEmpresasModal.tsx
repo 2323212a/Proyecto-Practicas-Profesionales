@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  Eye,
   FileCheck2,
   FileSpreadsheet,
   LoaderCircle,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 
 import type {
+  FilaValidacionEmpresa,
   ResultadoImportacionEmpresas,
   ValidacionImportacionEmpresas,
 } from "../../../domain/coord-unidades/ImportacionEmpresa";
@@ -54,6 +56,8 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
   const [resultado, setResultado] = useState<ResultadoImportacionEmpresas | null>(null);
   const [procesando, setProcesando] = useState<"plantilla" | "validar" | "confirmar" | "reporte" | null>(null);
   const [error, setError] = useState("");
+  const [filaVista, setFilaVista] = useState<FilaValidacionEmpresa | null>(null);
+  const [vistaRevisada, setVistaRevisada] = useState(false);
 
   if (!abierto) return null;
 
@@ -61,6 +65,8 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
     setExcel(nuevoExcel);
     setValidacion(null);
     setResultado(null);
+    setFilaVista(null);
+    setVistaRevisada(false);
     setError("");
   }
 
@@ -69,6 +75,8 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
     setExcel(null);
     setValidacion(null);
     setResultado(null);
+    setFilaVista(null);
+    setVistaRevisada(false);
     setError("");
     onClose();
   }
@@ -91,6 +99,8 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
       setProcesando("validar");
       setError("");
       setResultado(null);
+      setFilaVista(null);
+      setVistaRevisada(false);
       setValidacion(await validarImportacionEmpresas(excel));
     } catch (err) {
       setError(getApiErrorMessage(err, "No se pudo validar la importación."));
@@ -100,7 +110,7 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
   }
 
   async function confirmar() {
-    if (!validacion?.puede_confirmar) return;
+    if (!validacion?.puede_confirmar || !vistaRevisada) return;
     if (!window.confirm("Se crearán " + validacion.resumen.validas + " empresas válidas. Las filas inválidas serán omitidas. ¿Deseas continuar?")) return;
     try {
       setProcesando("confirmar");
@@ -148,7 +158,7 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
 
         <div className="border-b border-gray-100 px-5 py-3">
           <div className="grid grid-cols-4 gap-2">
-            {["Plantilla", "Archivo", "Validación", "Resultado"].map((etiqueta, indice) => (
+            {["Plantilla", "Archivo", "Vista previa", "Resultado"].map((etiqueta, indice) => (
               <div key={etiqueta} className="flex items-center gap-2">
                 <span className={"flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold " + (paso >= indice + 1 ? "bg-[#1565c0] text-white" : "bg-gray-100 text-gray-400")}>{indice + 1}</span>
                 <span className={"hidden text-xs font-semibold sm:block " + (paso >= indice + 1 ? "text-[#0d2b5e]" : "text-gray-400")}>{etiqueta}</span>
@@ -211,6 +221,14 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
 
           {validacion && !resultado && (
             <section className="space-y-4">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <h3 className="font-bold text-[#0d2b5e]">Vista previa antes de importar</h3>
+                <p className="mt-1 text-sm text-blue-700">
+                  Revisa el resumen y usa “Ver datos” para consultar las 24 columnas de cada empresa.
+                  Nada se guardará hasta que confirmes la importación.
+                </p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {[
                   ["Total", validacion.resumen.total, "bg-blue-50 text-blue-700"],
@@ -234,7 +252,7 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
               <div className="overflow-x-auto rounded-xl border border-gray-200">
                 <table className="min-w-[1150px] w-full text-xs">
                   <thead className="bg-gray-50 text-left text-gray-500">
-                    <tr><th className="px-3 py-3">Fila</th><th>Empresa</th><th>RFC</th><th>Tipo</th><th>Municipio / Estado</th><th>Responsable</th><th>Capacidad</th><th>Validación</th><th className="pr-3">Observaciones</th></tr>
+                    <tr><th className="px-3 py-3">Fila</th><th>Empresa</th><th>RFC</th><th>Tipo</th><th>Municipio / Estado</th><th>Responsable</th><th>Capacidad</th><th>Validación</th><th>Detalle</th><th className="pr-3">Observaciones</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {validacion.filas.map((fila) => (
@@ -243,6 +261,16 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
                         <td className="py-3 font-semibold text-[#0d2b5e]">{fila.nombre}</td><td className="py-3">{fila.rfc}</td><td className="py-3">{fila.tipo_unidad}</td>
                         <td className="py-3">{fila.municipio}<br /><span className="text-gray-400">{fila.estado}</span></td><td className="py-3">{fila.responsable}</td><td className="py-3">{fila.capacidad}</td>
                         <td className="py-3"><span className={"rounded-full px-2 py-1 font-semibold " + colorEstado(fila.estatus_validacion)}>{fila.estatus_validacion}</span></td>
+                        <td className="py-3">
+                          <button
+                            type="button"
+                            onClick={() => setFilaVista(fila)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-2.5 py-1.5 font-semibold text-[#1565c0] hover:bg-blue-50"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Ver datos
+                          </button>
+                        </td>
                         <td className="max-w-[320px] py-3 pr-3">
                           {fila.errores.map((item) => <div key={item} className="mb-1 text-red-600">• {item}</div>)}
                           {fila.advertencias.map((item) => <div key={item} className="mb-1 text-yellow-700">• {item}</div>)}
@@ -254,9 +282,41 @@ export function ImportacionEmpresasModal({ abierto, onClose, onImported }: Props
                 </table>
               </div>
 
-              <div className="flex flex-col items-end gap-2">
+              {filaVista && (
+                <div className="rounded-2xl border border-blue-200 bg-white shadow-sm">
+                  <div className="flex items-start justify-between border-b border-blue-100 bg-blue-50 px-4 py-3">
+                    <div>
+                      <h4 className="font-bold text-[#0d2b5e]">Datos completos · fila {filaVista.fila}</h4>
+                      <p className="text-xs text-blue-700">{filaVista.nombre}</p>
+                    </div>
+                    <button type="button" onClick={() => setFilaVista(null)} className="rounded-lg p-1 text-gray-500 hover:bg-white" aria-label="Cerrar detalle">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <dl className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {Object.entries(filaVista.datos).map(([campo, valor]) => (
+                      <div key={campo} className="min-w-0 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                        <dt className="text-[11px] font-bold uppercase tracking-wide text-gray-500">{campo}</dt>
+                        <dd className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-800">{valor || "Sin dato"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
+
+              <div className="flex flex-col items-end gap-3">
+                <label className="flex max-w-xl cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={vistaRevisada}
+                    onChange={(event) => setVistaRevisada(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[#1565c0]"
+                  />
+                  <span>He revisado la vista previa y confirmo que los datos válidos están listos para importarse.</span>
+                </label>
                 {!validacion.puede_confirmar && <p className="text-xs text-red-600">Corrige los errores generales o agrega al menos una fila válida antes de confirmar.</p>}
-                <button onClick={confirmar} disabled={!validacion.puede_confirmar || Boolean(procesando)} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
+                {validacion.puede_confirmar && !vistaRevisada && <p className="text-xs text-amber-700">Marca la revisión de la vista previa para habilitar la confirmación.</p>}
+                <button onClick={confirmar} disabled={!validacion.puede_confirmar || !vistaRevisada || Boolean(procesando)} className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
                   {procesando === "confirmar" ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                   Confirmar {validacion.resumen.validas} empresa(s)
                 </button>

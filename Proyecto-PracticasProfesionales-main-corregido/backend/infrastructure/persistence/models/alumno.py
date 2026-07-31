@@ -11,8 +11,8 @@ class AlumnoModel(Base):
 
     id_alumno = Column(Integer, primary_key=True, autoincrement=True)
     id_usuario = Column(Integer, ForeignKey("usuario.id_usuario"), nullable=False, unique=True)
-    nombre = Column(String(120), nullable=False)
-    apellido_paterno = Column(String(120), nullable=False)
+    nombre = Column(String(300), nullable=False)
+    apellido_paterno = Column(String(120), nullable=True)
     apellido_materno = Column(String(120), nullable=True)
     id_carrera = Column(Integer, ForeignKey("carrera.id_carrera"), nullable=False)
     id_tipo_practica = Column(

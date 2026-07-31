@@ -1,15 +1,21 @@
+import re
 import secrets
 import string
+import unicodedata
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.identidad_importacion_service import (
+    buscar_id_alumno_reutilizable,
+    marcar_id_reutilizado,
+)
 from app.services.upload_security import leer_uploadfile_validado_importacion
 from infrastructure.database.dependencies import obtener_db
-from infrastructure.email.email_service import enviar_correo_importacion_usuario, mostrar_password_temporal_en_respuesta
+from infrastructure.email.email_service import enviar_correo_importacion_usuario
 from infrastructure.persistence.models.alumno import AlumnoModel
 from infrastructure.persistence.models.carrera import CarreraModel
 from infrastructure.persistence.models.personal_interno import PersonalInternoModel
@@ -28,6 +34,16 @@ router = APIRouter(
 
 
 COLUMNAS_ALUMNOS_REQUERIDAS = [
+    "alumno",
+    "matricula",
+    "semestre",
+    "grupo",
+    "correo",
+    "practica",
+    "tipo",
+]
+
+COLUMNAS_ALUMNOS_ANTERIORES = [
     "nombre",
     "apellido_paterno",
     "apellido_materno",
@@ -73,14 +89,32 @@ def _correo_institucional_valido(correo: str):
     return correo.lower().endswith(DOMINIO_INSTITUCIONAL)
 
 
-def _normalizar_excel_con_secciones(df_raw, columnas_requeridas):
+def _clave_encabezado(valor):
+    texto = unicodedata.normalize("NFKD", _texto(valor))
+    texto = texto.encode("ascii", "ignore").decode("ascii").lower().strip()
+    return re.sub(r"\s+", "_", texto)
+
+
+def _normalizar_columnas(df):
+    normalizado = df.copy()
+    normalizado.columns = [_clave_encabezado(columna) for columna in normalizado.columns]
+    return normalizado
+
+
+def _normalizar_excel_con_secciones(df_raw, columnas_requeridas, columnas_alternativas=None):
     encabezado_index = None
     encabezados = []
-    requeridas = set(columnas_requeridas)
+    conjuntos_requeridos = [
+        {_clave_encabezado(columna) for columna in columnas_requeridas},
+        *[
+            {_clave_encabezado(columna) for columna in alternativa}
+            for alternativa in (columnas_alternativas or [])
+        ],
+    ]
 
     for index, fila in df_raw.iterrows():
-        valores = [_texto(valor) for valor in fila.tolist()]
-        if requeridas.issubset(set(valores)):
+        valores = [_clave_encabezado(valor) for valor in fila.tolist()]
+        if any(requeridas.issubset(set(valores)) for requeridas in conjuntos_requeridos):
             encabezado_index = index
             encabezados = valores
             break
@@ -96,9 +130,11 @@ def _normalizar_excel_con_secciones(df_raw, columnas_requeridas):
         "EJEMPLO CORRECTO, NO IMPORTAR",
         "Catalogos / valores permitidos",
         "Catalogo de tipos de practica",
+        "Prácticas permitidas",
         "Roles permitidos",
         "Errores comunes",
         "Carreras disponibles",
+        "Ejemplos de TIPO texto libre",
     }
     filas_validas = []
     for _, fila in datos.iterrows():
@@ -114,11 +150,16 @@ def _normalizar_excel_con_secciones(df_raw, columnas_requeridas):
     return pd.DataFrame(filas_validas).reset_index(drop=True)
 
 
-def _leer_archivo(archivo: UploadFile, hoja: str | None = None, columnas_requeridas=None):
+def _leer_archivo(
+    archivo: UploadFile,
+    hoja: str | None = None,
+    columnas_requeridas=None,
+    columnas_alternativas=None,
+):
     leer_uploadfile_validado_importacion(archivo)
     extension = Path(archivo.filename or "").suffix.lower()
     if extension == ".csv":
-        return pd.read_csv(archivo.file)
+        return _normalizar_columnas(pd.read_csv(archivo.file))
     if extension == ".xlsx":
         hojas = [hoja] if isinstance(hoja, str) else list(hoja or [])
         try:
@@ -128,7 +169,11 @@ def _leer_archivo(archivo: UploadFile, hoja: str | None = None, columnas_requeri
                 raise ValueError
             if columnas_requeridas:
                 df_raw = pd.read_excel(excel, sheet_name=hoja_encontrada, header=None)
-                return _normalizar_excel_con_secciones(df_raw, columnas_requeridas)
+                return _normalizar_excel_con_secciones(
+                    df_raw,
+                    columnas_requeridas,
+                    columnas_alternativas,
+                )
             return pd.read_excel(excel, sheet_name=hoja_encontrada) if hoja_encontrada else pd.read_excel(excel)
         except ValueError as exc:
             raise HTTPException(
@@ -150,6 +195,43 @@ def _entero(valor, default=None):
     return int(valor)
 
 
+def _matricula_texto(valor):
+    texto = _texto(valor)
+    if re.fullmatch(r"\d+\.0", texto):
+        return texto[:-2]
+    return texto
+
+
+def _adaptar_columnas_alumnos(df):
+    adaptado = _normalizar_columnas(df)
+
+    if "alumno" not in adaptado.columns:
+        columnas_nombre = ["nombre", "apellido_paterno", "apellido_materno"]
+        if all(columna in adaptado.columns for columna in columnas_nombre):
+            adaptado["alumno"] = adaptado[columnas_nombre].apply(
+                lambda fila: " ".join(_texto(valor) for valor in fila if _texto(valor)),
+                axis=1,
+            )
+
+    if "practica" not in adaptado.columns and "tipo_practica" in adaptado.columns:
+        adaptado["practica"] = adaptado["tipo_practica"]
+    if "tipo" not in adaptado.columns and "carrera" in adaptado.columns:
+        adaptado["tipo"] = adaptado["carrera"]
+
+    return adaptado
+
+
+
+def _leer_archivo_alumnos(archivo: UploadFile):
+    df = _leer_archivo(
+        archivo,
+        ["Plantilla Alumnos", "Alumnos"],
+        COLUMNAS_ALUMNOS_REQUERIDAS,
+        [COLUMNAS_ALUMNOS_ANTERIORES],
+    )
+    return _adaptar_columnas_alumnos(df)
+
+
 def _vista_previa(df, limite=5):
     return df.head(limite).fillna("").to_dict(orient="records")
 
@@ -162,7 +244,24 @@ def _validar_columnas(df, columnas):
     ]
 
 
-def _validar_alumnos_df(df, db: Session):
+def _resolver_carrera_importacion(db: Session, id_carrera: int | None):
+    query = db.query(CarreraModel)
+    if id_carrera is not None:
+        return query.filter(
+            CarreraModel.id_carrera == id_carrera,
+            CarreraModel.estado == "Activa",
+        ).first()
+
+    carreras_activas = query.filter(CarreraModel.estado == "Activa").all()
+    return carreras_activas[0] if len(carreras_activas) == 1 else None
+
+
+def _validar_alumnos_df(
+    df,
+    db: Session,
+    id_carrera: int | None = None,
+    requerir_carrera: bool = True,
+):
     errores = _validar_columnas(df, COLUMNAS_ALUMNOS_REQUERIDAS)
 
     if errores:
@@ -171,18 +270,28 @@ def _validar_alumnos_df(df, db: Session):
     if df.empty:
         return [{"fila": 0, "error": "No hay registros validos para importar. Captura al menos un alumno."}]
 
+    carrera_importacion = _resolver_carrera_importacion(db, id_carrera) if requerir_carrera else None
+    if requerir_carrera and carrera_importacion is None:
+        return [{
+            "fila": 0,
+            "error": "Selecciona una carrera activa para la importación de alumnos.",
+        }]
+
     correos = set()
     matriculas = set()
 
     for index, fila in df.iterrows():
         numero_fila = index + 2
+        alumno = _texto(fila["alumno"])
         correo = _texto(fila["correo"])
-        matricula = _texto(fila["matricula"])
-        carrera_nombre = _texto(fila["carrera"])
+        matricula = _matricula_texto(fila["matricula"])
+        grupo = _texto(fila["grupo"])
+        practica = _texto(fila["practica"])
 
         for columna in COLUMNAS_ALUMNOS_REQUERIDAS:
             if not _texto(fila[columna]):
                 errores.append({"fila": numero_fila, "error": f"{columna} es obligatorio"})
+
 
         if correo in correos:
             errores.append({"fila": numero_fila, "error": f"Correo duplicado en archivo: {correo}"})
@@ -190,9 +299,15 @@ def _validar_alumnos_df(df, db: Session):
             errores.append({"fila": numero_fila, "error": "El correo de alumnos debe terminar en @unach.mx"})
         if matricula in matriculas:
             errores.append({"fila": numero_fila, "error": f"Matricula duplicada en archivo: {matricula}"})
+        if matricula and re.fullmatch(r"[A-Za-z0-9]+", matricula) is None:
+            errores.append({"fila": numero_fila, "error": "MATRÍCULA solo puede contener letras y números, sin espacios ni símbolos"})
+        if grupo and re.fullmatch(r"[A-Z]", grupo) is None:
+            errores.append({"fila": numero_fila, "error": "GRUPO debe ser una sola letra mayúscula"})
 
-        correos.add(correo)
-        matriculas.add(matricula)
+        if correo:
+            correos.add(correo)
+        if matricula:
+            matriculas.add(matricula)
 
         if correo and db.query(UsuarioModel).filter(UsuarioModel.correo == correo).first():
             errores.append({"fila": numero_fila, "error": f"Correo ya registrado: {correo}"})
@@ -200,39 +315,48 @@ def _validar_alumnos_df(df, db: Session):
         if matricula and db.query(AlumnoModel).filter(AlumnoModel.matricula == matricula).first():
             errores.append({"fila": numero_fila, "error": f"Matricula ya registrada: {matricula}"})
 
-        carrera = db.query(CarreraModel).filter(CarreraModel.nombre == carrera_nombre).first()
-        if carrera_nombre and carrera is None:
-            errores.append({"fila": numero_fila, "error": f"Carrera no existe: {carrera_nombre}"})
-
-        tipo_practica = _buscar_tipo_practica(db, fila["tipo_practica"])
-        if _texto(fila["tipo_practica"]) and tipo_practica is None:
-            errores.append({"fila": numero_fila, "error": f"Tipo de practica no existe: {_texto(fila['tipo_practica'])}"})
+        tipo_practica = _buscar_tipo_practica(db, practica)
+        if practica and tipo_practica is None:
+            errores.append({
+                "fila": numero_fila,
+                "error": (
+                    "PRÁCTICA debe ser PRÁCTICA PROFESIONAL 1, "
+                    "PRÁCTICA PROFESIONAL 2 o RESIDENCIA PROFESIONAL"
+                ),
+            })
 
         try:
             semestre = _entero(fila["semestre"])
-            if semestre is None or semestre < 1 or semestre > 12:
-                errores.append({"fila": numero_fila, "error": "Semestre debe estar entre 1 y 12"})
+            if semestre is None or semestre < 1 or semestre > 9:
+                errores.append({"fila": numero_fila, "error": "SEMESTRE debe estar entre 1 y 9"})
         except (TypeError, ValueError):
-            errores.append({"fila": numero_fila, "error": "Semestre debe ser numerico"})
+            errores.append({"fila": numero_fila, "error": "SEMESTRE debe ser numérico"})
 
     return errores
 
 
+def _clave_tipo_practica(valor):
+    texto = unicodedata.normalize("NFKD", _texto(valor))
+    texto = texto.encode("ascii", "ignore").decode("ascii").lower()
+    if "residencia" in texto:
+        return "residencia"
+    if "practica" in texto and re.search(r"\b1\b", texto):
+        return "practica_1"
+    if "practica" in texto and re.search(r"\b2\b", texto):
+        return "practica_2"
+    return None
+
+
 def _buscar_tipo_practica(db: Session, valor):
-    texto = _texto(valor)
-    if not texto:
+    clave = _clave_tipo_practica(valor)
+    if clave is None:
         return None
 
-    try:
-        id_tipo_practica = int(texto)
-    except ValueError:
-        id_tipo_practica = None
-
-    query = db.query(TipoPracticaModel)
-    if id_tipo_practica is not None:
-        return query.filter(TipoPracticaModel.id_tipo_practica == id_tipo_practica).first()
-
-    return query.filter(TipoPracticaModel.nombre == texto).first()
+    tipos_activos = db.query(TipoPracticaModel).filter(TipoPracticaModel.activo.is_(True)).all()
+    return next(
+        (tipo for tipo in tipos_activos if _clave_tipo_practica(tipo.nombre) == clave),
+        None,
+    )
 
 
 def _rol_personal_id(valor):
@@ -374,21 +498,21 @@ def _enviar_credenciales_importacion(
 
 
 def _credenciales_respuesta(credenciales: list[dict]) -> list[dict]:
-    if mostrar_password_temporal_en_respuesta():
-        return credenciales
-    return [
-        {
-            **credencial,
-            "password_temporal": None,
-        }
-        for credencial in credenciales
-    ]
+    # Se devuelven una sola vez al terminar la importación para generar el CSV.
+    return credenciales
 
 
 @router.post("/validar-alumnos")
-async def validar_alumnos(archivo: UploadFile = File(...), db: Session = Depends(obtener_db)):
-    df = _leer_archivo(archivo, ["Plantilla Alumnos", "Alumnos"], COLUMNAS_ALUMNOS_REQUERIDAS)
-    return _resumen_validacion(df, _validar_alumnos_df(df, db))
+async def validar_alumnos(
+    archivo: UploadFile = File(...),
+    id_carrera: int | None = Form(None),
+    db: Session = Depends(obtener_db),
+):
+    df = _leer_archivo_alumnos(archivo)
+    return _resumen_validacion(
+        df,
+        _validar_alumnos_df(df, db, id_carrera, requerir_carrera=False),
+    )
 
 
 @router.post("/validar-personal")
@@ -403,28 +527,34 @@ async def validar_personal(
 @router.post("/importar-alumnos")
 async def importar_alumnos(
     archivo: UploadFile = File(...),
+    id_carrera: int | None = Form(None),
     db: Session = Depends(obtener_db),
     usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
-    df = _leer_archivo(archivo, ["Plantilla Alumnos", "Alumnos"], COLUMNAS_ALUMNOS_REQUERIDAS)
-    errores = _validar_alumnos_df(df, db)
+    df = _leer_archivo_alumnos(archivo)
+    errores = _validar_alumnos_df(df, db, id_carrera)
 
     if errores:
         return _resumen_validacion(df, errores) | {"importados": 0, "credenciales": []}
 
     importados = []
     credenciales = []
+    carrera = _resolver_carrera_importacion(db, id_carrera)
 
     for index, fila in df.iterrows():
         numero_fila = index + 2
-        carrera_nombre = _texto(fila["carrera"])
-        carrera = db.query(CarreraModel).filter(CarreraModel.nombre == carrera_nombre).first()
-        tipo_practica = _buscar_tipo_practica(db, fila["tipo_practica"])
+        tipo_practica = _buscar_tipo_practica(db, fila["practica"])
+        nombre_completo = _texto(fila["alumno"])
+        matricula = _matricula_texto(fila["matricula"])
+        correo = _texto(fila["correo"])
+        id_alumno_reutilizado, registro_identidad = buscar_id_alumno_reutilizable(
+            db, matricula=matricula, correo=correo
+        )
         password_temporal = generar_password_segura()
 
         nuevo_usuario = UsuarioModel(
             id_rol=1,
-            correo=_texto(fila["correo"]),
+            correo=correo,
             password_hash=generar_password_hash(password_temporal),
             debe_cambiar_password=True,
             estado="Activo",
@@ -434,14 +564,15 @@ async def importar_alumnos(
         db.flush()
 
         nuevo_alumno = AlumnoModel(
+            id_alumno=id_alumno_reutilizado,
             id_usuario=nuevo_usuario.id_usuario,
-            nombre=_texto(fila["nombre"]),
-            apellido_paterno=_texto(fila["apellido_paterno"]),
-            apellido_materno=_texto(fila["apellido_materno"]),
+            nombre=nombre_completo,
+            apellido_paterno=None,
+            apellido_materno=None,
             id_carrera=carrera.id_carrera,
             id_tipo_practica=tipo_practica.id_tipo_practica if tipo_practica else None,
-            periodo_practica=_texto(fila["periodo"]) if "periodo" in df.columns and _texto(fila["periodo"]) else carrera.tipo_periodo,
-            matricula=_texto(fila["matricula"]),
+            periodo_practica=carrera.tipo_periodo,
+            matricula=matricula,
             semestre=_entero(fila["semestre"]),
             grupo=_texto(fila["grupo"]),
             creditos_aprobados=_entero(fila["creditos_aprobados"], 0) if "creditos_aprobados" in df.columns else 0,
@@ -450,11 +581,13 @@ async def importar_alumnos(
 
         db.add(nuevo_alumno)
         db.flush()
+        marcar_id_reutilizado(registro_identidad)
 
         importados.append({
             "fila": numero_fila,
             "id_usuario": nuevo_usuario.id_usuario,
             "id_alumno": nuevo_alumno.id_alumno,
+            "id_reutilizado": id_alumno_reutilizado is not None,
             "matricula": nuevo_alumno.matricula,
             "correo": nuevo_usuario.correo,
             "tipo_practica": tipo_practica.nombre if tipo_practica else None,
@@ -464,7 +597,8 @@ async def importar_alumnos(
             "fila": numero_fila,
             "id_usuario": nuevo_usuario.id_usuario,
             "correo": nuevo_usuario.correo,
-            "nombre": f"{_texto(fila['nombre'])} {_texto(fila['apellido_paterno'])}".strip(),
+            "nombre": _texto(fila["alumno"]),
+            "matricula": nuevo_alumno.matricula,
             "rol": "Alumno",
             "password_temporal": password_temporal,
         })

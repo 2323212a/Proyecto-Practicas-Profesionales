@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   Search,
   Send,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -147,6 +148,32 @@ export function ValidacionEmpresas() {
     } catch (err) {
       console.error(err);
       setError(axios.isAxiosError(err) ? err.response?.data?.detail ?? "No se pudo rechazar la solicitud." : "No se pudo rechazar la solicitud.");
+    } finally {
+      setProcesando(null);
+    }
+  }
+
+  async function eliminarSolicitud(empresa: EmpresaRevision) {
+    const confirmar = window.confirm(
+      `Eliminar definitivamente a "${empresa.nombre_empresa}"? Se borraran la empresa y su solicitud pendiente. Esta accion no se puede deshacer.`,
+    );
+    if (!confirmar) return;
+
+    try {
+      setProcesando(empresa.id_empresa);
+      setError("");
+      await gestionEmpresasRevisionUseCase.eliminarSolicitud(empresa.id_empresa);
+      if (solicitudDetalle?.empresa.id_empresa === empresa.id_empresa) {
+        setSolicitudDetalle(null);
+      }
+      await cargarEmpresas();
+    } catch (err) {
+      console.error(err);
+      setError(
+        axios.isAxiosError(err)
+          ? err.response?.data?.detail ?? "No se pudo eliminar la empresa."
+          : "No se pudo eliminar la empresa.",
+      );
     } finally {
       setProcesando(null);
     }
@@ -362,6 +389,17 @@ export function ValidacionEmpresas() {
                           </button>
                         )}
 
+                        {empresa.estado_empresa === "Solicitante" && (
+                          <button
+                            onClick={() => eliminarSolicitud(empresa)}
+                            disabled={procesando === empresa.id_empresa}
+                            className="border border-red-300 bg-red-50 text-red-700 rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Eliminar
+                          </button>
+                        )}
+
                         {empresa.estado_empresa === "Activa" && (
                           <button
                             onClick={() => cambiarEstado(empresa, "Suspendida")}
@@ -425,6 +463,13 @@ export function ValidacionEmpresas() {
                   </button>
                   <button onClick={() => rechazarSolicitud(solicitudDetalle.empresa)} className="border border-red-200 text-red-600 rounded-lg px-4 py-2 text-sm font-semibold">
                     Rechazar solicitud
+                  </button>
+                  <button
+                    onClick={() => eliminarSolicitud(solicitudDetalle.empresa)}
+                    disabled={procesando === solicitudDetalle.empresa.id_empresa}
+                    className="border border-red-300 bg-red-50 text-red-700 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                  >
+                    Eliminar empresa
                   </button>
                 </>
               )}

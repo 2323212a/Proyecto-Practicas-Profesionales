@@ -24,6 +24,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.identidad_importacion_service import (
+    buscar_id_empresa_reutilizable,
+    marcar_id_reutilizado,
+)
 from app.services.upload_security import normalizar_nombre_archivo, validar_documento_usuario
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
@@ -294,12 +298,10 @@ def _validar_fila(fila: dict[str, str], numero: int, db: Session) -> dict:
 
     rfc = _normalizar_rfc(datos[COLUMNAS[2]])
     datos[COLUMNAS[2]] = rfc
-    if rfc and not RFC_PATTERN.fullmatch(rfc):
-        errores.append(f"{COLUMNAS[2]}: formato no válido")
 
     for indice, opciones in (
         (17, MODALIDADES), (20, ESTADOS_MEXICO),
-        (21, ESTATUS_PERMITIDOS), (23, CARTA_COLABORACION),
+        (21, ESTATUS_PERMITIDOS),
     ):
         if not datos[COLUMNAS[indice]]:
             continue
@@ -309,25 +311,6 @@ def _validar_fila(fila: dict[str, str], numero: int, db: Session) -> dict:
         else:
             datos[COLUMNAS[indice]] = normal
 
-    if datos[COLUMNAS[1]]:
-        tipo_unidad = (
-            db.query(TipoUnidadReceptoraModel)
-            .filter(
-                func.lower(TipoUnidadReceptoraModel.nombre) == datos[COLUMNAS[1]].lower(),
-                TipoUnidadReceptoraModel.activo.is_(True),
-            )
-            .first()
-        )
-        if tipo_unidad is None:
-            errores.append("Tipo de unidad receptora no válido.")
-        else:
-            datos[COLUMNAS[1]] = tipo_unidad.nombre
-    else:
-        errores.append("Tipo de unidad receptora: campo obligatorio")
-
-    domicilio = datos[COLUMNAS[3]]
-    if domicilio and not re.search(r"(?<!\d)\d{5}(?!\d)", domicilio):
-        errores.append(f"{COLUMNAS[3]}: incluye un código postal de cinco dígitos")
     if datos[COLUMNAS[19]] and not MUNICIPIO_PATTERN.fullmatch(datos[COLUMNAS[19]]):
         errores.append(f"{COLUMNAS[19]}: municipio no válido")
 
@@ -524,7 +507,7 @@ def _crear_plantilla(tipos_unidad: list[str]) -> bytes:
         if not es_documento:
             comentario = "Campo obligatorio" if es_obligatorio else "Campo opcional o condicionado"
         celda.comment = Comment(comentario, "Sistema de Prácticas Profesionales")
-    hoja.row_dimensions[FILA_ENCABEZADOS].height = 185
+    hoja.row_dimensions[FILA_ENCABEZADOS].height = 54
 
     for fila in range(FILA_INICIO_DATOS, FILA_FIN_CAPTURA + 1):
         for columna in range(1, len(COLUMNAS) + 1):
@@ -535,7 +518,7 @@ def _crear_plantilla(tipos_unidad: list[str]) -> bytes:
         for columna_texto in (3, 5, 11):
             hoja.cell(fila, columna_texto).number_format = "@"
         hoja.cell(fila, 14).number_format = "0"
-        hoja.row_dimensions[fila].height = 30
+        hoja.row_dimensions[fila].height = 24
 
     hoja.merge_cells(f"A{FILA_TITULO_EJEMPLO}:{ultima_columna}{FILA_TITULO_EJEMPLO}")
     hoja.cell(FILA_TITULO_EJEMPLO, 1, "EJEMPLO CORRECTO, NO IMPORTAR")
@@ -558,7 +541,7 @@ def _crear_plantilla(tipos_unidad: list[str]) -> bytes:
         celda.border = borde_fino
         celda.font = Font(italic=True, color="666666")
         celda.alignment = Alignment(wrap_text=True, vertical="top")
-    hoja.row_dimensions[FILA_EJEMPLO].height = 74
+    hoja.row_dimensions[FILA_EJEMPLO].height = 54
 
     anchos = [38, 24, 20, 42, 24, 30, 30, 32, 28, 28, 22, 30, 38, 18, 42, 44, 34, 20, 52, 24, 22, 18, 38, 22]
     for indice, ancho in enumerate(anchos, 1):
@@ -590,10 +573,8 @@ def _crear_plantilla(tipos_unidad: list[str]) -> bytes:
         catalogos.column_dimensions[columna].width = 32
 
     validaciones = [
-        (f"B{FILA_INICIO_DATOS}:B{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$A$2:$A$" + str(len(tipos_unidad) + 1)),
         (f"R{FILA_INICIO_DATOS}:R{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$B$2:$B$" + str(len(MODALIDADES) + 1)),
         (f"V{FILA_INICIO_DATOS}:V{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$C$2:$C$" + str(len(ESTATUS_PERMITIDOS) + 1)),
-        (f"X{FILA_INICIO_DATOS}:X{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$D$2:$D$" + str(len(CARTA_COLABORACION) + 1)),
         (f"U{FILA_INICIO_DATOS}:U{FILA_FIN_CAPTURA}", "'" + HOJA_CATALOGOS + "'!$E$2:$E$" + str(len(ESTADOS_MEXICO) + 1)),
     ]
     for rango, formula in validaciones:
@@ -610,8 +591,8 @@ def _crear_plantilla(tipos_unidad: list[str]) -> bytes:
     reglas = [
         "No modificar los encabezados ni eliminar columnas.", "Capturar un registro por fila en el bloque verde.",
         "Solo el nombre oficial es obligatorio; las demás columnas pueden quedar vacías.",
-        "La fila de ejemplo no será procesada.", "El RFC, cuando se capture, debe escribirse sin espacios ni guiones.",
-        "El domicilio, cuando se capture, debe incluir calle, número, colonia y código postal de cinco dígitos.",
+        "La fila de ejemplo no será procesada.", "El RFC, cuando se capture, admite texto libre y se guarda sin espacios ni guiones.",
+        "El tipo de unidad receptora, el domicilio y la carta de colaboración admiten texto libre.",
         "Los correos capturados deben tener formato válido.", "Los teléfonos pueden separarse con coma, punto y coma o diagonal.",
         "El número de estudiantes, cuando se capture, debe ser un entero mayor que cero.",
         "En Documentos en formato PDF se puede pegar un enlace http:// o https://; el campo puede quedar vacío.",
@@ -821,7 +802,7 @@ async def validar_importacion(
         "id_importacion": id_importacion,
         "resumen": {"total": len(vistas), "validas": validas, "con_advertencias": advertencias, "invalidas": invalidas},
         "errores_generales": errores_generales,
-        "filas": [{clave: valor for clave, valor in item.items() if clave != "datos"} for item in vistas],
+        "filas": vistas,
         "puede_confirmar": validas > 0 and not errores_generales,
     }
 
@@ -885,7 +866,14 @@ def confirmar_importacion(
                 # Por eso ninguna empresa importada se marca como Activa automáticamente.
                 estado_empresa = "Solicitante"
                 estado_solicitud = "Recibida"
+                id_empresa_reutilizado, registro_identidad = buscar_id_empresa_reutilizable(
+                    db,
+                    rfc=fila["rfc"] or None,
+                    correo=datos[COLUMNAS[5]] or None,
+                    nombre=datos[COLUMNAS[0]],
+                )
                 empresa = EmpresaModel(
+                    id_empresa=id_empresa_reutilizado,
                     nombre_empresa=datos[COLUMNAS[0]], rfc=fila["rfc"] or None, giro=datos[COLUMNAS[1]] or None,
                     domicilio=domicilio, telefono=telefono_principal,
                     correo_contacto=datos[COLUMNAS[5]], tipo_tramite=tipo_tramite,
@@ -901,6 +889,7 @@ def confirmar_importacion(
                 )
                 db.add(empresa)
                 db.flush()
+                marcar_id_reutilizado(registro_identidad)
                 if datos[COLUMNAS[7]]:
                     nombre, apellido_paterno, apellido_materno = _separar_nombre(datos[COLUMNAS[7]])
                     db.add(ResponsableEmpresaModel(
@@ -916,7 +905,11 @@ def confirmar_importacion(
                 db.flush()
                 id_empresa = empresa.id_empresa
             db.commit()
-            base.update({"resultado": "Importada con advertencias" if base["advertencias"] else "Importada correctamente", "id_empresa": id_empresa})
+            base.update({
+                "resultado": "Importada con advertencias" if base["advertencias"] else "Importada correctamente",
+                "id_empresa": id_empresa,
+                "id_reutilizado": id_empresa_reutilizado is not None,
+            })
             creadas += 1
             if base["advertencias"]:
                 con_advertencias += 1

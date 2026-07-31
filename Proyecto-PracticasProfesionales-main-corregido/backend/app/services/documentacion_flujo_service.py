@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 import re
 import unicodedata
@@ -28,8 +28,8 @@ from infrastructure.persistence.models.usuario import UsuarioModel
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "expedientes"
 
 DOCUMENTOS_FLUJO = [
-    {"nombre": "Comprobante con materias", "descripcion": "Documento de elegibilidad academica solicitado en SYSWEB.", "instrucciones": "Solicitar en SYSWEB Comprobante con materias. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
-    {"nombre": "Vigencia de Derechos", "descripcion": "Documento que acredita que el alumno cuenta con vigencia de derechos para continuar el tramite.", "instrucciones": "Descargar en el portal del IMSS. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
+    {"nombre": "Historial academico (Comprobante con materias)", "descripcion": "Historial academico del alumno con las materias cursadas.", "instrucciones": "Solicitar en SYSWEB el Historial academico (Comprobante con materias). El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
+    {"nombre": "Constancia de Vigencia de Derechos", "descripcion": "Constancia que acredita que el alumno cuenta con vigencia de derechos para continuar el tramite.", "instrucciones": "Descargar la Constancia de Vigencia de Derechos en el portal del IMSS. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
     {"nombre": "Carta Compromiso", "descripcion": "Documento oficial generado por el sistema. Descargalo, imprime, firma y sube el PDF firmado.", "instrucciones": "Descarga el documento oficial, imprime, completa los espacios pendientes, firma y vuelve a subirlo en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
     {"nombre": "Carta de Exoneracion", "descripcion": "Documento oficial generado por el sistema. Descargalo, completa los datos manuales, firma y sube el PDF firmado.", "instrucciones": "Completa a mano los datos de contacto de emergencia y tutor antes de firmar. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
     {"nombre": "Solicitud FO-136", "descripcion": "Solicitud oficial de inscripcion. Descargala, imprime, completa los campos manuales, firma y sube el PDF firmado.", "instrucciones": "La fotografia, datos personales pendientes y firmas deben completarse despues de imprimir. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
@@ -85,12 +85,28 @@ def listar_convocatorias_disponibles_alumno(db: Session, alumno: AlumnoModel) ->
     return [_convocatoria_response(convocatoria) for convocatoria in _convocatorias_disponibles(db, alumno)]
 
 
+def _estado_inscripcion_convocatoria(convocatoria: ConvocatoriaModel) -> tuple[bool, str | None]:
+    inicio = convocatoria.fecha_inicio_documentos
+    cierre = convocatoria.fecha_cierre_documentos
+    hoy = date.today()
+    if inicio is None or cierre is None:
+        return False, "La convocatoria todavía no tiene fechas de inscripción configuradas."
+    if hoy < inicio:
+        return False, f"La inscripción abre el {inicio.strftime('%d/%m/%Y')}."
+    if hoy > cierre:
+        return False, f"La inscripción cerró el {cierre.strftime('%d/%m/%Y')}."
+    return True, "Inscripción disponible."
+
+
 def _convocatoria_response(convocatoria: ConvocatoriaModel) -> dict:
+    puede_inscribirse, mensaje_inscripcion = _estado_inscripcion_convocatoria(convocatoria)
     return {
         "id_convocatoria": convocatoria.id_convocatoria,
         "nombre": convocatoria.nombre,
         "tipo_periodo": convocatoria.tipo_periodo,
         "estado": convocatoria.estado,
+        "puede_inscribirse": puede_inscribirse,
+        "mensaje_inscripcion": mensaje_inscripcion,
         "fecha_inicio_documentos": convocatoria.fecha_inicio_documentos.isoformat() if convocatoria.fecha_inicio_documentos else None,
         "fecha_cierre_documentos": convocatoria.fecha_cierre_documentos.isoformat() if convocatoria.fecha_cierre_documentos else None,
         "fecha_inicio_validacion": convocatoria.fecha_inicio_validacion.isoformat() if convocatoria.fecha_inicio_validacion else None,

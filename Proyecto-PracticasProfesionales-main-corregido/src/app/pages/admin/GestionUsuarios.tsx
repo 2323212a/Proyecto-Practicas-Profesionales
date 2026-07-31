@@ -199,7 +199,7 @@ export function GestionUsuarios() {
       const esAlumno = Number(nuevoUsuario.id_rol) === 1;
 
       if (!nuevoUsuario.nombre.trim()) errores.push("El nombre es obligatorio.");
-      if (!nuevoUsuario.apellido_paterno.trim()) errores.push("El apellido paterno es obligatorio.");
+      if (!esAlumno && !nuevoUsuario.apellido_paterno.trim()) errores.push("El apellido paterno es obligatorio.");
       if (!nuevoUsuario.correo.trim()) errores.push("El correo es obligatorio.");
       if (!nuevoUsuario.password.trim()) errores.push("La contraseña es obligatoria.");
 
@@ -652,6 +652,7 @@ export function GestionUsuarios() {
   }
 
   function etiquetaNombreGeneral(usuario: Usuario) {
+    if (usuario.id_rol === 1) return "Nombre completo";
     return usuario.id_rol === 5 ? "Nombre del responsable" : "Nombre";
   }
 
@@ -877,7 +878,7 @@ export function GestionUsuarios() {
             <div className="space-y-4">
               <input
                 type="text"
-                placeholder="Nombre"
+                placeholder={nuevoUsuario.id_rol === 1 ? "Nombre completo" : "Nombre"}
                 value={nuevoUsuario.nombre}
                 onChange={(e) =>
                   setNuevoUsuario({
@@ -888,31 +889,35 @@ export function GestionUsuarios() {
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
               />
 
-              <input
-                type="text"
-                placeholder="Apellido paterno"
-                value={nuevoUsuario.apellido_paterno}
-                onChange={(e) =>
-                  setNuevoUsuario({
-                    ...nuevoUsuario,
-                    apellido_paterno: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-              />
+              {nuevoUsuario.id_rol !== 1 && (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Apellido paterno"
+                    value={nuevoUsuario.apellido_paterno}
+                    onChange={(e) =>
+                      setNuevoUsuario({
+                        ...nuevoUsuario,
+                        apellido_paterno: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
 
-              <input
-                type="text"
-                placeholder="Apellido materno"
-                value={nuevoUsuario.apellido_materno}
-                onChange={(e) =>
-                  setNuevoUsuario({
-                    ...nuevoUsuario,
-                    apellido_materno: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-              />
+                  <input
+                    type="text"
+                    placeholder="Apellido materno"
+                    value={nuevoUsuario.apellido_materno}
+                    onChange={(e) =>
+                      setNuevoUsuario({
+                        ...nuevoUsuario,
+                        apellido_materno: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                  />
+                </>
+              )}
 
               <input
                 type="email"
@@ -1117,35 +1122,39 @@ export function GestionUsuarios() {
               />
               </label>
 
-              <label className="block">
-                <span className="block text-xs font-semibold text-gray-500 mb-1">Apellido paterno</span>
-              <input
-                type="text"
-                value={usuarioEditar.apellido_paterno ?? ""}
-                onChange={(e) =>
-                  setUsuarioEditar({
-                    ...usuarioEditar,
-                    apellido_paterno: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-              />
-              </label>
+              {usuarioEditar.id_rol !== 1 && (
+                <>
+                  <label className="block">
+                    <span className="block text-xs font-semibold text-gray-500 mb-1">Apellido paterno</span>
+                    <input
+                      type="text"
+                      value={usuarioEditar.apellido_paterno ?? ""}
+                      onChange={(e) =>
+                        setUsuarioEditar({
+                          ...usuarioEditar,
+                          apellido_paterno: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                    />
+                  </label>
 
-              <label className="block">
-                <span className="block text-xs font-semibold text-gray-500 mb-1">Apellido materno</span>
-              <input
-                type="text"
-                value={usuarioEditar.apellido_materno ?? ""}
-                onChange={(e) =>
-                  setUsuarioEditar({
-                    ...usuarioEditar,
-                    apellido_materno: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
-              />
-              </label>
+                  <label className="block">
+                    <span className="block text-xs font-semibold text-gray-500 mb-1">Apellido materno</span>
+                    <input
+                      type="text"
+                      value={usuarioEditar.apellido_materno ?? ""}
+                      onChange={(e) =>
+                        setUsuarioEditar({
+                          ...usuarioEditar,
+                          apellido_materno: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
+                    />
+                  </label>
+                </>
+              )}
 
               <label className="block">
                 <span className="block text-xs font-semibold text-gray-500 mb-1">Correo</span>

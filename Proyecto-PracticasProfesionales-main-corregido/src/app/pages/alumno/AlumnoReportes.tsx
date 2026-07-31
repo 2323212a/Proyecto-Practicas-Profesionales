@@ -207,9 +207,9 @@ export function AlumnoReportes() {
         </div>
       )}
 
-      {data?.advertencia_regla && (
+      {datos?.advertencia_regla && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
-          {data.advertencia_regla}
+          {datos.advertencia_regla}
         </div>
       )}
 

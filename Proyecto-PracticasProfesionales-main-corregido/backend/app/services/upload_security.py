@@ -226,18 +226,26 @@ def _validar_pdf_legible(contenido: bytes) -> None:
 
 def resolver_archivo_en_uploads(ruta_archivo: str | None, uploads_root: Path) -> Path:
     if not ruta_archivo:
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        raise HTTPException(status_code=404, detail="Archivo no encontrado. Si pertenece a una instalación anterior, vuelve a cargarlo.")
 
     raiz = uploads_root.resolve()
-    ruta = Path(ruta_archivo)
-    ruta_resuelta = ruta.resolve()
+    ruta_texto = str(ruta_archivo).replace(chr(92), "/")
+    candidatos: list[Path] = []
 
-    try:
-        ruta_resuelta.relative_to(raiz)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail="Archivo no encontrado") from exc
+    marcador = "/uploads/"
+    if marcador in ruta_texto:
+        candidatos.append(raiz / ruta_texto.split(marcador, 1)[1])
 
-    if not ruta_resuelta.exists() or not ruta_resuelta.is_file():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    ruta = Path(ruta_texto)
+    candidatos.append(ruta if ruta.is_absolute() else raiz / ruta)
 
-    return ruta_resuelta
+    for candidato in candidatos:
+        ruta_resuelta = candidato.resolve()
+        try:
+            ruta_resuelta.relative_to(raiz)
+        except ValueError:
+            continue
+        if ruta_resuelta.exists() and ruta_resuelta.is_file():
+            return ruta_resuelta
+
+    raise HTTPException(status_code=404, detail="Archivo no encontrado. Si pertenece a una instalación anterior, vuelve a cargarlo.")

@@ -11,6 +11,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.identidad_importacion_service import archivar_empresa
 from app.services.convocatoria_rules_service import validar_etapa_actual
 from app.services.notificacion_service import crear_notificacion
 from app.services.upload_security import (
@@ -356,7 +357,7 @@ def subir_formato_plan_trabajo(
         nombre=nombre_limpio,
         descripcion=descripcion.strip() if descripcion else None,
         nombre_archivo=nombre_seguro,
-        ruta_archivo=str(ruta),
+        ruta_archivo=ruta.relative_to(UPLOADS_DIR).as_posix(),
         activo=True,
         subido_por=usuario_actual.id_usuario,
     )
@@ -618,6 +619,81 @@ def obtener_solicitud_empresa(id_empresa: int, db: Session = Depends(obtener_db)
         "cuenta_creada": usuario is not None,
         "correo_usuario": usuario.correo if usuario else None,
     }
+
+
+@router.delete("/{id_empresa}/solicitud")
+def eliminar_empresa_solicitante(
+    id_empresa: int,
+    db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+):
+    empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if empresa.estado_empresa != "Solicitante":
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se pueden eliminar empresas que todavia esten como solicitantes.",
+        )
+    tiene_cuenta = (
+        db.query(ResponsableEmpresaModel)
+        .filter(
+            ResponsableEmpresaModel.id_empresa == id_empresa,
+            ResponsableEmpresaModel.id_usuario.is_not(None),
+        )
+        .first()
+        is not None
+    )
+    if tiene_cuenta:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede eliminar una empresa que ya tiene una cuenta de acceso.",
+        )
+
+    tablas_operativas = (
+        "asignacion",
+        "convenio",
+        "documento_empresa",
+        "formato_empresa",
+        "participacion_empresa_convocatoria",
+        "vacante",
+        "vinculacion_empresa",
+    )
+    tiene_informacion_operativa = any(
+        db.execute(
+            text(f"SELECT COUNT(*) FROM {tabla} WHERE id_empresa = :id_empresa"),
+            {"id_empresa": id_empresa},
+        ).scalar_one() > 0
+        for tabla in tablas_operativas
+    )
+    if tiene_informacion_operativa:
+        raise HTTPException(
+            status_code=400,
+            detail="La empresa ya tiene documentos o informacion operativa y no puede eliminarse desde solicitudes.",
+        )
+
+    nombre_empresa = empresa.nombre_empresa
+    archivar_empresa(db, empresa)
+    db.query(ResponsableEmpresaModel).filter(
+        ResponsableEmpresaModel.id_empresa == id_empresa,
+        ResponsableEmpresaModel.id_usuario.is_(None),
+    ).delete(synchronize_session=False)
+    db.query(SolicitudEmpresaModel).filter(
+        SolicitudEmpresaModel.id_empresa == id_empresa,
+    ).delete(synchronize_session=False)
+    db.delete(empresa)
+    db.commit()
+
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Eliminar empresa solicitante",
+        "coord_unidades_empresas",
+        f"Se elimino la empresa solicitante {nombre_empresa} y su solicitud pendiente.",
+        "empresa",
+        id_empresa,
+    )
+    return {"mensaje": "Empresa y solicitud eliminadas correctamente."}
 
 
 @router.post("/{id_empresa}/aceptar-solicitud")

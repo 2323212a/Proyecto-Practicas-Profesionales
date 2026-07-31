@@ -8,6 +8,7 @@ import { MainLayout } from "../layouts/MainLayout";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { cambiarPasswordInicial } from "../../infrastructure/auth/authApi";
 import { obtenerRutaInicioPorRol, obtenerRutaInicioSesionGuardada } from "./authSession";
+import { getApiErrorMessage } from "../../shared/utils/apiError";
 
 // Alumno
 import { AlumnoDashboard } from "../pages/alumno/AlumnoDashboard";
@@ -109,6 +110,21 @@ function CambiarPasswordInicialPage() {
   }, [navigate, usuario]);
 
   async function guardarPassword() {
+    if (!passwordActual || !passwordNueva || !confirmarPassword) {
+      setError("Completa los tres campos de contraseña.");
+      return;
+    }
+
+    if (passwordNueva.length < 8) {
+      setError("La nueva contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
+
+    if (passwordNueva !== confirmarPassword) {
+      setError("La nueva contraseña y su confirmación no coinciden.");
+      return;
+    }
+
     try {
       setGuardando(true);
       setError("");
@@ -129,7 +145,7 @@ function CambiarPasswordInicialPage() {
       navigate(obtenerRutaInicioPorRol(usuario.rol, usuario.id_rol), { replace: true });
     } catch (err) {
       console.error(err);
-      setError("No se pudo cambiar la contrasena. Revisa los datos ingresados.");
+      setError(getApiErrorMessage(err, "No se pudo cambiar la contraseña."));
     } finally {
       setGuardando(false);
     }
@@ -146,6 +162,7 @@ function CambiarPasswordInicialPage() {
         <div className="space-y-4 mt-6">
           <input
             type="password"
+            autoComplete="current-password"
             value={passwordActual}
             onChange={(event) => setPasswordActual(event.target.value)}
             placeholder="Contrasena temporal"
@@ -153,6 +170,8 @@ function CambiarPasswordInicialPage() {
           />
           <input
             type="password"
+            autoComplete="new-password"
+            minLength={8}
             value={passwordNueva}
             onChange={(event) => setPasswordNueva(event.target.value)}
             placeholder="Nueva contrasena"
@@ -160,11 +179,16 @@ function CambiarPasswordInicialPage() {
           />
           <input
             type="password"
+            autoComplete="new-password"
+            minLength={8}
             value={confirmarPassword}
             onChange={(event) => setConfirmarPassword(event.target.value)}
             placeholder="Confirmar nueva contrasena"
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm"
           />
+          <p className="text-xs text-gray-500">
+            La nueva contraseña debe tener al menos 8 caracteres.
+          </p>
         </div>
 
         {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{error}</div>}

@@ -123,9 +123,10 @@ export async function validarPersonalMasivo(archivo: File) {
   return response.data;
 }
 
-export async function importarAlumnosMasivo(archivo: File) {
+export async function importarAlumnosMasivo(archivo: File, idCarrera: number) {
   const formData = new FormData();
   formData.append("archivo", archivo);
+  formData.append("id_carrera", String(idCarrera));
 
   const response = await apiClient.post(
     "/importacion/importar-alumnos",

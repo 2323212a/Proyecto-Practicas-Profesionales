@@ -14,6 +14,7 @@ export interface FilaValidacionEmpresa {
   advertencias: string[];
   duplicada: boolean;
   id_existente: number | null;
+  datos: Record<string, string>;
 }
 
 export interface ValidacionImportacionEmpresas {

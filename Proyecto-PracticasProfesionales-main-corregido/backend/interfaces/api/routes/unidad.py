@@ -1606,7 +1606,7 @@ def subir_plan_trabajo_vacante(
         id_vacante=id_vacante,
         tipo_documento="Plan de trabajo",
         nombre_archivo=nombre_seguro,
-        ruta_archivo=str(ruta),
+        ruta_archivo=ruta.relative_to(UPLOADS_DIR).as_posix(),
         estado_documento="Pendiente",
         activo=True,
     )

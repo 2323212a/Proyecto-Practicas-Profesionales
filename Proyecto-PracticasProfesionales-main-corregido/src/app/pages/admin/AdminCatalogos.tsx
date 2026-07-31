@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Archive,
@@ -618,16 +618,13 @@ function obtenerErroresSecuenciaRegla(
 }
 
 const columnasAlumnos = [
-  "nombre",
-  "apellido_paterno",
-  "apellido_materno",
-  "correo",
-  "matricula",
-  "carrera",
-  "semestre",
-  "grupo",
-  "tipo_practica",
-  "creditos_aprobados",
+  "ALUMNO",
+  "MATRÍCULA",
+  "SEMESTRE",
+  "GRUPO",
+  "CORREO",
+  "PRÁCTICA",
+  "TIPO",
 ];
 
 const columnasPersonal = [
@@ -642,16 +639,19 @@ const columnasPersonal = [
 ];
 
 const ejemploAlumnosCarga = [
-  "Ana",
-  "Perez",
-  "Lopez",
-  "ana.perez@unach.mx",
-  "A012345",
-  "Ingenieria en Software",
+  "Ana María Pérez López",
+  "123456",
   "5",
   "A",
-  "Practicas 1",
-  "120",
+  "ana.perez@unach.mx",
+  "PRÁCTICA PROFESIONAL 1",
+  "CARTA DE PRESENTACIÓN",
+];
+
+const practicasAlumnosPlantilla = [
+  "PRÁCTICA PROFESIONAL 1",
+  "PRÁCTICA PROFESIONAL 2",
+  "RESIDENCIA PROFESIONAL",
 ];
 
 const ejemploPersonalCarga = [
@@ -748,6 +748,15 @@ function columnaExcel(indice: number) {
 }
 
 type CeldaExcel = string | number | { value: string | number; style?: number };
+type ValidacionExcel = {
+  sqref: string;
+  type: "list" | "whole";
+  formula1: string;
+  formula2?: string;
+  operator?: "between";
+  errorTitle: string;
+  error: string;
+};
 
 function celda(value: string | number, style?: number): CeldaExcel {
   return { value, style };
@@ -767,6 +776,7 @@ function hojaXml(
   anchos: number[] = [],
   congelarFila?: number,
   merges: string[] = [],
+  validaciones: ValidacionExcel[] = [],
 ) {
   const cols = anchos.length
     ? `<cols>${anchos.map((ancho, index) => `<col min="${index + 1}" max="${index + 1}" width="${ancho}" customWidth="1"/>`).join("")}</cols>`
@@ -785,8 +795,22 @@ function hojaXml(
   const mergeCells = merges.length
     ? `<mergeCells count="${merges.length}">${merges.map((ref) => `<mergeCell ref="${ref}"/>`).join("")}</mergeCells>`
     : "";
+  const dataValidations = validaciones.length
+    ? '<dataValidations count="' + validaciones.length + '">' +
+      validaciones.map((validacion) => {
+        const operator = validacion.operator ? ' operator="' + validacion.operator + '"' : "";
+        const formula2 = validacion.formula2
+          ? "<formula2>" + xmlEscape(validacion.formula2) + "</formula2>"
+          : "";
+        return '<dataValidation type="' + validacion.type + '"' + operator +
+          ' allowBlank="1" showDropDown="0" showErrorMessage="1" errorTitle="' +
+          xmlEscape(validacion.errorTitle) + '" error="' + xmlEscape(validacion.error) +
+          '" sqref="' + validacion.sqref + '"><formula1>' + xmlEscape(validacion.formula1) +
+          "</formula1>" + formula2 + "</dataValidation>";
+      }).join("") + "</dataValidations>"
+    : "";
 
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${sheetViews}${cols}<sheetData>${rows}</sheetData>${mergeCells}</worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${sheetViews}${cols}<sheetData>${rows}</sheetData>${mergeCells}${dataValidations}</worksheet>`;
 }
 
 function crc32(bytes: Uint8Array) {
@@ -857,7 +881,7 @@ function crearZip(files: Array<{ name: string; content: string }>) {
   return zip;
 }
 
-function descargarXlsx(nombre: string, sheets: Array<{ name: string; rows: Array<Array<CeldaExcel>>; widths?: number[]; freezeRow?: number; merges?: string[] }>) {
+function descargarXlsx(nombre: string, sheets: Array<{ name: string; rows: Array<Array<CeldaExcel>>; widths?: number[]; freezeRow?: number; merges?: string[]; validations?: ValidacionExcel[] }>) {
   const workbookSheets = sheets
     .map((sheet, index) => `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
     .join("");
@@ -890,7 +914,7 @@ function descargarXlsx(nombre: string, sheets: Array<{ name: string; rows: Array
     },
     ...sheets.map((sheet, index) => ({
       name: `xl/worksheets/sheet${index + 1}.xml`,
-      content: hojaXml(sheet.rows, sheet.widths, sheet.freezeRow, sheet.merges),
+      content: hojaXml(sheet.rows, sheet.widths, sheet.freezeRow, sheet.merges, sheet.validations),
     })),
   ];
   const blob = new Blob([crearZip(files)], {
@@ -911,6 +935,7 @@ export function AdminCatalogos() {
   const [reglasPractica, setReglasPractica] = useState<ReglaPracticaCarrera[]>([]);
   const [archivo, setArchivo] = useState<File | null>(null);
   const [tipoCarga, setTipoCarga] = useState<TipoCarga>("alumnos");
+  const [carreraCargaId, setCarreraCargaId] = useState<number | "">("");
   const [resultadoValidacion, setResultadoValidacion] = useState<ResultadoValidacion | null>(null);
   const [resultadoImportacion, setResultadoImportacion] = useState<ResultadoImportacion | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -919,6 +944,10 @@ export function AdminCatalogos() {
   const [catalogoActivo, setCatalogoActivo] = useState<CatalogoActivo>(null);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [modoAvanzadoConvocatoria, setModoAvanzadoConvocatoria] = useState(false);
+  const [resaltarFormularioConvocatoria, setResaltarFormularioConvocatoria] = useState(false);
+  const formularioConvocatoriaRef = useRef<HTMLElement | null>(null);
+  const nombreConvocatoriaRef = useRef<HTMLInputElement | null>(null);
+  const resaltarConvocatoriaTimeoutRef = useRef<number | null>(null);
   const [carreraForm, setCarreraForm] = useState<Carrera>(carreraInicial);
   const [convocatoriaForm, setConvocatoriaForm] = useState<Convocatoria>(convocatoriaInicial);
   const [tipoPracticaForm, setTipoPracticaForm] = useState<TipoPractica>(tipoPracticaInicial);
@@ -926,6 +955,12 @@ export function AdminCatalogos() {
 
   useEffect(() => {
     void cargarCatalogos();
+
+    return () => {
+      if (resaltarConvocatoriaTimeoutRef.current !== null) {
+        window.clearTimeout(resaltarConvocatoriaTimeoutRef.current);
+      }
+    };
   }, []);
 
   async function cargarCatalogos() {
@@ -939,6 +974,12 @@ export function AdminCatalogos() {
         obtenerReglasPracticaCarrera(),
       ]);
       setCarreras(carrerasData);
+      setCarreraCargaId((actual) => {
+        if (actual && carrerasData.some((carrera: Carrera) => carrera.id_carrera === actual && carrera.estado === "Activa")) {
+          return actual;
+        }
+        return carrerasData.find((carrera: Carrera) => carrera.estado === "Activa")?.id_carrera ?? "";
+      });
       setConvocatorias(convocatoriasData);
       setTiposPractica(tiposPracticaData);
       setReglasPractica(reglasPracticaData);
@@ -983,13 +1024,6 @@ export function AdminCatalogos() {
 
   function descargarPlantillaExcel() {
     if (tipoCarga === "alumnos") {
-      const carrerasPlantilla = carreras.length
-        ? carreras.map((carrera) => [celda(carrera.nombre, 6)])
-        : [[celda("Ingenieria en Software", 6)], [celda("Deben existir previamente en Admin > Carreras.", 5)]];
-      const tiposPracticaPlantilla = tiposPractica.length
-        ? tiposPractica.map((tipo) => [celda(tipo.nombre, 6)])
-        : [["Practicas 1"], ["Practicas 2"], ["Residencia"]].map(([tipo]) => [celda(tipo, 6)]);
-
       descargarXlsx("plantilla_alumnos.xlsx", [
         {
           name: "Plantilla Alumnos",
@@ -998,14 +1032,14 @@ export function AdminCatalogos() {
             [],
             [celda("INSTRUCCIONES RAPIDAS", 2)],
             [
-              celda("No cambiar nombres de columnas. Llenar una fila por alumno. La carrera debe existir previamente en Admin > Carreras.", 5),
-              "", "", "", "",
-              celda("El periodo no se captura; se asigna automaticamente desde la carrera.", 5),
+              celda("No cambiar los encabezados. ALUMNO debe contener nombre(s), apellido paterno y apellido materno.", 5),
+              "", "", "",
+              celda("TIPO es texto libre, por ejemplo CARTA DE PRESENTACIÓN.", 5),
             ],
             [
-              celda("tipo_practica debe coincidir con el catalogo.", 5),
-              "", "", "", "",
-              celda("correo y matricula deben ser unicos. semestre y creditos_aprobados deben ser numericos.", 5),
+              celda("MATRÍCULA: letras y números, sin espacios ni símbolos. SEMESTRE: del 1 al 9. GRUPO: una letra mayúscula.", 5),
+              "", "", "",
+              celda("PRÁCTICA solo permite tres opciones. CORREO y MATRÍCULA deben ser únicos.", 5),
             ],
             [],
             [],
@@ -1017,46 +1051,71 @@ export function AdminCatalogos() {
             ejemploAlumnosCarga.map((valor) => celda(valor, 4)),
             [],
             [],
-            [celda("Catalogo de tipos de practica", 2), "", "", "", "", celda("Errores comunes", 2)],
+            [celda("Prácticas permitidas", 2), "", "", "", celda("Errores comunes", 2)],
             ...Array.from({ length: 6 }, (_, index) => [
-              tiposPracticaPlantilla[index]?.[0] ?? "",
+              practicasAlumnosPlantilla[index] ? celda(practicasAlumnosPlantilla[index], 6) : "",
               "", "", "",
-              "",
               [
                 "No cambiar encabezados.",
-                "No escribir carreras inexistentes.",
-                "No escribir tipo_practica inventado.",
-                "No dejar correo vacio.",
-                "No repetir matricula.",
-                "No escribir periodo.",
+                "No omitir los apellidos del alumno.",
+                "No escribir una matrícula con espacios o símbolos.",
+                "No usar semestres fuera del 1 al 9.",
+                "No escribir grupos con más de una letra.",
+                "No dejar TIPO vacío.",
               ][index] ? celda([
                 "No cambiar encabezados.",
-                "No escribir carreras inexistentes.",
-                "No escribir tipo_practica inventado.",
-                "No dejar correo vacio.",
-                "No repetir matricula.",
-                "No escribir periodo.",
+                "No omitir los apellidos del alumno.",
+                "No escribir una matrícula con espacios o símbolos.",
+                "No usar semestres fuera del 1 al 9.",
+                "No escribir grupos con más de una letra.",
+                "No dejar TIPO vacío.",
               ][index], 7) : "",
             ]),
             [],
             [],
-            [celda("Carreras disponibles", 2)],
-            ...carrerasPlantilla.map((fila) => [fila[0]]),
+            [celda("Ejemplos de TIPO texto libre", 2)],
+            [celda("CARTA DE PRESENTACIÓN", 6)],
+            [celda("CONSTANCIA", 6)],
           ],
-          widths: [18, 20, 20, 30, 15, 30, 12, 10, 20, 18],
+          widths: [32, 16, 12, 10, 30, 30, 30],
           freezeRow: 9,
           merges: [
-            "A1:J1",
-            "A3:J3",
-            "A4:E4",
-            "F4:J4",
-            "A5:E5",
-            "F5:J5",
-            "A8:J8",
-            "A32:J32",
+            "A1:G1",
+            "A3:G3",
+            "A4:D4",
+            "E4:G4",
+            "A5:D5",
+            "E5:G5",
+            "A8:G8",
+            "A32:G32",
             "A36:D36",
-            "F36:J36",
-            "A45:J45",
+            "E36:G36",
+            "A45:G45",
+          ],
+          validations: [
+            {
+              sqref: "C10:C30",
+              type: "whole",
+              operator: "between",
+              formula1: "1",
+              formula2: "9",
+              errorTitle: "Semestre inválido",
+              error: "El semestre debe ser un número del 1 al 9.",
+            },
+            {
+              sqref: "D10:D30",
+              type: "list",
+              formula1: "\"A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z\"",
+              errorTitle: "Grupo inválido",
+              error: "El grupo debe ser una sola letra mayúscula.",
+            },
+            {
+              sqref: "F10:F30",
+              type: "list",
+              formula1: "\"PRÁCTICA PROFESIONAL 1,PRÁCTICA PROFESIONAL 2,RESIDENCIA PROFESIONAL\"",
+              errorTitle: "Práctica inválida",
+              error: "Selecciona una de las tres prácticas permitidas.",
+            },
           ],
         },
       ]);
@@ -1151,7 +1210,7 @@ export function AdminCatalogos() {
       setMensaje("Archivo validado. Revisa la vista previa y los errores antes de importar.");
     } catch (err) {
       console.error(err);
-      setError("No se pudo validar el archivo.");
+      setError(getApiErrorMessage(err, "No se pudo validar el archivo."));
     } finally {
       setCargando(false);
     }
@@ -1160,6 +1219,11 @@ export function AdminCatalogos() {
   async function handleImportarArchivo() {
     if (!archivo) {
       setError("Selecciona un archivo antes de importar.");
+      return;
+    }
+
+    if (tipoCarga === "alumnos" && !carreraCargaId) {
+      setError("Selecciona la carrera para los alumnos.");
       return;
     }
 
@@ -1178,7 +1242,7 @@ export function AdminCatalogos() {
       setError("");
       const resultado =
         tipoCarga === "alumnos"
-          ? await importarAlumnosMasivo(archivo)
+          ? await importarAlumnosMasivo(archivo, Number(carreraCargaId))
           : await importarPersonalMasivo(archivo);
       setResultadoImportacion(resultado);
       setMensaje(`Se importaron ${resultado.importados ?? 0} registros correctamente.`);
@@ -1447,6 +1511,31 @@ export function AdminCatalogos() {
     } finally {
       setCargando(false);
     }
+  }
+
+  function editarConvocatoria(convocatoria: Convocatoria) {
+    setModoEdicion(true);
+    setModoAvanzadoConvocatoria(false);
+    setConvocatoriaForm(convocatoria);
+    setMensaje("Editando la convocatoria: " + convocatoria.nombre);
+    setError("");
+    setResaltarFormularioConvocatoria(true);
+
+    if (resaltarConvocatoriaTimeoutRef.current !== null) {
+      window.clearTimeout(resaltarConvocatoriaTimeoutRef.current);
+    }
+    resaltarConvocatoriaTimeoutRef.current = window.setTimeout(() => {
+      setResaltarFormularioConvocatoria(false);
+      resaltarConvocatoriaTimeoutRef.current = null;
+    }, 2200);
+
+    window.requestAnimationFrame(() => {
+      formularioConvocatoriaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => {
+        nombreConvocatoriaRef.current?.focus({ preventScroll: true });
+        nombreConvocatoriaRef.current?.select();
+      }, 450);
+    });
   }
 
   function repetirCicloConvocatoria(convocatoria: Convocatoria) {
@@ -1731,46 +1820,96 @@ export function AdminCatalogos() {
               {(tipoCarga === "alumnos" ? columnasAlumnos : columnasPersonal).join(", ")}
             </div>
 
-            <div className="mt-5 flex flex-col md:flex-row items-start md:items-center gap-3">
-              <input
-                type="file"
-                accept=".xlsx,.csv"
-                onChange={(event) => {
-                  const seleccionado = event.target.files?.[0] ?? null;
-                  const extension = seleccionado?.name.split(".").pop()?.toLowerCase();
-                  if (seleccionado && extension !== "xlsx" && extension !== "csv") {
-                    setArchivo(null);
+            {tipoCarga === "alumnos" && (
+              <div className="mt-3 grid gap-2 rounded-xl border border-blue-100 bg-white p-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <label htmlFor="carrera-carga-alumnos" className="text-sm font-semibold text-[#0d2b5e]">
+                  Carrera para la importación:
+                </label>
+                <select
+                  id="carrera-carga-alumnos"
+                  value={carreraCargaId}
+                  onChange={(event) => {
+                    setCarreraCargaId(event.target.value ? Number(event.target.value) : "");
                     setResultadoValidacion(null);
                     setResultadoImportacion(null);
-                    setError("Formato no permitido. Sube un archivo .csv o .xlsx.");
-                    event.target.value = "";
-                    return;
-                  }
-                  setArchivo(seleccionado);
-                  setResultadoValidacion(null);
-                  setResultadoImportacion(null);
-                  setError("");
-                }}
-                className="block w-full md:w-auto text-sm"
-              />
+                    setMensaje("");
+                    setError("");
+                  }}
+                  className="min-h-11 w-full rounded-xl border border-blue-100 bg-white px-3 text-sm text-gray-700 outline-none focus:border-[#1565c0] focus:ring-4 focus:ring-blue-100"
+                >
+                  <option value="">Selecciona una carrera</option>
+                  {carreras
+                    .filter((carrera) => carrera.estado === "Activa")
+                    .map((carrera) => (
+                      <option key={carrera.id_carrera} value={carrera.id_carrera}>
+                        {carrera.nombre}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
 
-              <button
-                onClick={handleValidarArchivo}
-                disabled={cargando || !archivo}
-                className="bg-[#1565c0] text-white rounded-xl px-5 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
-              >
-                <Upload className="w-4 h-4" />
-                Validar archivo
-              </button>
+            <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+                <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#1565c0] bg-white px-5 py-2.5 text-sm font-semibold text-[#1565c0] shadow-sm transition hover:bg-blue-50 focus-within:ring-4 focus-within:ring-blue-100">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  {archivo ? "Cambiar archivo" : "Elegir archivo"}
+                  <input
+                    key={archivo?.name ?? "sin-archivo"}
+                    type="file"
+                    accept=".xlsx,.csv"
+                    onChange={(event) => {
+                      const seleccionado = event.target.files?.[0] ?? null;
+                      const extension = seleccionado?.name.split(".").pop()?.toLowerCase();
+                      if (seleccionado && extension !== "xlsx" && extension !== "csv") {
+                        setArchivo(null);
+                        setResultadoValidacion(null);
+                        setResultadoImportacion(null);
+                        setError("Formato no permitido. Sube un archivo .csv o .xlsx.");
+                        event.target.value = "";
+                        return;
+                      }
+                      setArchivo(seleccionado);
+                      setResultadoValidacion(null);
+                      setResultadoImportacion(null);
+                      setError("");
+                    }}
+                    className="sr-only"
+                  />
+                </label>
 
-              <button
-                onClick={handleImportarArchivo}
-                disabled={cargando || !puedeImportar}
-                className="bg-green-600 text-white rounded-xl px-5 py-2 text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-50"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Confirmar importacion
-              </button>
+                <div
+                  className="flex min-h-11 min-w-0 flex-1 items-center rounded-xl border border-blue-100 bg-white px-4 text-sm text-gray-500"
+                  title={archivo?.name ?? "Ningún archivo seleccionado"}
+                  aria-live="polite"
+                >
+                  <span className="truncate">
+                    {archivo?.name ?? "Ningún archivo seleccionado"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row lg:shrink-0">
+                <button
+                  type="button"
+                  onClick={handleValidarArchivo}
+                  disabled={cargando || !archivo}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#1565c0] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0d4f9a] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  Validar archivo
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleImportarArchivo}
+                  disabled={cargando || !puedeImportar}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Confirmar importacion
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1784,6 +1923,18 @@ export function AdminCatalogos() {
                 <div>Total: {resultadoValidacion.total}</div>
                 <div>Validos: {resultadoValidacion.validos}</div>
                 <div>Errores: {resultadoValidacion.errores.length}</div>
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => reiniciarCarga(tipoCarga)}
+                  disabled={cargando}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                  Cancelar importación
+                </button>
               </div>
 
               {(resultadoValidacion.vista_previa?.length ?? 0) > 0 && (
@@ -2021,7 +2172,18 @@ export function AdminCatalogos() {
 
             {catalogoActivo === "convocatorias" && (
               <div className="space-y-6">
-                <section className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden">
+                <section
+                  ref={formularioConvocatoriaRef}
+                  className={"relative rounded-2xl border bg-white shadow-sm overflow-hidden transition-all duration-300 " +
+                    (modoEdicion ? "border-blue-300 " : "border-gray-200 ") +
+                    (resaltarFormularioConvocatoria ? "ring-4 ring-blue-200 shadow-[0_0_28px_rgba(21,101,192,0.35)] " : "")}
+                >
+                  {resaltarFormularioConvocatoria && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-20 rounded-2xl border-2 border-blue-400 shadow-[0_0_22px_rgba(21,101,192,0.45)] animate-pulse"
+                    />
+                  )}
                   <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/80 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                     <div>
                       <h4 className="font-bold text-[#0d2b5e]">
@@ -2056,6 +2218,7 @@ export function AdminCatalogos() {
                       </div>
                       <div className="grid lg:grid-cols-[1.4fr_0.8fr_0.8fr] gap-3">
                   <input
+                    ref={nombreConvocatoriaRef}
                     type="text"
                     placeholder="Nombre"
                     value={convocatoriaForm.nombre}
@@ -2393,11 +2556,7 @@ export function AdminCatalogos() {
                       </div>
                       <div className="flex flex-wrap gap-2 mt-4">
                         <button
-                          onClick={() => {
-                            setModoEdicion(true);
-                            setModoAvanzadoConvocatoria(false);
-                            setConvocatoriaForm(convocatoria);
-                          }}
+                          onClick={() => editarConvocatoria(convocatoria)}
                           className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg"
                           title="Editar"
                         >
