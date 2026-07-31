@@ -223,7 +223,7 @@ def validar_convocatoria_sin_dependencias(db: Session, id_convocatoria: int) -> 
     Evita eliminar convocatorias que ya tienen procesos asociados.
     """
     modelos = [
-        ExpedienteAlumnoModel,
+        ExpedienteModel,
         ParticipacionEmpresaConvocatoriaModel,
         VacanteModel,
         SeleccionEmpresaModel,
@@ -246,19 +246,16 @@ def validar_convocatoria_sin_dependencias(db: Session, id_convocatoria: int) -> 
 
 
 def obtener_convocatorias_disponibles_para_alumno(db: Session, alumno: AlumnoModel) -> list[ConvocatoriaModel]:
-    """
-    Devuelve convocatorias activas compatibles con el periodo del alumno.
-
-    No bloquea por subfase documental. El bloqueo real de selección/documentos
-    debe vivir en los servicios específicos de alumno.
-    """
     convocatorias = (
         db.query(ConvocatoriaModel)
         .filter(
             ConvocatoriaModel.estado == "Activa",
             ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
         )
-        .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ConvocatoriaModel.id_convocatoria.desc())
+        .order_by(
+            ConvocatoriaModel.fecha_inicio_general.desc(),
+            ConvocatoriaModel.id_convocatoria.desc(),
+        )
         .all()
     )
 
@@ -271,10 +268,10 @@ def obtener_convocatorias_disponibles_para_alumno(db: Session, alumno: AlumnoMod
             continue
 
         existe_expediente = (
-            db.query(ExpedienteAlumnoModel)
+            db.query(ExpedienteModel)
             .filter(
-                ExpedienteAlumnoModel.id_alumno == alumno.id_alumno,
-                ExpedienteAlumnoModel.id_convocatoria == convocatoria.id_convocatoria,
+                ExpedienteModel.id_alumno == alumno.id_alumno,
+                ExpedienteModel.id_convocatoria == convocatoria.id_convocatoria,
             )
             .first()
             is not None

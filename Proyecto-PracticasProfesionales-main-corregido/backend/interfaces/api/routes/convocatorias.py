@@ -21,47 +21,50 @@ router = APIRouter(
 )
 
 
-ETAPAS_CONVOCATORIA = [
-    ("Registro de empresas", "fecha_inicio_empresas", "fecha_cierre_empresas"),
-    ("Documentación de alumnos", "fecha_inicio_documentos", "fecha_cierre_documentos"),
-    ("Validación documental", "fecha_inicio_validacion", "fecha_cierre_validacion"),
-    ("Selección de empresas", "fecha_inicio_seleccion", "fecha_cierre_seleccion"),
-    ("Asignación", "fecha_inicio_asignacion", "fecha_cierre_asignacion"),
-    ("Prácticas en curso", "fecha_inicio_practicas", "fecha_cierre_practicas"),
-    ("Cierre administrativo", "fecha_inicio_cierre", "fecha_cierre_cierre"),
+BLOQUES_CONVOCATORIA = [
+    (
+        "Registro y preparación",
+        "fecha_inicio_empresas",
+        "fecha_cierre_validacion",
+    ),
+    (
+        "Selección y asignación",
+        "fecha_inicio_seleccion",
+        "fecha_cierre_asignacion",
+    ),
+    (
+        "Desarrollo de prácticas",
+        "fecha_inicio_practicas",
+        "fecha_cierre_practicas",
+    ),
+    (
+        "Cierre",
+        "fecha_inicio_cierre",
+        "fecha_cierre_cierre",
+    ),
 ]
 
 
 def calcular_fase_actual(convocatoria) -> str:
-    fechas = [
-        convocatoria.fecha_inicio_general,
-        convocatoria.fecha_cierre_general,
-        *[
-            getattr(convocatoria, campo)
-            for _, inicio, cierre in ETAPAS_CONVOCATORIA
-            for campo in (inicio, cierre)
-        ],
-    ]
-    fechas = [item for item in fechas if item is not None]
-    if not fechas:
+    if not convocatoria.fecha_inicio_general or not convocatoria.fecha_cierre_general:
         return "Sin calendario"
 
     hoy = date.today()
-    if convocatoria.fecha_inicio_general and hoy < convocatoria.fecha_inicio_general:
+
+    if hoy < convocatoria.fecha_inicio_general:
         return "Programada"
 
-    for nombre, campo_inicio, campo_cierre in ETAPAS_CONVOCATORIA:
+    if hoy > convocatoria.fecha_cierre_general:
+        return "Finalizada"
+
+    for nombre, campo_inicio, campo_cierre in BLOQUES_CONVOCATORIA:
         inicio = getattr(convocatoria, campo_inicio)
         cierre = getattr(convocatoria, campo_cierre)
+
         if inicio and cierre and inicio <= hoy <= cierre:
-            if campo_inicio == "fecha_inicio_seleccion":
-                return "Seleccion"
             return nombre
 
-    ultima_fecha = max(fechas)
-    if hoy > ultima_fecha:
-        return "Finalizada"
-    return "Programada"
+    return "Activa"
 
 
 def serializar_convocatoria(convocatoria) -> dict:
