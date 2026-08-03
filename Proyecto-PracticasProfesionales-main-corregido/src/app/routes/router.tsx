@@ -9,7 +9,6 @@ import { ProtectedRoute } from "./ProtectedRoute";
 import { cambiarPasswordInicial } from "../../infrastructure/auth/authApi";
 import { obtenerRutaInicioPorRol, obtenerRutaInicioSesionGuardada } from "./authSession";
 
-// Alumno
 import { AlumnoDashboard } from "../pages/alumno/AlumnoDashboard";
 import { AlumnoPerfil } from "../pages/alumno/AlumnoPerfil";
 import { PadronEmpresarial } from "../pages/alumno/PadronEmpresarial";
@@ -20,8 +19,6 @@ import { CargaDocumentos } from "../pages/alumno/CargaDocumentos";
 import { AlumnoReportes } from "../pages/alumno/AlumnoReportes";
 import { AlumnoLiberacion } from "../pages/alumno/AlumnoLiberacion";
 
-// Otras páginas para admin, coordinador, etc. se agregarían aquí
-// Coordinador
 import { CoordinadorDashboard } from "../pages/coordinador/CoordinadorDashboard";
 import { GestionAlumnos } from "../pages/coordinador/GestionAlumnos";
 import { RevisionDocumentos } from "../pages/coordinador/RevisionDocumentos";
@@ -31,7 +28,6 @@ import { CoordinadorSeguimiento } from "../pages/coordinador/CoordinadorSeguimie
 import { CoordinadorLiberacion } from "../pages/coordinador/CoordinadorLiberacion";
 import { CoordinadorNotificaciones } from "../pages/coordinador/CoordinadorNotificaciones";
 
-// Unidad
 import { UnidadDashboard } from "../pages/unidad/UnidadDashboard";
 import { RegistroEmpresa } from "../pages/unidad/RegistroEmpresa";
 import { PerfilEmpresa } from "../pages/unidad/PerfilEmpresa";
@@ -41,7 +37,6 @@ import { ConveniosUnidad } from "../pages/unidad/ConveniosUnidad";
 import { HorasUnidad } from "../pages/unidad/HorasUnidad";
 import { EvaluacionesUnidad } from "../pages/unidad/EvaluacionesUnidad";
 
-// Coord. Unidades
 import { CoordUnidadesDashboard } from "../pages/coord-unidades/CoordUnidadesDashboard";
 import { ValidacionEmpresas } from "../pages/coord-unidades/ValidacionEmpresas";
 import { GestionConvenios } from "../pages/coord-unidades/GestionConvenios";
@@ -50,7 +45,6 @@ import { GestionVacantes } from "../pages/coord-unidades/GestionVacantes";
 import { PadronEmpresarial as PadronEmpresarialCoord } from "../pages/coord-unidades/PadronEmpresarial";
 import { NotificacionesCoordUnidades } from "../pages/coord-unidades/NotificacionesCoordUnidades";
 
-// Admin
 import { AdminDashboard } from "../pages/admin/AdminDashboard";
 import { GestionUsuarios } from "../pages/admin/GestionUsuarios";
 import { AdminRolesPermisos } from "../pages/admin/AdminRolesPermisos";
@@ -59,14 +53,12 @@ import { AdminReportes } from "../pages/admin/AdminReportes";
 import { AdminBitacora } from "../pages/admin/AdminBitacora";
 import { AdminConfiguracion } from "../pages/admin/AdminConfiguracion";
 
-// Asesor
 import { AsesorDashboard } from "../pages/asesor/AsesorDashboard";
 import { AlumnosAsignados } from "../pages/asesor/AlumnosAsignados";
 import { AsesorReportes } from "../pages/asesor/AsesorReportes";
 import { AsesorObservaciones } from "../pages/asesor/AsesorObservaciones";
 import { AsesorNotificaciones } from "../pages/asesor/AsesorNotificaciones";
 
-// Dirección
 import { DireccionDashboard } from "../pages/direccion/DireccionDashboard";
 import { DireccionEstadisticas } from "../pages/direccion/DireccionEstadisticas";
 import { DireccionReportes } from "../pages/direccion/DireccionReportes";
@@ -259,7 +251,6 @@ export const router = createBrowserRouter([
   ],
 },
 
-// Coordinador
 {
   element: <ProtectedRoute allowedRoles={[3]} />,
   children: [
@@ -280,7 +271,6 @@ export const router = createBrowserRouter([
   ],
 },
 
-// Unidad Receptora
 {
   element: <ProtectedRoute allowedRoles={[5]} />,
   children: [
@@ -300,7 +290,6 @@ export const router = createBrowserRouter([
   ],
 },
 
-// Coordinador de Unidades
 {
   element: <ProtectedRoute allowedRoles={[4]} />,
   children: [
@@ -321,7 +310,6 @@ export const router = createBrowserRouter([
   ],
 },
 
-// Administrador
 {
   element: <ProtectedRoute allowedRoles={[2]} />,
   children: [
@@ -341,7 +329,6 @@ export const router = createBrowserRouter([
   ],
 },
 
-// Asesor
 {
   element: <ProtectedRoute allowedRoles={[6]} />,
   children: [
@@ -359,7 +346,6 @@ export const router = createBrowserRouter([
   ],
 },
 
-// Dirección
 {
   element: <ProtectedRoute allowedRoles={[7]} />,
   children: [

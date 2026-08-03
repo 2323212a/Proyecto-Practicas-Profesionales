@@ -25,7 +25,11 @@ type UsuarioSesion = {
 const estadoColor: Record<string, string> = {
   Aprobado: "bg-green-100 text-green-700",
   Pendiente: "bg-yellow-100 text-yellow-700",
+  "En revisión": "bg-yellow-100 text-yellow-700",
+  "En revision": "bg-yellow-100 text-yellow-700",
   Rechazado: "bg-red-100 text-red-700",
+  Observado: "bg-orange-100 text-orange-700",
+  "Con observaciones": "bg-orange-100 text-orange-700",
   Faltante: "bg-gray-100 text-gray-600",
 };
 const MAX_DOCUMENTO_BYTES = 2 * 1024 * 1024;
@@ -165,6 +169,8 @@ export function ConveniosUnidad() {
 
   function renderRequisito(requisito: RequisitoEmpresa, bloqueado = false) {
     const estado = requisito.documento?.estado_documento ?? "Faltante";
+    const esperandoCorreccion = ["Rechazado", "Observado", "Con observaciones"].includes(estado);
+    const observaciones = requisito.documento?.observaciones?.trim() || "";
     return (
       <div key={requisito.id_tipo_documento_empresa} className={`px-6 py-5 ${bloqueado ? "opacity-60" : "hover:bg-gray-50"}`}>
         <div className="flex flex-col xl:flex-row xl:items-start gap-5">
@@ -172,7 +178,7 @@ export function ConveniosUnidad() {
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="font-bold text-gray-800 text-sm">{requisito.nombre}</h4>
               <span className={`text-xs px-3 py-1 rounded-full font-semibold ${estadoColor[estado]}`}>
-                {estado}
+                {esperandoCorreccion ? "Esperando corrección" : estado}
               </span>
             </div>
 
@@ -183,9 +189,12 @@ export function ConveniosUnidad() {
               </p>
             </div>
 
-            {requisito.documento?.observaciones && (
-              <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-                Observaciones: {requisito.documento.observaciones}
+            {esperandoCorreccion && (
+              <div className="mt-3 text-xs text-orange-800 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                <p className="font-semibold">Esperando corrección</p>
+                <p className="mt-1">Reemplaza el archivo para enviarlo nuevamente a revisión.</p>
+                <p className="font-semibold mt-2">Observaciones de Coordinación</p>
+                <p className="mt-1 whitespace-pre-wrap">{observaciones || "Sin observaciones registradas"}</p>
               </div>
             )}
 
@@ -219,7 +228,13 @@ export function ConveniosUnidad() {
 
             <label className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold ${bloqueado ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-[#0d2b5e] text-white hover:bg-[#1565c0] cursor-pointer"}`}>
               <Upload className="w-3.5 h-3.5" />
-              {subiendo === requisito.id_tipo_documento_empresa ? "Subiendo..." : "Subir archivo"}
+              {subiendo === requisito.id_tipo_documento_empresa
+                ? "Subiendo..."
+                : esperandoCorreccion
+                  ? "Subir corrección"
+                  : requisito.documento
+                    ? "Reemplazar archivo"
+                    : "Subir archivo"}
               <input
                 type="file"
                 accept={ACCEPT_DOCUMENTOS}

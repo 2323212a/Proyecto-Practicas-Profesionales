@@ -93,7 +93,7 @@ class RequisitoTipoUnidadItemRequest(BaseModel):
     id_tipo_documento_empresa: int
     aplica: bool = True
     obligatorio: bool = True
-    orden: int = 0
+    orden: int | None = None
     instrucciones: str | None = None
 
 
@@ -103,6 +103,7 @@ class ConfigurarRequisitosTipoUnidadRequest(BaseModel):
 
 class AsignarTipoUnidadEmpresaRequest(BaseModel):
     id_tipo_unidad_receptora: int
+    motivo: str
 
 
 TIPOS_BASE_EMPRESA = [
@@ -342,11 +343,12 @@ def _asegurar_permiso_formato_empresa(usuario: UsuarioModel, formato: FormatoEmp
         return
     if rol == "Unidad Receptora" and usuario.responsable_empresa is not None:
         empresa = usuario.responsable_empresa.empresa
-        if empresa is None:
+        if empresa is None or not formato.activo:
             raise HTTPException(status_code=403, detail="No tienes permisos para ver este formato")
-        if formato.id_empresa is not None and formato.id_empresa != empresa.id_empresa:
-            raise HTTPException(status_code=404, detail="Formato no encontrado")
         if not _requisito_permitido_para_empresa(formato.tipo_documento, empresa):
+            raise HTTPException(status_code=404, detail="Formato no encontrado")
+        formato_efectivo = _formato_para_empresa(formato.tipo_documento, empresa)
+        if formato_efectivo is None or formato_efectivo.id_formato_empresa != formato.id_formato_empresa:
             raise HTTPException(status_code=404, detail="Formato no encontrado")
         return
     raise HTTPException(status_code=403, detail="No tienes permisos para ver este formato")
@@ -375,7 +377,12 @@ def _puede_eliminar_requisito(db: Session, id_tipo_documento_empresa: int) -> bo
 
 
 def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = None):
-    formatos_activos = [formato for formato in tipo.formatos if formato.activo and formato.id_empresa is None]
+    todos_formatos_activos = sorted(
+        [formato for formato in tipo.formatos if formato.activo],
+        key=lambda item: (item.updated_at or item.created_at, item.id_formato_empresa),
+        reverse=True,
+    )
+    formatos_activos = [formato for formato in todos_formatos_activos if formato.id_empresa is None]
     formato = sorted(
         formatos_activos,
         key=lambda item: item.updated_at or item.created_at,
@@ -391,6 +398,7 @@ def _requisito_response(tipo: TipoDocumentoEmpresaModel, db: Session | None = No
         "etapa": tipo.etapa,
         "tipo_tramite": tipo.tipo_tramite,
         "formato": _formato_response(formato),
+        "formatos": [_formato_response(item) for item in todos_formatos_activos],
         "puede_eliminar": (
             _puede_eliminar_requisito(db, tipo.id_tipo_documento_empresa)
             if db is not None
@@ -406,7 +414,7 @@ def _formato_para_empresa(tipo: TipoDocumentoEmpresaModel, empresa: EmpresaModel
     candidatos = formatos_empresa or formatos_generales
     return sorted(
         candidatos,
-        key=lambda item: item.updated_at or item.created_at,
+        key=lambda item: (item.updated_at or item.created_at, item.id_formato_empresa),
         reverse=True,
     )[0] if candidatos else None
 
@@ -630,11 +638,27 @@ def _empresa_documentacion_response(db: Session, empresa: EmpresaModel):
             }
         )
 
+    items.sort(
+        key=lambda item: (
+            item["orden"] if item["orden"] and item["orden"] > 0 else 10**9,
+            item["nombre"].casefold(),
+        )
+    )
     resumen = {
         "total": len(items),
         "aprobados": sum(1 for item in items if item["documento"] and item["documento"]["estado_documento"] == "Aprobado"),
-        "pendientes": sum(1 for item in items if item["documento"] and item["documento"]["estado_documento"] == "Pendiente"),
-        "rechazados": sum(1 for item in items if item["documento"] and item["documento"]["estado_documento"] == "Rechazado"),
+        "pendientes": sum(
+            1
+            for item in items
+            if item["documento"]
+            and item["documento"]["estado_documento"] in {"Pendiente", "En revisión", "En revision"}
+        ),
+        "rechazados": sum(
+            1
+            for item in items
+            if item["documento"]
+            and item["documento"]["estado_documento"] in {"Rechazado", "Observado", "Con observaciones"}
+        ),
         "faltantes": sum(1 for item in items if item["documento"] is None and item["obligatorio"]),
     }
     convenio_actual = obtener_convenio_actual(db, empresa.id_empresa)
@@ -868,18 +892,9 @@ def eliminar_formato_empresa(id_formato_empresa: int, db: Session = Depends(obte
     if formato is None:
         raise HTTPException(status_code=404, detail="Formato no encontrado")
 
-    ruta = Path(formato.ruta_archivo) if formato.ruta_archivo else None
-    db.delete(formato)
+    formato.activo = False
     db.commit()
-
-    if ruta is not None:
-        try:
-            if ruta.exists() and ruta.is_file():
-                ruta.unlink()
-        except OSError as error:
-            logger.warning("No se pudo eliminar el archivo fisico del formato %s: %s", ruta, error)
-
-    return {"mensaje": "Formato eliminado correctamente"}
+    return {"mensaje": "Formato desactivado correctamente"}
 
 
 def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
@@ -892,11 +907,6 @@ def _guardar_formato_empresa(datos: SubirFormatoEmpresaRequest, db: Session):
         raise HTTPException(status_code=404, detail="Tipo de documento no encontrado")
     if not tipo.requiere_formato:
         raise HTTPException(status_code=400, detail="El requisito no esta configurado para usar formato")
-    if tipo.etapa in {"Convenio", "Vinculacion"} and datos.id_empresa is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Los formatos de Convenio y Vinculación deben asignarse a una empresa específica.",
-        )
     empresa = None
     if datos.id_empresa is not None:
         empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == datos.id_empresa).first()
@@ -1187,6 +1197,15 @@ def revisar_documento_empresa(
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == documento.id_empresa).first()
+    if (
+        empresa is not None
+        and empresa.id_tipo_unidad_receptora is None
+        and datos.estado_documento == "Aprobado"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Asigna una categoría documental a la empresa antes de revisar sus documentos.",
+        )
     tipo_documento = (
         db.query(TipoDocumentoEmpresaModel)
         .filter(
@@ -1208,6 +1227,32 @@ def revisar_documento_empresa(
         )
     estado_anterior = documento.estado_documento
     ahora = datetime.now()
+
+    estados_pendientes_revision = {"Pendiente", "En revisión", "En revision"}
+    estados_esperando_correccion = {"Rechazado", "Observado", "Con observaciones"}
+    if datos.estado_documento == "Aprobado" and estado_anterior not in estados_pendientes_revision:
+        if estado_anterior in estados_esperando_correccion:
+            raise HTTPException(
+                status_code=400,
+                detail="La empresa debe subir una nueva versión antes de aprobar este documento.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se pueden aprobar documentos pendientes de revisión.",
+        )
+    if datos.estado_documento in {"Rechazado", "Con observaciones"}:
+        observacion = (datos.observaciones or "").strip()
+        if not observacion:
+            raise HTTPException(
+                status_code=400,
+                detail="Debes indicar el motivo u observación del rechazo.",
+            )
+        if estado_anterior not in estados_pendientes_revision:
+            raise HTTPException(
+                status_code=400,
+                detail="Solo se pueden observar o rechazar documentos pendientes de revisión.",
+            )
+        datos.observaciones = observacion
 
     if datos.estado_documento == "Pendiente" and estado_anterior != "Pendiente":
         if documento.fecha_revision is None:
@@ -1412,10 +1457,39 @@ def guardar_requisitos_por_tipo_unidad(
     if db.query(TipoUnidadReceptoraModel).filter(TipoUnidadReceptoraModel.id_tipo_unidad_receptora == id_tipo_unidad).first() is None:
         raise HTTPException(status_code=404, detail="Tipo de unidad receptora no encontrado.")
     ids_recibidos: set[int] = set()
+    ordenes_aplicables: set[int] = set()
     for item in datos.requisitos:
         if item.id_tipo_documento_empresa in ids_recibidos:
             raise HTTPException(status_code=400, detail="No repitas documentos en la configuración.")
         ids_recibidos.add(item.id_tipo_documento_empresa)
+        documento = (
+            db.query(TipoDocumentoEmpresaModel)
+            .filter(
+                TipoDocumentoEmpresaModel.id_tipo_documento_empresa
+                == item.id_tipo_documento_empresa,
+                TipoDocumentoEmpresaModel.etapa == "Documentacion",
+            )
+            .first()
+        )
+        if documento is None:
+            raise HTTPException(
+                status_code=400,
+                detail="El documento indicado no existe o no pertenece a la etapa de Documentación.",
+            )
+        if item.aplica:
+            if not documento.activo:
+                raise HTTPException(status_code=400, detail=f"El documento {documento.nombre} está inactivo.")
+            if item.orden is None or item.orden < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"El orden de {documento.nombre} debe ser mayor o igual a 1.",
+                )
+            if item.orden in ordenes_aplicables:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"El orden {item.orden} está repetido en los requisitos aplicables.",
+                )
+            ordenes_aplicables.add(item.orden)
         requisito = (
             db.query(RequisitoEmpresaTipoUnidadModel)
             .filter(
@@ -1431,9 +1505,9 @@ def guardar_requisitos_por_tipo_unidad(
             )
             db.add(requisito)
         requisito.activo = item.aplica
-        requisito.obligatorio = item.obligatorio
-        requisito.orden = item.orden
-        requisito.instrucciones = (item.instrucciones or "").strip() or None
+        requisito.obligatorio = item.obligatorio if item.aplica else False
+        requisito.orden = item.orden if item.aplica else 0
+        requisito.instrucciones = ((item.instrucciones or "").strip() or None) if item.aplica else None
     db.commit()
     return listar_requisitos_por_tipo_unidad(id_tipo_unidad, db)
 
@@ -1446,7 +1520,11 @@ def asignar_tipo_unidad_empresa(
     id_empresa: int,
     datos: AsignarTipoUnidadEmpresaRequest,
     db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
 ):
+    motivo = " ".join(datos.motivo.split())
+    if not motivo:
+        raise HTTPException(status_code=400, detail="El motivo del cambio es obligatorio.")
     empresa = db.query(EmpresaModel).filter(EmpresaModel.id_empresa == id_empresa).first()
     tipo = (
         db.query(TipoUnidadReceptoraModel)
@@ -1458,6 +1536,26 @@ def asignar_tipo_unidad_empresa(
     )
     if empresa is None or tipo is None:
         raise HTTPException(status_code=404, detail="Empresa o tipo de unidad receptora no encontrado.")
+    tipo_anterior = empresa.tipo_unidad_receptora.nombre if empresa.tipo_unidad_receptora else "Sin categoría"
     empresa.id_tipo_unidad_receptora = tipo.id_tipo_unidad_receptora
+    for responsable in empresa.responsables:
+        crear_notificacion(
+            db,
+            responsable.id_usuario,
+            "Categoría documental actualizada",
+            "Tu categoría documental fue actualizada por Coordinación. Revisa los documentos requeridos.",
+        )
     db.commit()
-    return {"mensaje": "Tipo de unidad receptora actualizado.", "id_tipo_unidad_receptora": tipo.id_tipo_unidad_receptora}
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Cambiar categoría documental de empresa",
+        "documentos_empresa",
+        f"Categoría de {empresa.nombre_empresa} cambió de {tipo_anterior} a {tipo.nombre}. Motivo: {motivo}",
+        "empresa",
+        empresa.id_empresa,
+    )
+    return {
+        "mensaje": "Categoría documental actualizada.",
+        "id_tipo_unidad_receptora": tipo.id_tipo_unidad_receptora,
+    }

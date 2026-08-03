@@ -553,7 +553,6 @@ def listar_alumnos_gestion_coordinador(db: Session = Depends(obtener_db)):
     )
     return [_alumno_gestion_response(alumno, tipos) for alumno in alumnos]
 
-################################################################################
 def _actualizar_estado_expediente(
     db: Session,
     expediente: ExpedienteModel,
@@ -637,7 +636,6 @@ def _actualizar_estado_expediente(
     se_habilito = (not era_elegible and expediente.estado_expediente == "Aprobado")
 
     return se_habilito
-####################################################################################
 def listar_revision_documental(db: Session = Depends(obtener_db)):
     documentos = (
         db.query(DocumentoModel)
@@ -785,7 +783,6 @@ def cambiar_estado_documento(
                 tipo_observacion=_tipo_observacion_revision(datos.estado),
             )
         )
-#####################################3333
     alumno = documento.expediente.alumno
 
     seleccion_habilitada = _actualizar_estado_expediente(

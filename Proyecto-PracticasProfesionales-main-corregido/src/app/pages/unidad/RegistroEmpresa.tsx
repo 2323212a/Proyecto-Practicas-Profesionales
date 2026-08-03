@@ -21,6 +21,7 @@ type SolicitudEmpresaForm = {
   nombre_empresa: string;
   rfc: string;
   giro: string;
+  giro_otro: string;
   domicilio: string;
   telefono: string;
   correo_contacto: string;
@@ -37,6 +38,7 @@ const FORM_INICIAL: SolicitudEmpresaForm = {
   nombre_empresa: "",
   rfc: "",
   giro: "",
+  giro_otro: "",
   domicilio: "",
   telefono: "",
   correo_contacto: "",
@@ -50,14 +52,22 @@ const FORM_INICIAL: SolicitudEmpresaForm = {
 };
 
 const GIROS = [
-  "Tecnologias de la Informacion",
-  "Salud y Medicina",
-  "Educacion",
-  "Finanzas y Contabilidad",
-  "Ingenieria y Construccion",
-  "Gobierno y Sector Publico",
-  "Comercio y Servicios",
-  "Investigacion y Desarrollo",
+  "Tecnología y desarrollo de software",
+  "Servicios profesionales",
+  "Educación",
+  "Salud",
+  "Gobierno / Administración pública",
+  "Industria / Manufactura",
+  "Comercio",
+  "Turismo",
+  "Construcción",
+  "Agroindustria",
+  "Telecomunicaciones",
+  "Transporte y logística",
+  "Finanzas / Contabilidad",
+  "Energía",
+  "Investigación",
+  "Organización social / ONG",
   "Otro",
 ];
 
@@ -75,6 +85,7 @@ export function RegistroEmpresa() {
   const [tiposUnidad, setTiposUnidad] = useState<Array<{
     id_tipo_unidad_receptora: number;
     nombre: string;
+    descripcion?: string | null;
   }>>([]);
 
   useEffect(() => {
@@ -86,7 +97,7 @@ export function RegistroEmpresa() {
       })
       .catch((err) => console.error(err));
     apiClient
-      .get<Array<{ id_tipo_unidad_receptora: number; nombre: string }>>(
+      .get<Array<{ id_tipo_unidad_receptora: number; nombre: string; descripcion?: string | null }>>(
         "/empresas/tipos-unidad-receptora",
       )
       .then(({ data }) => setTiposUnidad(data))
@@ -117,9 +128,10 @@ export function RegistroEmpresa() {
     if (!form.apellido_paterno_responsable.trim()) return "El apellido paterno del responsable es obligatorio.";
     if (!form.cargo_responsable.trim()) return "El cargo del responsable es obligatorio.";
     if (!form.giro.trim()) return "Selecciona el giro o sector.";
+    if (form.giro === "Otro" && !form.giro_otro.trim()) return "Especifica el giro o sector de actividad.";
     if (!form.domicilio.trim()) return "El domicilio fiscal o de operacion es obligatorio.";
     if (!form.tipo_tramite) return "Selecciona el tipo de tramite.";
-    if (!form.id_tipo_unidad_receptora) return "Selecciona el tipo de unidad receptora.";
+    if (!form.id_tipo_unidad_receptora) return "Selecciona el tipo de institución u organización.";
     return "";
   }
 
@@ -153,7 +165,7 @@ export function RegistroEmpresa() {
       await apiClient.post("/empresas/solicitudes", {
         nombre_empresa: form.nombre_empresa.trim(),
         rfc: form.rfc.trim(),
-        giro: form.giro.trim(),
+        giro: form.giro === "Otro" ? form.giro_otro.trim() : form.giro.trim(),
         domicilio: form.domicilio.trim(),
         telefono: form.telefono.trim(),
         correo_contacto: form.correo_contacto.trim(),
@@ -294,6 +306,17 @@ export function RegistroEmpresa() {
                       <option key={giro}>{giro}</option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Describe la actividad principal de tu empresa; no determina la documentación legal.
+                  </p>
+                  {form.giro === "Otro" && (
+                    <input
+                      value={form.giro_otro}
+                      onChange={set("giro_otro")}
+                      placeholder="Especifica el giro"
+                      className={`${inputClass} mt-3`}
+                    />
+                  )}
                 </Campo>
 
                 <Campo label="Domicilio *" icon={Building2}>
@@ -314,7 +337,7 @@ export function RegistroEmpresa() {
                   </p>
                 </Campo>
 
-                <Campo label="Tipo de unidad receptora *" icon={Building2}>
+                <Campo label="Tipo de institución u organización *" icon={Building2}>
                   <select
                     value={form.id_tipo_unidad_receptora}
                     onChange={set("id_tipo_unidad_receptora")}
@@ -331,8 +354,13 @@ export function RegistroEmpresa() {
                     ))}
                   </select>
                   <p className="text-xs text-gray-500 mt-2">
-                    El tipo de unidad receptora determina la documentación legal que deberás presentar.
+                    Selecciona la opción que mejor describa legalmente a tu institución. Esta información determina los documentos que deberás presentar.
                   </p>
+                  {tiposUnidad.find((tipo) => String(tipo.id_tipo_unidad_receptora) === form.id_tipo_unidad_receptora)?.descripcion && (
+                    <p className="text-xs text-blue-700 mt-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+                      {tiposUnidad.find((tipo) => String(tipo.id_tipo_unidad_receptora) === form.id_tipo_unidad_receptora)?.descripcion}
+                    </p>
+                  )}
                 </Campo>
 
               </div>

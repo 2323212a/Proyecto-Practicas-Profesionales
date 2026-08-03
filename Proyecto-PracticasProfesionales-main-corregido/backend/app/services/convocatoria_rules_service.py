@@ -24,7 +24,6 @@ ETAPAS_CON_FECHAS = {
     "cierre": ("fecha_inicio_cierre", "fecha_cierre_cierre"),
 }
 
-# Ya no se exige calendario completo de 8 subfases.
 # Para operar solo se requiere periodo general.
 FECHAS_OBLIGATORIAS = [
     "fecha_inicio_general",

@@ -159,7 +159,6 @@ export function CoordUnidadesDashboard() {
   return (
     <div className="min-h-full bg-slate-50/70">
       <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
-        {/* Encabezado */}
         <section className="relative overflow-hidden rounded-3xl bg-[#0d2b5e] px-6 py-7 text-white shadow-sm sm:px-8 sm:py-8">
           <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-white/5" />
           <div className="absolute -bottom-28 right-28 h-56 w-56 rounded-full bg-[#d6a72c]/10" />
@@ -218,7 +217,6 @@ export function CoordUnidadesDashboard() {
           </div>
         )}
 
-        {/* Resumen */}
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {tarjetas.map((item) => (
             <article
@@ -259,7 +257,6 @@ export function CoordUnidadesDashboard() {
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.65fr)_minmax(340px,0.75fr)]">
-          {/* Flujo */}
           <article className="rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -341,7 +338,6 @@ export function CoordUnidadesDashboard() {
             </div>
           </article>
 
-          {/* Columna lateral */}
           <div className="space-y-6">
             <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
@@ -452,7 +448,6 @@ export function CoordUnidadesDashboard() {
           </div>
         </section>
 
-        {/* Accesos rápidos */}
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>

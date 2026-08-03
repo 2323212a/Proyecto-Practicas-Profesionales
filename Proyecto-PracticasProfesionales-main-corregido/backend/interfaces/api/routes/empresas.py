@@ -103,7 +103,7 @@ def validar_registro_publico_habilitado(db: Session):
 class SolicitudEmpresaCreate(BaseModel):
     nombre_empresa: str = Field(min_length=2, max_length=150)
     rfc: Optional[str] = Field(default=None, max_length=20)
-    giro: Optional[str] = Field(default=None, max_length=100)
+    giro: str = Field(min_length=2, max_length=100)
     domicilio: Optional[str] = None
     telefono: Optional[str] = Field(default=None, max_length=25)
     correo_contacto: EmailStr
@@ -171,7 +171,18 @@ def editar_tipo_unidad_receptora(
     tipo = db.query(TipoUnidadReceptoraModel).filter(TipoUnidadReceptoraModel.id_tipo_unidad_receptora == id_tipo).first()
     if tipo is None:
         raise HTTPException(status_code=404, detail="Tipo de unidad receptora no encontrado.")
-    tipo.nombre = " ".join(datos.nombre.split())
+    nombre = " ".join(datos.nombre.split())
+    duplicado = (
+        db.query(TipoUnidadReceptoraModel)
+        .filter(
+            func.lower(TipoUnidadReceptoraModel.nombre) == nombre.lower(),
+            TipoUnidadReceptoraModel.id_tipo_unidad_receptora != id_tipo,
+        )
+        .first()
+    )
+    if duplicado is not None:
+        raise HTTPException(status_code=400, detail="Ya existe un tipo de unidad receptora con ese nombre.")
+    tipo.nombre = nombre
     tipo.descripcion = limpiar_texto(datos.descripcion)
     tipo.activo = datos.activo
     db.commit()
@@ -208,6 +219,8 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
 
     rfc = normalizar_rfc(solicitud.rfc)
     giro = limpiar_texto(solicitud.giro)
+    if not giro:
+        raise HTTPException(status_code=400, detail="El giro o sector de actividad es obligatorio.")
     domicilio = limpiar_texto(solicitud.domicilio)
     telefono = normalizar_telefono(solicitud.telefono)
     correo_contacto = str(solicitud.correo_contacto).strip().lower()

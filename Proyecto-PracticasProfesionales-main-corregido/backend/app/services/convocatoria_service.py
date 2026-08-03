@@ -62,8 +62,6 @@ class ConvocatoriaService:
     def crear(self, convocatoria):
         datos = convocatoria.model_dump()
 
-        # Para creación, si el frontend no manda fechas internas, se rellenan
-        # por compatibilidad con el periodo general. Si sí las manda, se respetan.
         self._completar_fechas_compatibilidad_si_faltan(datos)
 
         nueva = self.repository.nuevo(datos)
@@ -84,21 +82,15 @@ class ConvocatoriaService:
 
         cambios = datos.model_dump(exclude_unset=True)
 
-        # Base real actual de la convocatoria.
         valores = {
             campo: getattr(convocatoria, campo)
             for campo in self.CAMPOS_CONVOCATORIA
         }
 
-        # Aplicar cambios recibidos desde frontend.
         valores.update(cambios)
 
-        # Completar solo fechas faltantes. No sobrescribir fechas por bloque
-        # que ya existan o que vengan desde la UI.
         self._completar_fechas_compatibilidad_si_faltan(valores)
 
-        # Si alguna fecha interna estaba vacía y se completó por compatibilidad,
-        # también se manda al repository para que quede persistida.
         for campo in (
             *self.CAMPOS_FECHA_INICIO_COMPATIBILIDAD,
             *self.CAMPOS_FECHA_CIERRE_COMPATIBILIDAD,

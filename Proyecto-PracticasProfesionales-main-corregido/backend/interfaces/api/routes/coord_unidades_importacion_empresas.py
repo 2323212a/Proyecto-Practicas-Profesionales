@@ -97,7 +97,6 @@ COLUMNAS = [
     "Carta de colaboración",
 ]
 CAMPOS_OBLIGATORIOS = {COLUMNAS[0]}
-# Se conserva vacío únicamente para no romper compatibilidad interna con trabajos validados previamente.
 COLUMNAS_DOCUMENTOS: dict[str, str] = {}
 TIPOS_UNIDAD = [
     "Sector Productivo - Persona física",
