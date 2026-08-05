@@ -1,0 +1,316 @@
+# ruff: noqa: F401
+from pathlib import Path
+import os
+
+from app.services.auditoria_service import registrar_bitacora
+from fastapi import Depends, FastAPI
+from pydantic import BaseModel, Field
+from infrastructure.database.dependencies import obtener_db
+from infrastructure.security.auth_dependencies import requerir_roles
+from infrastructure.security.auth_dependencies import obtener_usuario_actual
+from interfaces.api.routes.documentos import router as documentos_router
+from interfaces.api.routes.direccion import router as direccion_router
+from infrastructure.persistence.models.documento import DocumentoModel
+from interfaces.api.routes.roles import router as roles_router
+from infrastructure.persistence.models.rol import RolModel
+from interfaces.api.routes.usuarios import router as usuarios_router
+from infrastructure.persistence.models.usuario import UsuarioModel
+from interfaces.api.routes.carreras import router as carreras_router
+from infrastructure.persistence.models.carrera import CarreraModel
+from interfaces.api.routes.alumnos import router as alumnos_router
+from interfaces.api.routes.alumno_documentos import router as alumno_documentos_router
+from interfaces.api.routes.alumno_horas import router as alumno_horas_router
+from interfaces.api.routes.alumno_padron import router as alumno_padron_router
+from interfaces.api.routes.alumno_reportes import router as alumno_reportes_router
+from interfaces.api.routes.empresa_documentos import router as empresa_documentos_router
+from interfaces.api.routes.seguimiento_practicas import router as seguimiento_practicas_router
+from infrastructure.persistence.models.alumno import AlumnoModel
+from interfaces.api.routes.convocatorias import router as convocatorias_router
+from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
+from interfaces.api.routes.configuracion_sistema import router as configuracion_sistema_router
+from infrastructure.persistence.models.configuracion_sistema import ConfiguracionSistemaModel
+from interfaces.api.routes.tipos_documento import router as tipos_documento_router
+from infrastructure.persistence.models.tipo_documento import TipoDocumentoModel
+from interfaces.api.routes.expedientes import router as expedientes_router
+from infrastructure.persistence.models.expediente import ExpedienteModel
+from interfaces.api.routes.auth import router as auth_router
+from interfaces.api.routes.unidad import router as unidad_router
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from interfaces.api.routes.importacion import router as importacion_router
+from interfaces.api.routes.admin_estadisticas import router as admin_estadisticas_router
+from interfaces.api.routes.admin_reportes import router as admin_reportes_router
+from interfaces.api.routes.asesor import router as asesor_router
+from interfaces.api.routes.asignaciones import router as asignaciones_router
+from interfaces.api.routes.bitacora_auditoria import router as bitacora_auditoria_router
+from interfaces.api.routes.convenios import router as convenios_router
+from interfaces.api.routes.coord_unidades_empresas import router as coord_unidades_empresas_router, vacantes_router as coord_unidades_vacantes_router
+from interfaces.api.routes.coord_unidades_importacion_empresas import router as coord_unidades_importacion_empresas_router
+from interfaces.api.routes.coordinador_asignacion_asesores import router as coordinador_asignacion_asesores_router
+from interfaces.api.routes.coordinador_confirmacion_asignaciones import router as coordinador_confirmacion_asignaciones_router
+from interfaces.api.routes.coordinador_documentos import router as coordinador_documentos_router
+from interfaces.api.routes.coordinador_liberacion import router as coordinador_liberacion_router
+from interfaces.api.routes.empresas import router as empresas_router
+from interfaces.api.routes.evaluaciones import router as evaluaciones_router
+from interfaces.api.routes.horas import router as horas_router
+from interfaces.api.routes.liberaciones import router as liberaciones_router
+from interfaces.api.routes.notificaciones import router as notificaciones_router
+from interfaces.api.routes.observaciones import router as observaciones_router
+from interfaces.api.routes.reportes import router as reportes_router
+from interfaces.api.routes.reglas_practica_carrera import router as reglas_practica_carrera_router
+from infrastructure.persistence.models.tipo_practica import TipoPracticaModel
+from interfaces.api.routes.responsables_empresa import router as responsables_empresa_router
+from interfaces.api.routes.selecciones_empresa import router as selecciones_empresa_router
+from interfaces.api.routes.vacantes import router as vacantes_router
+from infrastructure.persistence.models.asignacion import AsignacionModel
+from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
+from infrastructure.persistence.models.convenio import ConvenioModel
+from infrastructure.persistence.models.empresa import EmpresaModel
+from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
+from infrastructure.persistence.models.evaluacion import EvaluacionModel
+from infrastructure.persistence.models.evaluacion_empresa_alumno import EvaluacionEmpresaAlumnoModel
+from infrastructure.persistence.models.formato_documento import FormatoDocumentoModel
+from infrastructure.persistence.models.documento_empresa import DocumentoEmpresaModel
+from infrastructure.persistence.models.documento_vacante import DocumentoVacanteModel
+from infrastructure.persistence.models.horas import HorasModel
+from infrastructure.persistence.models.incidencia_practica import IncidenciaPracticaModel
+from infrastructure.persistence.models.formato_empresa import FormatoEmpresaModel
+from infrastructure.persistence.models.formato_plan_trabajo_vacante import FormatoPlanTrabajoVacanteModel
+from infrastructure.persistence.models.liberacion import LiberacionModel
+from infrastructure.persistence.models.notificacion import NotificacionModel
+from infrastructure.persistence.models.observacion import ObservacionModel
+from infrastructure.persistence.models.participacion_empresa_convocatoria import ParticipacionEmpresaConvocatoriaModel
+from infrastructure.persistence.models.personal_interno import PersonalInternoModel
+from infrastructure.persistence.models.reporte import ReporteModel
+from infrastructure.persistence.models.regla_practica_carrera import ReglaPracticaCarreraModel
+from infrastructure.persistence.models.responsable_empresa import ResponsableEmpresaModel
+from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
+from infrastructure.persistence.models.vacante import VacanteModel
+from infrastructure.persistence.models.vacante_carrera import VacanteCarreraModel
+from infrastructure.persistence.models.vacante_tipo_practica import VacanteTipoPracticaModel
+from infrastructure.persistence.models.solicitud_ampliacion_cupos_vacante import SolicitudAmpliacionCuposVacanteModel
+from infrastructure.persistence.models.solicitud_ampliacion_cupos_vacante_detalle import SolicitudAmpliacionCuposVacanteDetalleModel
+from infrastructure.persistence.models.tipo_documento_empresa import TipoDocumentoEmpresaModel
+from infrastructure.persistence.models.tipo_practica import TipoPracticaModel
+from infrastructure.persistence.models.vinculacion_empresa import VinculacionEmpresaModel
+
+# La estructura oficial se crea con los SQL de la DB limpia.
+# No crear ni reparar esquema en runtime para evitar tablas antiguas.
+
+api_docs_enabled = os.getenv("API_DOCS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+app = FastAPI(
+    title="Sistema Integral de Prácticas Profesionales",
+    version="1.0.0",
+    docs_url="/docs" if api_docs_enabled else None,
+    redoc_url="/redoc" if api_docs_enabled else None,
+    openapi_url="/openapi.json" if api_docs_enabled else None,
+)
+UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# Los archivos sensibles se sirven solamente por endpoints autenticados.
+# No montar /uploads como StaticFiles para evitar acceso publico por ruta.
+
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+if "*" in cors_origins:
+    cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+app.include_router(documentos_router)
+app.include_router(roles_router)
+app.include_router(usuarios_router)
+app.include_router(carreras_router)
+app.include_router(alumnos_router)
+app.include_router(alumno_documentos_router)
+app.include_router(alumno_horas_router)
+app.include_router(alumno_padron_router)
+app.include_router(alumno_reportes_router)
+app.include_router(empresa_documentos_router)
+app.include_router(seguimiento_practicas_router)
+app.include_router(convocatorias_router)
+app.include_router(tipos_documento_router)
+app.include_router(expedientes_router)
+app.include_router(auth_router)
+app.include_router(unidad_router)
+app.include_router(importacion_router)
+app.include_router(admin_estadisticas_router)
+app.include_router(admin_reportes_router)
+app.include_router(asesor_router)
+app.include_router(configuracion_sistema_router)
+app.include_router(empresas_router)
+app.include_router(responsables_empresa_router)
+app.include_router(coordinador_asignacion_asesores_router)
+app.include_router(coordinador_confirmacion_asignaciones_router)
+app.include_router(coordinador_documentos_router)
+app.include_router(coordinador_liberacion_router)
+app.include_router(coord_unidades_empresas_router)
+app.include_router(coord_unidades_vacantes_router)
+app.include_router(coord_unidades_importacion_empresas_router)
+app.include_router(convenios_router)
+app.include_router(vacantes_router)
+app.include_router(selecciones_empresa_router)
+app.include_router(asignaciones_router)
+app.include_router(horas_router)
+app.include_router(evaluaciones_router)
+app.include_router(liberaciones_router)
+app.include_router(reportes_router)
+app.include_router(reglas_practica_carrera_router)
+app.include_router(notificaciones_router)
+app.include_router(observaciones_router)
+app.include_router(bitacora_auditoria_router)
+app.include_router(direccion_router)
+
+@app.get("/")
+def root():
+    return {
+        "mensaje": "Backend funcionando correctamente"
+    }
+
+
+@app.get(
+    "/tipos-practica/",
+    dependencies=[
+        Depends(
+            requerir_roles(
+                [
+                    "Administrador",
+                    "Coordinador de Practicas",
+                    "Coordinador de Unidades Receptoras",
+                    "Unidad Receptora",
+                ]
+            )
+        )
+    ],
+)
+def listar_tipos_practica(db=Depends(obtener_db)):
+    rows = db.execute(
+        text(
+            """
+            SELECT
+                id_tipo_practica,
+                nombre,
+                semestre_requerido,
+                creditos_minimos,
+                orden,
+                horas_requeridas,
+                activo
+            FROM tipo_practica
+            ORDER BY COALESCE(orden, id_tipo_practica), id_tipo_practica
+            """
+        )
+    ).mappings()
+    return [dict(row) for row in rows]
+
+
+class TipoPracticaUpdate(BaseModel):
+    nombre: str | None = None
+    semestre_requerido: int | None = Field(default=None, ge=1)
+    creditos_minimos: int | None = Field(default=None, ge=0)
+    horas_requeridas: int | None = Field(default=None, ge=1)
+    orden: int | None = Field(default=None, ge=1)
+    activo: bool | None = None
+
+
+class TipoPracticaCreate(BaseModel):
+    nombre: str = Field(min_length=1)
+    semestre_requerido: int = Field(ge=1)
+    creditos_minimos: int = Field(ge=0)
+    horas_requeridas: int = Field(default=480, ge=1)
+    orden: int | None = Field(default=None, ge=1)
+    activo: bool = True
+
+
+@app.post(
+    "/tipos-practica/",
+    dependencies=[Depends(requerir_roles(["Administrador"]))],
+)
+def crear_tipo_practica(
+    datos: TipoPracticaCreate,
+    db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+):
+    tipo = TipoPracticaModel(**datos.model_dump())
+    db.add(tipo)
+    db.commit()
+    db.refresh(tipo)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Crear tipo de practica",
+        "tipos_practica",
+        f"Admin creo el tipo de practica {tipo.nombre}",
+        "tipo_practica",
+        tipo.id_tipo_practica,
+    )
+    return {
+        "id_tipo_practica": tipo.id_tipo_practica,
+        "nombre": tipo.nombre,
+        "semestre_requerido": tipo.semestre_requerido,
+        "creditos_minimos": tipo.creditos_minimos,
+        "horas_requeridas": tipo.horas_requeridas,
+        "orden": tipo.orden,
+        "activo": tipo.activo,
+    }
+
+
+@app.patch(
+    "/tipos-practica/{id_tipo_practica}",
+    dependencies=[Depends(requerir_roles(["Administrador"]))],
+)
+def actualizar_tipo_practica(
+    id_tipo_practica: int,
+    datos: TipoPracticaUpdate,
+    db: Session = Depends(obtener_db),
+    usuario_actual: UsuarioModel = Depends(obtener_usuario_actual),
+):
+    tipo = (
+        db.query(TipoPracticaModel)
+        .filter(TipoPracticaModel.id_tipo_practica == id_tipo_practica)
+        .first()
+    )
+    if tipo is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Tipo de practica no encontrado")
+
+    cambios = datos.model_dump(exclude_unset=True)
+    for campo, valor in cambios.items():
+        setattr(tipo, campo, valor)
+
+    db.commit()
+    db.refresh(tipo)
+    registrar_bitacora(
+        db,
+        usuario_actual.id_usuario,
+        "Editar tipo de practica",
+        "tipos_practica",
+        f"Admin edito el tipo de practica {tipo.nombre}",
+        "tipo_practica",
+        tipo.id_tipo_practica,
+    )
+
+    return {
+        "id_tipo_practica": tipo.id_tipo_practica,
+        "nombre": tipo.nombre,
+        "semestre_requerido": tipo.semestre_requerido,
+        "creditos_minimos": tipo.creditos_minimos,
+        "horas_requeridas": tipo.horas_requeridas,
+        "orden": tipo.orden,
+        "activo": tipo.activo,
+    }
