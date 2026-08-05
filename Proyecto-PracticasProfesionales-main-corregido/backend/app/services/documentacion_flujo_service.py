@@ -114,7 +114,7 @@ def _expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel | No
             ExpedienteModel.id_alumno == alumno.id_alumno,
             ConvocatoriaModel.estado == "Activa",
             ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
-            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revisión", "Aprobado"]),
+            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revisión", "Aprobado", "Rechazado"]),
         )
         .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ExpedienteModel.fecha_creacion.desc())
         .first()
@@ -417,7 +417,7 @@ def resumen_documentos(documentos: list[DocumentoModel]) -> dict:
     return {
         "aprobados": sum(1 for d in documentos if d.estado_documento == "Aprobado"),
         "cargados": sum(1 for d in documentos if d.nombre_archivo),
-        "revisión": sum(1 for d in documentos if d.nombre_archivo and d.estado_documento == "Pendiente"),
+        "revision": sum(1 for d in documentos if d.nombre_archivo and d.estado_documento == "Pendiente"),
         "observados": sum(1 for d in documentos if d.estado_documento in ["Observado", "Rechazado"]),
         "total": len(documentos),
     }
@@ -427,14 +427,38 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
     alumnos = db.query(AlumnoModel).order_by(AlumnoModel.id_alumno).all()
     resultado = []
     for alumno in alumnos:
-        try:
-            expediente = asegurar_documentos_expediente(db, alumno)
-        except HTTPException as exc:
-            if exc.status_code == 409:
-                continue
-            raise
         usuario = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == alumno.id_usuario).first()
         carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == alumno.id_carrera).first()
+        expediente = _expediente_actual(db, alumno)
+        if expediente is None:
+            resultado.append(
+                {
+                    "id_alumno": alumno.id_alumno,
+                    "id_expediente": None,
+                    "nombre": _nombre_completo(alumno),
+                    "correo": usuario.correo if usuario else None,
+                    "matricula": alumno.matricula,
+                    "semestre": alumno.semestre,
+                    "grupo": alumno.grupo,
+                    "carrera": carrera.nombre if carrera else None,
+                    "estado_alumno": alumno.estado_alumno,
+                    "estado_expediente": "Sin expediente",
+                    "fecha_envio_pendiente": None,
+                    "motivo_sin_expediente": "No tiene expediente en una convocatoria activa compatible con su periodo de práctica.",
+                    "_fecha_orden_revision": None,
+                    "resumen": {
+                        "aprobados": 0,
+                        "cargados": 0,
+                        "revision": 0,
+                        "observados": 0,
+                        "total": 0,
+                    },
+                }
+            )
+            continue
+        _asegurar_documentos_en_expediente(db, expediente)
+        db.commit()
+        db.refresh(expediente)
         filas = documentos_del_flujo(db, expediente)
         documentos = [documento for documento, _ in filas]
         documentos_en_revision = [
@@ -466,6 +490,7 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
                     if fecha_envio_pendiente is not None
                     else None
                 ),
+                "motivo_sin_expediente": None,
                 "_fecha_orden_revision": fecha_envio_pendiente,
                 "resumen": resumen,
             }
@@ -473,7 +498,7 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
 
     resultado.sort(
         key=lambda item: (
-            0 if item["resumen"]["revisión"] > 0 else 1,
+            0 if item["resumen"]["revision"] > 0 else 1,
             item["_fecha_orden_revision"] or datetime.max,
             item["nombre"].casefold(),
         )

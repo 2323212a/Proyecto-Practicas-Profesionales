@@ -95,10 +95,14 @@ export function RevisionDocumentos() {
   };
 
   useEffect(() => { void cargarAlumnos(); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial list load; refreshes are explicit.
-  useEffect(() => { if (seleccionado) void cargarDetalle(seleccionado); }, [seleccionado]);
+  const alumnoSeleccionado = alumnos.find((alumno) => alumno.id_alumno === seleccionado) ?? null;
   useEffect(() => {
-    if (alumnoInicial && alumnoInicial !== seleccionado) setSeleccionado(alumnoInicial);
-  }, [alumnoInicial, seleccionado]);
+    if (seleccionado && alumnoSeleccionado?.id_expediente) {
+      void cargarDetalle(seleccionado);
+    } else {
+      setDetalle(null);
+    }
+  }, [seleccionado, alumnoSeleccionado?.id_expediente]);
 
   function seleccionarAlumno(idAlumno: number) {
     setSeleccionado(idAlumno);
@@ -301,6 +305,7 @@ export function RevisionDocumentos() {
                           <div className="font-semibold text-[11px] text-[#0d2b5e]">{a.nombre}</div>
                           <div className="text-[11px] text-gray-500 mt-0.5">{a.matricula} - {a.carrera ?? "Carrera no registrada"}</div>
                           <div className="mt-1 flex gap-2 text-[11px]"><span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{a.resumen.aprobados} aprobados</span><span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{a.resumen.revision} revisión</span></div>
+                          {!a.id_expediente && <div className="mt-1.5 text-[10px] font-medium text-gray-500">Sin expediente activo</div>}
                           {a.resumen.revision > 0 && a.fecha_envio_pendiente && (
                             <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-amber-700">
                               <Clock className="h-3 w-3" />
@@ -318,7 +323,7 @@ export function RevisionDocumentos() {
         </aside>
 
         <main className="space-y-4">
-          {loadingDetalle ? <div className="bg-white rounded-xl border border-gray-200 p-3 text-[11px] text-gray-500">Cargando expediente...</div> : !detalle ? <div className="bg-white rounded-xl border border-gray-200 p-3 text-[11px] text-gray-500">Selecciona un alumno.</div> : 
+          {loadingDetalle ? <div className="bg-white rounded-xl border border-gray-200 p-3 text-[11px] text-gray-500">Cargando expediente...</div> : alumnoSeleccionado && !alumnoSeleccionado.id_expediente ? <div className="bg-white rounded-xl border border-gray-200 p-4 text-sm text-gray-600"><p className="font-semibold text-[#0d2b5e]">{alumnoSeleccionado.nombre}</p><p className="mt-2">Este alumno todavía no tiene un expediente disponible para revisión.</p><p className="mt-1 text-xs text-gray-500">{alumnoSeleccionado.motivo_sin_expediente}</p></div> : !detalle ? <div className="bg-white rounded-xl border border-gray-200 p-3 text-[11px] text-gray-500">Selecciona un alumno.</div> :
             <>
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-col lg:flex-row lg:items-center gap-3">
                 <div className="w-9 h-9 bg-[#0d2b5e] rounded-xl flex items-center justify-center text-white"><UserCheck className="w-3.5 h-3.5" /></div>
