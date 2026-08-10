@@ -93,15 +93,22 @@ def obtener_convocatoria_principal(db: Session, id_convocatoria: int | None = No
 def calcular_estado_inscripcion_empresas(convocatoria: ConvocatoriaModel | None):
     if convocatoria is None:
         return "Cerrada", "No hay convocatoria configurada."
+
     if convocatoria.estado != "Activa":
-        return "Cerrada", "La convocatoria no esta activa."
-    if not convocatoria.fecha_inicio_empresas or not convocatoria.fecha_cierre_empresas:
-        return "Cerrada", "La convocatoria no tiene fechas de registro de empresas."
+        return "Cerrada", "La convocatoria no está activa."
+
+    if not convocatoria.fecha_inicio_general or not convocatoria.fecha_cierre_general:
+        return "Cerrada", "La convocatoria no tiene periodo general configurado."
+
+    if convocatoria.fecha_inicio_general > convocatoria.fecha_cierre_general:
+        return "Cerrada", "La convocatoria tiene fechas generales inválidas."
 
     hoy = date.today()
-    if convocatoria.fecha_inicio_empresas <= hoy <= convocatoria.fecha_cierre_empresas:
-        return "Abierta", "Dentro del periodo de registro de empresas de la convocatoria."
-    return "Cerrada", "Fuera del periodo de registro de empresas de la convocatoria."
+
+    if convocatoria.fecha_inicio_general <= hoy <= convocatoria.fecha_cierre_general:
+        return "Abierta", "Dentro del periodo general de la convocatoria."
+
+    return "Cerrada", "Fuera del periodo general de la convocatoria."
 
 
 def obtener_o_crear_configuracion(db: Session):

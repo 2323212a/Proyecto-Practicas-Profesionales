@@ -24,10 +24,10 @@ ETAPAS_CON_FECHAS = {
     "cierre": ("fecha_inicio_cierre", "fecha_cierre_cierre"),
 }
 
+# Para operar solo se requiere periodo general.
 FECHAS_OBLIGATORIAS = [
     "fecha_inicio_general",
     "fecha_cierre_general",
-    *[campo for par in ETAPAS_CON_FECHAS.values() for campo in par],
 ]
 
 BLOQUES_CONVOCATORIA = (
@@ -63,7 +63,10 @@ BLOQUES_CONVOCATORIA = (
 
 
 def obtener_bloques_convocatoria(convocatoria) -> list[dict]:
-    """Proyecta las fechas existentes de la convocatoria en los cuatro bloques visuales."""
+    """
+    Proyecta las fechas existentes de la convocatoria en los cuatro bloques visuales.
+    No valida fases rígidas.
+    """
     return [
         {
             **bloque,
@@ -75,16 +78,13 @@ def obtener_bloques_convocatoria(convocatoria) -> list[dict]:
 
 
 def validar_bloques_basicos(convocatoria) -> None:
-    """Valida los límites de los cuatro bloques sin requerir columnas nuevas."""
-    bloques = obtener_bloques_convocatoria(convocatoria)
-    if any(bloque["inicio"] is None or bloque["cierre"] is None for bloque in bloques):
-        raise HTTPException(status_code=409, detail="La convocatoria no tiene calendario completo.")
-    for bloque in bloques:
-        if bloque["inicio"] > bloque["cierre"]:
-            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de bloques.")
-    for anterior, siguiente in zip(bloques, bloques[1:]):
-        if siguiente["inicio"] < anterior["cierre"]:
-            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de bloques.")
+    """
+    Compatibilidad histórica.
+
+    Los bloques ya no imponen restricciones operativas.
+    La validación real mínima se limita al periodo general.
+    """
+    validar_calendario_completo(convocatoria)
 
 
 def distribuir_fechas_bloque_basico(
@@ -92,83 +92,84 @@ def distribuir_fechas_bloque_basico(
     cierre: date,
     etapas: tuple[str, ...],
 ) -> dict[str, date]:
-    """Distribuye un rango en orden; en rangos cortos las subetapas pueden compartir fecha."""
+    """
+    Distribuye un rango en las subetapas internas existentes.
+
+    Esto se mantiene solo para compatibilidad con columnas antiguas/internas.
+    En la UI no deben mostrarse las 8 fases como calendario principal.
+    """
     if inicio > cierre:
         raise HTTPException(status_code=400, detail="El cierre del bloque no puede ser anterior al inicio.")
+
     if not etapas or any(etapa not in ETAPAS_CON_FECHAS for etapa in etapas):
         raise HTTPException(status_code=400, detail="El bloque contiene etapas no válidas.")
 
     dias = (cierre - inicio).days
     cantidad = len(etapas)
     fechas: dict[str, date] = {}
+
     for indice, etapa in enumerate(etapas):
         campo_inicio, campo_cierre = ETAPAS_CON_FECHAS[etapa]
         fechas[campo_inicio] = inicio + timedelta(days=(indice * dias) // cantidad)
         fechas[campo_cierre] = inicio + timedelta(days=((indice + 1) * dias) // cantidad)
+
     return fechas
 
 
 def validar_calendario_completo(convocatoria) -> None:
-    if any(getattr(convocatoria, campo, None) is None for campo in FECHAS_OBLIGATORIAS):
-        raise HTTPException(status_code=409, detail="La convocatoria no tiene calendario completo.")
+    """
+    Valida únicamente el periodo general.
+
+    Las fechas internas por bloque son informativas/operativas, pero no deben
+    bloquear todo el flujo como antes sucedía con las 8 subfases.
+    """
+    if convocatoria.fecha_inicio_general is None or convocatoria.fecha_cierre_general is None:
+        raise HTTPException(status_code=409, detail="La convocatoria no tiene periodo general configurado.")
+
+    if convocatoria.fecha_inicio_general > convocatoria.fecha_cierre_general:
+        raise HTTPException(status_code=400, detail="La fecha de cierre general debe ser posterior al inicio.")
 
 
 def validar_flujo_fechas(convocatoria) -> None:
+    """
+    Compatibilidad con código existente.
+
+    Antes esta función podía validar flujo completo de subfases.
+    Ahora solo valida el periodo general.
+    """
     validar_calendario_completo(convocatoria)
-    validar_bloques_basicos(convocatoria)
-
-    inicio_general = convocatoria.fecha_inicio_general
-    cierre_general = convocatoria.fecha_cierre_general
-    if inicio_general > cierre_general:
-        raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de etapas.")
-
-    reglas = [
-        ("fecha_inicio_empresas", ">=", "fecha_inicio_general"),
-        ("fecha_cierre_empresas", "<=", "fecha_cierre_general"),
-        ("fecha_inicio_documentos", ">=", "fecha_inicio_general"),
-        ("fecha_cierre_documentos", "<=", "fecha_cierre_general"),
-        ("fecha_inicio_validacion", ">=", "fecha_inicio_documentos"),
-        ("fecha_cierre_validacion", "<=", "fecha_cierre_general"),
-        ("fecha_inicio_seleccion", ">=", "fecha_cierre_validacion"),
-        ("fecha_cierre_seleccion", "<=", "fecha_cierre_general"),
-        ("fecha_inicio_asignacion", ">=", "fecha_cierre_seleccion"),
-        ("fecha_cierre_asignacion", "<=", "fecha_cierre_general"),
-        ("fecha_inicio_practicas", ">=", "fecha_cierre_asignacion"),
-        ("fecha_cierre_practicas", "<=", "fecha_cierre_general"),
-        ("fecha_inicio_cierre", ">=", "fecha_cierre_practicas"),
-        ("fecha_cierre_cierre", "<=", "fecha_cierre_general"),
-    ]
-    for izquierda, operador, derecha in reglas:
-        valor_izquierda = getattr(convocatoria, izquierda)
-        valor_derecha = getattr(convocatoria, derecha)
-        if operador == ">=" and valor_izquierda < valor_derecha:
-            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de etapas.")
-        if operador == "<=" and valor_izquierda > valor_derecha:
-            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de etapas.")
-
-    for inicio, cierre in ETAPAS_CON_FECHAS.values():
-        if getattr(convocatoria, inicio) > getattr(convocatoria, cierre):
-            raise HTTPException(status_code=400, detail="El calendario de la convocatoria no respeta el flujo de etapas.")
 
 
 def validar_convocatoria_operativa(convocatoria) -> None:
+    """
+    Valida que la convocatoria sea operativa.
+
+    No bloquea por subfase ni por fecha actual.
+    La disponibilidad real se controla por:
+    - estado Activa/Inactiva/Cerrada
+    - reglas funcionales del módulo correspondiente
+    - cupos, expediente, empresa, convenio, vacantes, etc.
+    """
     if convocatoria.estado != "Activa":
-        raise HTTPException(status_code=404, detail="Convocatoria activa no encontrada")
+        raise HTTPException(status_code=404, detail="Convocatoria activa no encontrada.")
+
     if convocatoria.tipo_periodo not in {"Semestral", "Cuatrimestral"}:
-        raise HTTPException(status_code=400, detail="Tipo de periodo no valido.")
-    validar_flujo_fechas(convocatoria)
+        raise HTTPException(status_code=400, detail="Tipo de periodo no válido.")
+
+    validar_calendario_completo(convocatoria)
 
 
 def validar_etapa_actual(convocatoria, etapa: str) -> None:
-    validar_convocatoria_operativa(convocatoria)
+    """
+    Compatibilidad: valida que la etapa exista, pero no bloquea por subfase.
+
+    Las fechas internas sirven para mostrar calendario por bloques, no para
+    impedir consultar, revisar o avanzar procesos.
+    """
     if etapa not in ETAPAS_CON_FECHAS:
-        raise HTTPException(status_code=400, detail="Etapa de convocatoria no valida.")
-    inicio_campo, cierre_campo = ETAPAS_CON_FECHAS[etapa]
-    hoy = date.today()
-    if hoy < getattr(convocatoria, inicio_campo):
-        raise HTTPException(status_code=403, detail=f"La etapa de {etapa} aun no inicia.")
-    if hoy > getattr(convocatoria, cierre_campo):
-        raise HTTPException(status_code=403, detail=f"La etapa de {etapa} ya cerro.")
+        raise HTTPException(status_code=400, detail="Etapa de convocatoria no válida.")
+
+    validar_convocatoria_operativa(convocatoria)
 
 
 def esta_en_etapa(convocatoria, etapa: str) -> bool:
@@ -184,17 +185,31 @@ def validar_sin_conflicto_activo(
     convocatoria,
     id_convocatoria_ignorar: int | None = None,
 ) -> None:
+    """
+    Evita cruces solo entre convocatorias Activas del mismo tipo de periodo.
+
+    Semestral puede cruzarse con Cuatrimestral.
+    Inactiva o Cerrada no bloquean.
+    """
     if convocatoria.estado != "Activa":
         return
-    validar_convocatoria_operativa(convocatoria)
+
+    if convocatoria.fecha_inicio_general is None or convocatoria.fecha_cierre_general is None:
+        raise HTTPException(status_code=409, detail="La convocatoria no tiene periodo general configurado.")
+
+    if convocatoria.fecha_inicio_general > convocatoria.fecha_cierre_general:
+        raise HTTPException(status_code=400, detail="La fecha de cierre general debe ser posterior al inicio.")
+
     query = db.query(ConvocatoriaModel).filter(
         ConvocatoriaModel.estado == "Activa",
         ConvocatoriaModel.tipo_periodo == convocatoria.tipo_periodo,
         ConvocatoriaModel.fecha_inicio_general <= convocatoria.fecha_cierre_general,
         ConvocatoriaModel.fecha_cierre_general >= convocatoria.fecha_inicio_general,
     )
+
     if id_convocatoria_ignorar is not None:
         query = query.filter(ConvocatoriaModel.id_convocatoria != id_convocatoria_ignorar)
+
     if query.first() is not None:
         raise HTTPException(
             status_code=409,
@@ -203,6 +218,9 @@ def validar_sin_conflicto_activo(
 
 
 def validar_convocatoria_sin_dependencias(db: Session, id_convocatoria: int) -> None:
+    """
+    Evita eliminar convocatorias que ya tienen procesos asociados.
+    """
     modelos = [
         ExpedienteModel,
         ParticipacionEmpresaConvocatoriaModel,
@@ -210,6 +228,7 @@ def validar_convocatoria_sin_dependencias(db: Session, id_convocatoria: int) -> 
         SeleccionEmpresaModel,
         AsignacionModel,
     ]
+
     tiene_dependencias = any(
         db.query(modelo)
         .filter(modelo.id_convocatoria == id_convocatoria)
@@ -217,6 +236,7 @@ def validar_convocatoria_sin_dependencias(db: Session, id_convocatoria: int) -> 
         is not None
         for modelo in modelos
     )
+
     if tiene_dependencias:
         raise HTTPException(
             status_code=409,
@@ -231,10 +251,15 @@ def obtener_convocatorias_disponibles_para_alumno(db: Session, alumno: AlumnoMod
             ConvocatoriaModel.estado == "Activa",
             ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
         )
-        .order_by(ConvocatoriaModel.fecha_inicio_general.desc())
+        .order_by(
+            ConvocatoriaModel.fecha_inicio_general.desc(),
+            ConvocatoriaModel.id_convocatoria.desc(),
+        )
         .all()
     )
+
     disponibles = []
+
     for convocatoria in convocatorias:
         existe_expediente = (
             db.query(ExpedienteModel)
@@ -245,24 +270,34 @@ def obtener_convocatorias_disponibles_para_alumno(db: Session, alumno: AlumnoMod
             .first()
             is not None
         )
+
         if not existe_expediente:
             disponibles.append(convocatoria)
+
     return disponibles
 
 
 def obtener_convocatorias_disponibles_para_empresa(db: Session, id_empresa: int) -> list[ConvocatoriaModel]:
+    """
+    Devuelve convocatorias activas donde la empresa todavía no tiene participación.
+
+    No bloquea por subfase de empresas.
+    """
     convocatorias = (
         db.query(ConvocatoriaModel)
         .filter(ConvocatoriaModel.estado == "Activa")
-        .order_by(ConvocatoriaModel.fecha_inicio_general.desc())
+        .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ConvocatoriaModel.id_convocatoria.desc())
         .all()
     )
+
     disponibles = []
+
     for convocatoria in convocatorias:
         try:
             validar_etapa_actual(convocatoria, "empresas")
         except HTTPException:
             continue
+
         participacion = (
             db.query(ParticipacionEmpresaConvocatoriaModel)
             .filter(
@@ -271,6 +306,8 @@ def obtener_convocatorias_disponibles_para_empresa(db: Session, id_empresa: int)
             )
             .first()
         )
+
         if participacion is None:
             disponibles.append(convocatoria)
+
     return disponibles

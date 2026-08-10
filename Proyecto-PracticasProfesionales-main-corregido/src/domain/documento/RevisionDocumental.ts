@@ -2,7 +2,7 @@ import type { DocumentacionAlumnoResponse, DocumentoFlujoAlumno, EstadoDocumento
 
 export interface AlumnoResumenRevision {
   id_alumno: number;
-  id_expediente: number;
+  id_expediente: number | null;
   nombre: string;
   correo: string | null;
   matricula: string;
@@ -12,6 +12,7 @@ export interface AlumnoResumenRevision {
   estado_alumno: string | null;
   estado_expediente: string;
   fecha_envio_pendiente?: string | null;
+  motivo_sin_expediente?: string | null;
   resumen: {
     aprobados: number;
     cargados: number;

@@ -208,11 +208,10 @@ export function AlumnoReportes() {
       )}
 
       {datos?.advertencia_regla && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
-          {datos.advertencia_regla}
-        </div>
+    <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+    {datos.advertencia_regla}
+    </div>
       )}
-
       {cargando ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center text-gray-400">
           Cargando reportes...

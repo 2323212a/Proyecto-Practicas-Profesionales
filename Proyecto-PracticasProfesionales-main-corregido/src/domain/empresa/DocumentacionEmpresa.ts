@@ -1,4 +1,11 @@
-export type EstadoDocumentoEmpresa = "Pendiente" | "Aprobado" | "Con observaciones" | "Rechazado";
+export type EstadoDocumentoEmpresa =
+  | "Pendiente"
+  | "En revisión"
+  | "En revision"
+  | "Aprobado"
+  | "Con observaciones"
+  | "Observado"
+  | "Rechazado";
 
 export interface EmpresaDocumentacionInfo {
   id_empresa: number;
@@ -23,6 +30,7 @@ export interface FormatoEmpresa {
   url: string;
   version: string | null;
   fecha_subida: string | null;
+  formato_activo?: boolean;
 }
 
 export interface DocumentoEmpresa {
@@ -50,6 +58,7 @@ export interface RequisitoEmpresa {
   tipo_tramite?: "Convenio" | "Vinculacion" | null;
   puede_eliminar?: boolean;
   formato: FormatoEmpresa | null;
+  formatos?: FormatoEmpresa[];
   documento: DocumentoEmpresa | null;
 }
 

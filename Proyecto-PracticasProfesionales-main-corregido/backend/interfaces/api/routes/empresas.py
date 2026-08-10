@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.services.notificacion_service import notificar_roles
+from app.services.institucion_practicas_service import CAMPOS_COMPLETOS, sincronizar_institucion_practicas
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.security.auth_dependencies import (
     requerir_empresa_actual_o_roles,
@@ -34,11 +35,28 @@ ESTADOS_SOLICITUD_ACTIVA = {"Solicitante", "Pendiente"}
 ESTADOS_EMPRESA = {"Solicitante", "Pendiente", "Rechazada", "Activa", "Suspendida", "Inactiva"}
 
 
+CAMPOS_EMPRESA = {
+    'nombre_empresa', 'rfc', 'giro', 'domicilio', 'telefono', 'correo_contacto',
+    'tipo_tramite', 'id_tipo_unidad_receptora', 'estado_empresa',
+}
+
 def limpiar_texto(valor: Optional[str]) -> Optional[str]:
     if valor is None:
         return None
     texto = valor.strip()
     return texto or None
+
+
+def datos_completos_desde_payload(payload: BaseModel) -> dict:
+    entrada = payload.model_dump(exclude_unset=True)
+    completos = {
+        campo: valor
+        for campo, valor in entrada.items()
+        if campo in CAMPOS_COMPLETOS and campo != 'correo_contacto'
+    }
+    if 'correo_contacto_persona' in entrada:
+        completos['correo_contacto'] = entrada['correo_contacto_persona']
+    return completos
 
 
 def normalizar_rfc(valor: Optional[str]) -> Optional[str]:
@@ -87,8 +105,8 @@ def validar_registro_publico_habilitado(db: Session):
         db.query(ConvocatoriaModel)
         .filter(
             ConvocatoriaModel.estado == "Activa",
-            ConvocatoriaModel.fecha_inicio_empresas <= hoy,
-            ConvocatoriaModel.fecha_cierre_empresas >= hoy,
+            ConvocatoriaModel.fecha_inicio_general <= hoy,
+            ConvocatoriaModel.fecha_cierre_general >= hoy,
         )
         .order_by(ConvocatoriaModel.fecha_inicio_empresas.desc(), ConvocatoriaModel.id_convocatoria.desc())
         .first()
@@ -103,7 +121,7 @@ def validar_registro_publico_habilitado(db: Session):
 class SolicitudEmpresaCreate(BaseModel):
     nombre_empresa: str = Field(min_length=2, max_length=150)
     rfc: Optional[str] = Field(default=None, max_length=20)
-    giro: Optional[str] = Field(default=None, max_length=100)
+    giro: str = Field(min_length=2, max_length=100)
     domicilio: Optional[str] = None
     telefono: Optional[str] = Field(default=None, max_length=25)
     correo_contacto: EmailStr
@@ -114,6 +132,21 @@ class SolicitudEmpresaCreate(BaseModel):
     apellido_materno_responsable: Optional[str] = Field(default=None, max_length=100)
     cargo_responsable: Optional[str] = Field(default=None, max_length=100)
     descripcion: Optional[str] = None
+    horario_atencion: Optional[str] = Field(default=None, max_length=100)
+    area_contacto: Optional[str] = Field(default=None, max_length=100)
+    telefono_contacto: Optional[str] = Field(default=None, max_length=50)
+    correo_contacto_persona: Optional[EmailStr] = None
+    areas_receptoras: Optional[str] = None
+    numero_estudiantes: Optional[int] = Field(default=None, ge=0)
+    perfil_academico: Optional[str] = None
+    actividades: Optional[str] = None
+    horario_practicas: Optional[str] = Field(default=None, max_length=100)
+    modalidad: Optional[str] = Field(default=None, max_length=50)
+    documento_pdf: Optional[str] = Field(default=None, max_length=255)
+    municipio: Optional[str] = Field(default=None, max_length=100)
+    estado: Optional[str] = Field(default=None, max_length=100)
+    observaciones: Optional[str] = None
+    carta_colaboracion: Optional[str] = Field(default=None, max_length=255)
     tipo_tramite: str
     id_tipo_unidad_receptora: int
 
@@ -171,7 +204,18 @@ def editar_tipo_unidad_receptora(
     tipo = db.query(TipoUnidadReceptoraModel).filter(TipoUnidadReceptoraModel.id_tipo_unidad_receptora == id_tipo).first()
     if tipo is None:
         raise HTTPException(status_code=404, detail="Tipo de unidad receptora no encontrado.")
-    tipo.nombre = " ".join(datos.nombre.split())
+    nombre = " ".join(datos.nombre.split())
+    duplicado = (
+        db.query(TipoUnidadReceptoraModel)
+        .filter(
+            func.lower(TipoUnidadReceptoraModel.nombre) == nombre.lower(),
+            TipoUnidadReceptoraModel.id_tipo_unidad_receptora != id_tipo,
+        )
+        .first()
+    )
+    if duplicado is not None:
+        raise HTTPException(status_code=400, detail="Ya existe un tipo de unidad receptora con ese nombre.")
+    tipo.nombre = nombre
     tipo.descripcion = limpiar_texto(datos.descripcion)
     tipo.activo = datos.activo
     db.commit()
@@ -207,9 +251,16 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
         raise HTTPException(status_code=400, detail="Nombre de empresa es obligatorio")
 
     rfc = normalizar_rfc(solicitud.rfc)
+    if not rfc:
+        raise HTTPException(status_code=400, detail='El RFC es obligatorio.')
     giro = limpiar_texto(solicitud.giro)
+    if not giro:
+        raise HTTPException(status_code=400, detail="El giro o sector de actividad es obligatorio.")
     domicilio = limpiar_texto(solicitud.domicilio)
+    domicilio_institucion = domicilio
     telefono = normalizar_telefono(solicitud.telefono)
+    if not telefono:
+        raise HTTPException(status_code=400, detail='El teléfono institucional es obligatorio.')
     correo_contacto = str(solicitud.correo_contacto).strip().lower()
     nombre_responsable = limpiar_texto(solicitud.nombre_responsable)
     apellido_paterno_responsable = limpiar_texto(solicitud.apellido_paterno_responsable)
@@ -280,6 +331,7 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
         )
     existente = existente_rfc or existente_correo
 
+    rfc_anterior = existente.rfc if existente is not None else None
     if existente is not None and existente.estado_empresa in ESTADOS_SOLICITUD_ACTIVA:
         raise HTTPException(
             status_code=400,
@@ -362,6 +414,23 @@ def crear_solicitud_empresa(solicitud: SolicitudEmpresaCreate, db: Session = Dep
             responsable.telefono = telefono
             responsable.correo = correo_contacto
 
+    datos_institucion = {
+        campo: getattr(solicitud, campo)
+        for campo in CAMPOS_COMPLETOS
+        if hasattr(solicitud, campo)
+    }
+    datos_institucion.update(
+        domicilio=domicilio_institucion,
+        nombre_contacto=nombre_contacto,
+        cargo_contacto=cargo_contacto,
+        telefono_contacto=solicitud.telefono_contacto or telefono,
+        correo_contacto=solicitud.correo_contacto_persona or correo_contacto,
+        observaciones=solicitud.observaciones or descripcion,
+    )
+    sincronizar_institucion_practicas(
+        db, empresa, tipo_unidad=tipo_unidad.nombre, datos_completos=datos_institucion, rfc_anterior=rfc_anterior
+    )
+
     db.add(
         SolicitudEmpresaModel(
             id_empresa=empresa.id_empresa,
@@ -410,7 +479,8 @@ def obtener_empresa(id_empresa: int, db: Session = Depends(obtener_db)):
     dependencies=[Depends(requerir_roles(["Administrador", "Coordinador de Unidades Receptoras"]))],
 )
 def crear_empresa(empresa: EmpresaCreate, db: Session = Depends(obtener_db)):
-    datos = empresa.model_dump()
+    datos_completos = datos_completos_desde_payload(empresa)
+    datos = empresa.model_dump(include=CAMPOS_EMPRESA)
     datos["nombre_empresa"] = limpiar_texto(datos["nombre_empresa"])
     if not datos["nombre_empresa"]:
         raise HTTPException(status_code=400, detail="Nombre de empresa es obligatorio")
@@ -428,6 +498,12 @@ def crear_empresa(empresa: EmpresaCreate, db: Session = Depends(obtener_db)):
     if datos.get("tipo_tramite") is not None:
         datos["tipo_tramite"] = normalizar_opcion(datos["tipo_tramite"], TIPOS_TRAMITE, "Tipo de tramite")
 
+    if not datos['rfc'] or not datos['telefono'] or not datos['correo_contacto']:
+        raise HTTPException(
+            status_code=400,
+            detail='RFC, teléfono y correo institucional son obligatorios.',
+        )
+
     duplicada = None
     if datos["rfc"]:
         duplicada = db.query(EmpresaModel).filter(EmpresaModel.rfc == datos["rfc"]).first()
@@ -442,6 +518,16 @@ def crear_empresa(empresa: EmpresaCreate, db: Session = Depends(obtener_db)):
 
     nueva_empresa = EmpresaModel(**datos)
     db.add(nueva_empresa)
+    db.flush()
+    tipo_unidad_nombre = (
+        db.query(TipoUnidadReceptoraModel.nombre)
+        .filter(
+            TipoUnidadReceptoraModel.id_tipo_unidad_receptora
+            == nueva_empresa.id_tipo_unidad_receptora
+        )
+        .scalar()
+    )
+    sincronizar_institucion_practicas(db, nueva_empresa, tipo_unidad=tipo_unidad_nombre, datos_completos=datos_completos)
     db.commit()
     db.refresh(nueva_empresa)
     return nueva_empresa
@@ -461,7 +547,9 @@ def actualizar_empresa(
     if empresa is None:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
 
-    cambios = datos.model_dump(exclude_unset=True)
+    rfc_anterior = empresa.rfc
+    datos_completos = datos_completos_desde_payload(datos)
+    cambios = datos.model_dump(exclude_unset=True, include=CAMPOS_EMPRESA)
     if "nombre_empresa" in cambios:
         cambios["nombre_empresa"] = limpiar_texto(cambios["nombre_empresa"])
         if not cambios["nombre_empresa"]:
@@ -512,6 +600,22 @@ def actualizar_empresa(
     for campo, valor in cambios.items():
         setattr(empresa, campo, valor)
 
+    if not empresa.rfc or not empresa.telefono or not empresa.correo_contacto:
+        raise HTTPException(
+            status_code=400,
+            detail='RFC, teléfono y correo institucional son obligatorios.',
+        )
+    db.flush()
+    tipo_unidad_nombre = (
+        db.query(TipoUnidadReceptoraModel.nombre)
+        .filter(
+            TipoUnidadReceptoraModel.id_tipo_unidad_receptora
+            == empresa.id_tipo_unidad_receptora
+        )
+        .scalar()
+    )
+    sincronizar_institucion_practicas(db, empresa, tipo_unidad=tipo_unidad_nombre, datos_completos=datos_completos, rfc_anterior=rfc_anterior)
+
     db.commit()
     db.refresh(empresa)
     return empresa
@@ -545,6 +649,17 @@ def eliminar_empresa(id_empresa: int, db: Session = Depends(obtener_db)):
             {UsuarioModel.estado: "Inactivo"},
             synchronize_session=False,
         )
+
+    if empresa.rfc and empresa.telefono and empresa.correo_contacto:
+        tipo_unidad_nombre = (
+            db.query(TipoUnidadReceptoraModel.nombre)
+            .filter(
+                TipoUnidadReceptoraModel.id_tipo_unidad_receptora
+                == empresa.id_tipo_unidad_receptora
+            )
+            .scalar()
+        )
+        sincronizar_institucion_practicas(db, empresa, tipo_unidad=tipo_unidad_nombre)
 
     db.commit()
     return {"mensaje": "Empresa desactivada correctamente"}

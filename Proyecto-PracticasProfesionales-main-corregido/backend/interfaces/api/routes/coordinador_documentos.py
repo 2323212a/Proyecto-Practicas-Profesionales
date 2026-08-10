@@ -132,7 +132,6 @@ class NotaCoordinadorRequest(BaseModel):
 
 
 ETAPAS_HABILITANTES_SELECCION = {
-    "registro",
     "elegibilidad",
     "expediente",
 }
@@ -954,7 +953,7 @@ def obtener_documentacion_alumno_flujo(id_alumno: int, db: Session = Depends(obt
     alumno = db.query(AlumnoModel).filter(AlumnoModel.id_alumno == id_alumno).first()
     if alumno is None:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
-    return serializar_documentacion(db, alumno)
+    return serializar_documentacion(db, alumno, permitir_historico=True)
 
 """
 @router.post(

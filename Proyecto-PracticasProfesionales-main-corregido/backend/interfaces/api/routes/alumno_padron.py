@@ -8,6 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.services.convocatoria_rules_service import validar_etapa_actual
+from app.services.documentacion_flujo_service import calcular_flujo, documentos_del_flujo
 from app.services.regla_practica_carrera_service import obtener_regla_practica_para_alumno
 from infrastructure.database.dependencies import obtener_db
 from infrastructure.persistence.models.alumno import AlumnoModel
@@ -54,9 +55,17 @@ def _expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel | No
     )
 
 
-def _expediente_actual_aprobado(db: Session, alumno: AlumnoModel) -> ExpedienteModel | None:
+def _expediente_actual_con_bloques_iniciales_aprobados(
+    db: Session,
+    alumno: AlumnoModel,
+) -> ExpedienteModel | None:
     expediente = _expediente_actual(db, alumno)
-    return expediente if expediente is not None and expediente.estado_expediente == "Aprobado" else None
+    if expediente is None:
+        return None
+    _, expediente_inicial_aprobado, _, _, _ = calcular_flujo(
+        documentos_del_flujo(db, expediente)
+    )
+    return expediente if expediente_inicial_aprobado else None
 
 
 def _cupos_usados(db: Session, id_vacante: int, id_tipo_practica: int | None = None) -> int:
@@ -119,9 +128,9 @@ def _mensaje_etapa_seleccion_no_disponible(convocatoria: ConvocatoriaModel | Non
     if convocatoria is None:
         return "La seleccion de vacantes aun no esta habilitada."
     hoy = date.today()
-    if convocatoria.fecha_inicio_seleccion and hoy < convocatoria.fecha_inicio_seleccion:
+    if convocatoria.fecha_inicio_general and hoy < convocatoria.fecha_inicio_general:
         return "La seleccion de vacantes aun no esta habilitada."
-    if convocatoria.fecha_cierre_seleccion and hoy > convocatoria.fecha_cierre_seleccion:
+    if convocatoria.fecha_cierre_general and hoy > convocatoria.fecha_cierre_general:
         return "El periodo de seleccion de vacantes ha finalizado."
     return detalle or "La seleccion de vacantes aun no esta habilitada."
 
@@ -269,7 +278,10 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
 
     expediente_actual = _expediente_actual(db, alumno)
     convocatoria = expediente_actual.convocatoria if expediente_actual else None
-    expediente_aprobado = expediente_actual is not None and expediente_actual.estado_expediente == "Aprobado"
+    expediente_aprobado = bool(
+        expediente_actual
+        and calcular_flujo(documentos_del_flujo(db, expediente_actual))[1]
+    )
     hay_padron_publicado = bool(
         convocatoria is not None
         and db.query(VacanteModel)
@@ -332,7 +344,9 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
             ventana_seleccion_abierta = True
         except HTTPException as exc:
             motivo_calendario = _mensaje_etapa_seleccion_no_disponible(convocatoria, str(exc.detail))
-    puede_seleccionar = bool(expediente_aprobado and elegibilidad["elegible"] and asignacion is None and ventana_seleccion_abierta)
+    puede_seleccionar = bool(
+        expediente_aprobado and asignacion is None and ventana_seleccion_abierta
+    )
     motivo_bloqueo = None
     if asignacion is not None:
         motivo_bloqueo = "Ya tienes una empresa asignada para esta convocatoria."
@@ -347,8 +361,6 @@ def obtener_padron_alumno(id_alumno: int, db: Session = Depends(obtener_db)):
         )
     elif not ventana_seleccion_abierta:
         motivo_bloqueo = motivo_calendario
-    elif not elegibilidad["elegible"]:
-        motivo_bloqueo = elegibilidad["motivo_bloqueo"]
 
     return {
         "elegible": puede_seleccionar,
@@ -467,10 +479,13 @@ def guardar_preferencias_alumno(
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
     if alumno.estado_alumno != "Activo":
         raise HTTPException(status_code=403, detail="Tu estatus de alumno no está activo")
-    expediente_actual = _expediente_actual_aprobado(db, alumno)
+    expediente_actual = _expediente_actual_con_bloques_iniciales_aprobados(db, alumno)
     convocatoria = expediente_actual.convocatoria if expediente_actual else None
     if convocatoria is None:
-        raise HTTPException(status_code=400, detail="El expediente documental debe estar aprobado antes de guardar preferencias")
+        raise HTTPException(
+            status_code=400,
+            detail="Los documentos de los bloques 1 y 2 deben estar aprobados antes de guardar preferencias",
+        )
     asignacion_activa = (
         db.query(AsignacionModel)
         .filter(
@@ -489,10 +504,6 @@ def guardar_preferencias_alumno(
             status_code=exc.status_code,
             detail=_mensaje_etapa_seleccion_no_disponible(convocatoria, str(exc.detail)),
         ) from exc
-
-    elegibilidad = _validar_elegibilidad_practica(db, alumno)
-    if not elegibilidad["elegible"]:
-        raise HTTPException(status_code=403, detail=elegibilidad["motivo_bloqueo"])
 
     ids_vacantes = [preferencia.id_vacante for preferencia in datos.preferencias]
     prioridades = [preferencia.prioridad for preferencia in datos.preferencias]

@@ -21,6 +21,7 @@ from infrastructure.persistence.models.convocatoria import ConvocatoriaModel
 from infrastructure.persistence.models.documento import DocumentoModel
 from infrastructure.persistence.models.expediente import ExpedienteModel
 from infrastructure.persistence.models.observacion import ObservacionModel
+from infrastructure.persistence.models.seleccion_empresa import SeleccionEmpresaModel
 from infrastructure.persistence.models.tipo_documento import TipoDocumentoModel
 from infrastructure.persistence.models.usuario import UsuarioModel
 
@@ -31,7 +32,7 @@ DOCUMENTOS_FLUJO = [
     {"nombre": "Historial academico (Comprobante con materias)", "descripcion": "Historial academico del alumno con las materias cursadas.", "instrucciones": "Solicitar en SYSWEB el Historial academico (Comprobante con materias). El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
     {"nombre": "Constancia de Vigencia de Derechos", "descripcion": "Constancia que acredita que el alumno cuenta con vigencia de derechos para continuar el tramite.", "instrucciones": "Descargar la Constancia de Vigencia de Derechos en el portal del IMSS. El documento debe ser claro, legible, estar completo y no contener sombras, reflejos, recortes o paginas borrosas.", "etapa": "Elegibilidad", "obligatorio": True, "sistema": False},
     {"nombre": "Carta Compromiso", "descripcion": "Documento oficial generado por el sistema. Descargalo, imprime, firma y sube el PDF firmado.", "instrucciones": "Descarga el documento oficial, imprime, completa los espacios pendientes, firma y vuelve a subirlo en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
-    {"nombre": "Carta de Exoneracion", "descripcion": "Documento oficial generado por el sistema. Descargalo, completa los datos manuales, firma y sube el PDF firmado.", "instrucciones": "Completa a mano los datos de contacto de emergencia y tutor antes de firmar. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
+    {"nombre": "Carta de Exoneración", "descripcion": "Documento oficial generado por el sistema. Descargalo, completa los datos manuales, firma y sube el PDF firmado.", "instrucciones": "Completa a mano los datos de contacto de emergencia y tutor antes de firmar. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
     {"nombre": "Solicitud FO-136", "descripcion": "Solicitud oficial de inscripcion. Descargala, imprime, completa los campos manuales, firma y sube el PDF firmado.", "instrucciones": "La fotografia, datos personales pendientes y firmas deben completarse despues de imprimir. Sube el documento firmado en formato PDF.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
     {"nombre": "Credencial del Alumno", "descripcion": "Copia digital de la credencial vigente del alumno.", "instrucciones": "Sube la credencial vigente del alumno en formato PDF. Debe verse completa, clara y sin recortes importantes.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
     {"nombre": "Credencial del Tutor", "descripcion": "Copia digital de la credencial del padre, madre o tutor.", "instrucciones": "Sube la credencial del tutor en formato PDF. Debe ser clara, legible y corresponder al tutor firmante.", "etapa": "Expediente", "obligatorio": True, "sistema": False},
@@ -130,9 +131,28 @@ def _expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteModel | No
             ExpedienteModel.id_alumno == alumno.id_alumno,
             ConvocatoriaModel.estado == "Activa",
             ConvocatoriaModel.tipo_periodo == alumno.periodo_practica,
-            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revisión", "Aprobado"]),
+            ExpedienteModel.estado_expediente.in_(["Pendiente", "En Revisión", "Aprobado", "Rechazado"]),
         )
         .order_by(ConvocatoriaModel.fecha_inicio_general.desc(), ExpedienteModel.fecha_creacion.desc())
+        .first()
+    )
+
+
+def _ultimo_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel | None:
+    """Obtiene el expediente mas reciente, aunque la convocatoria ya haya cerrado.
+
+    El alumno solo puede operar sobre una convocatoria activa, pero coordinacion
+    necesita conservar acceso a expedientes historicos para revisarlos y dar
+    seguimiento a cargas pendientes.
+    """
+    return (
+        db.query(ExpedienteModel)
+        .join(ConvocatoriaModel, ConvocatoriaModel.id_convocatoria == ExpedienteModel.id_convocatoria)
+        .filter(ExpedienteModel.id_alumno == alumno.id_alumno)
+        .order_by(
+            ConvocatoriaModel.fecha_inicio_general.desc(),
+            ExpedienteModel.fecha_creacion.desc(),
+        )
         .first()
     )
 
@@ -245,8 +265,21 @@ def obtener_expediente_actual(db: Session, alumno: AlumnoModel) -> ExpedienteMod
     return expediente
 
 
-def asegurar_documentos_expediente(db: Session, alumno: AlumnoModel) -> ExpedienteModel:
-    expediente = obtener_expediente_actual(db, alumno)
+def asegurar_documentos_expediente(
+    db: Session,
+    alumno: AlumnoModel,
+    *,
+    permitir_historico: bool = False,
+) -> ExpedienteModel:
+    if permitir_historico:
+        expediente = _expediente_actual(db, alumno) or _ultimo_expediente(db, alumno)
+    else:
+        expediente = obtener_expediente_actual(db, alumno)
+    if expediente is None:
+        raise HTTPException(
+            status_code=409,
+            detail="El alumno no tiene un expediente registrado.",
+        )
     _asegurar_documentos_en_expediente(db, expediente)
     db.commit()
     db.refresh(expediente)
@@ -307,12 +340,31 @@ def _carpeta_documento_alumno(alumno: AlumnoModel, expediente: ExpedienteModel, 
     )
 
 
-def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
-    expediente = asegurar_documentos_expediente(db, alumno)
+def serializar_documentacion(
+    db: Session,
+    alumno: AlumnoModel,
+    *,
+    permitir_historico: bool = False,
+) -> dict:
+    expediente = asegurar_documentos_expediente(
+        db,
+        alumno,
+        permitir_historico=permitir_historico,
+    )
     usuario = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == alumno.id_usuario).first()
     carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == alumno.id_carrera).first()
     filas = documentos_del_flujo(db, expediente)
     elegibilidad_aprobada, expediente_inicial_aprobado, seleccion_habilitada, seleccion_validada, asignacion_habilitada = calcular_flujo(filas)
+    seleccion_registrada = (
+        db.query(SeleccionEmpresaModel)
+        .filter(
+            SeleccionEmpresaModel.id_alumno == alumno.id_alumno,
+            SeleccionEmpresaModel.id_convocatoria == expediente.id_convocatoria,
+            SeleccionEmpresaModel.estado == "Registrada",
+            SeleccionEmpresaModel.prioridad <= 2,
+        )
+        .first() is not None
+    )
 
     documentos = []
     for documento, tipo in filas:
@@ -323,7 +375,7 @@ def serializar_documentacion(db: Session, alumno: AlumnoModel) -> dict:
         elif tipo.etapa == "Expediente":
             habilitado = elegibilidad_aprobada
         elif tipo.etapa == "SeleccionEmpresa":
-            habilitado = seleccion_habilitada
+            habilitado = seleccion_habilitada and seleccion_registrada
         elif tipo.etapa in {"Asignacion", "AsignacionFirmada"}:
             habilitado = asignacion_habilitada
 
@@ -433,7 +485,7 @@ def resumen_documentos(documentos: list[DocumentoModel]) -> dict:
     return {
         "aprobados": sum(1 for d in documentos if d.estado_documento == "Aprobado"),
         "cargados": sum(1 for d in documentos if d.nombre_archivo),
-        "revisión": sum(1 for d in documentos if d.nombre_archivo and d.estado_documento == "Pendiente"),
+        "revision": sum(1 for d in documentos if d.nombre_archivo and d.estado_documento == "Pendiente"),
         "observados": sum(1 for d in documentos if d.estado_documento in ["Observado", "Rechazado"]),
         "total": len(documentos),
     }
@@ -443,14 +495,42 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
     alumnos = db.query(AlumnoModel).order_by(AlumnoModel.id_alumno).all()
     resultado = []
     for alumno in alumnos:
-        try:
-            expediente = asegurar_documentos_expediente(db, alumno)
-        except HTTPException as exc:
-            if exc.status_code == 409:
-                continue
-            raise
         usuario = db.query(UsuarioModel).filter(UsuarioModel.id_usuario == alumno.id_usuario).first()
         carrera = db.query(CarreraModel).filter(CarreraModel.id_carrera == alumno.id_carrera).first()
+
+        # Coordinacion prioriza el expediente activo, conserva acceso al
+        # historico mas reciente y tambien muestra alumnos sin expediente.
+        expediente = _expediente_actual(db, alumno) or _ultimo_expediente(db, alumno)
+        if expediente is None:
+            resultado.append(
+                {
+                    "id_alumno": alumno.id_alumno,
+                    "id_expediente": None,
+                    "nombre": _nombre_completo(alumno),
+                    "correo": usuario.correo if usuario else None,
+                    "matricula": alumno.matricula,
+                    "semestre": alumno.semestre,
+                    "grupo": alumno.grupo,
+                    "carrera": carrera.nombre if carrera else None,
+                    "estado_alumno": alumno.estado_alumno,
+                    "estado_expediente": "Sin expediente",
+                    "fecha_envio_pendiente": None,
+                    "motivo_sin_expediente": "El alumno todav\u00eda no tiene un expediente registrado.",
+                    "_fecha_orden_revision": None,
+                    "resumen": {
+                        "aprobados": 0,
+                        "cargados": 0,
+                        "revision": 0,
+                        "observados": 0,
+                        "total": 0,
+                    },
+                }
+            )
+            continue
+
+        _asegurar_documentos_en_expediente(db, expediente)
+        db.commit()
+        db.refresh(expediente)
         filas = documentos_del_flujo(db, expediente)
         documentos = [documento for documento, _ in filas]
         documentos_en_revision = [
@@ -482,6 +562,7 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
                     if fecha_envio_pendiente is not None
                     else None
                 ),
+                "motivo_sin_expediente": None,
                 "_fecha_orden_revision": fecha_envio_pendiente,
                 "resumen": resumen,
             }
@@ -489,7 +570,7 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
 
     resultado.sort(
         key=lambda item: (
-            0 if item["resumen"]["revisión"] > 0 else 1,
+            0 if item["resumen"]["revision"] > 0 else 1,
             item["_fecha_orden_revision"] or datetime.max,
             item["nombre"].casefold(),
         )
@@ -497,7 +578,6 @@ def listar_alumnos_revision(db: Session) -> list[dict]:
     for item in resultado:
         item.pop("_fecha_orden_revision", None)
     return resultado
-
 
 def _asignacion_activa_alumno(db: Session, alumno: AlumnoModel) -> AsignacionModel | None:
     return (

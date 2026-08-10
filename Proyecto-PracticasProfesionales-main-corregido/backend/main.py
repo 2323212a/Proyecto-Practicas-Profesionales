@@ -67,6 +67,7 @@ from infrastructure.persistence.models.asignacion import AsignacionModel
 from infrastructure.persistence.models.bitacora_auditoria import BitacoraAuditoriaModel
 from infrastructure.persistence.models.convenio import ConvenioModel
 from infrastructure.persistence.models.empresa import EmpresaModel
+from infrastructure.persistence.models.institucion_practicas import InstitucionPracticasModel
 from infrastructure.persistence.models.solicitud_empresa import SolicitudEmpresaModel
 from infrastructure.persistence.models.evaluacion import EvaluacionModel
 from infrastructure.persistence.models.evaluacion_empresa_alumno import EvaluacionEmpresaAlumnoModel

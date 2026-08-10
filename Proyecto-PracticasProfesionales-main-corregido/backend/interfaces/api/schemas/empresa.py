@@ -8,7 +8,27 @@ TipoTramite = Literal["Convenio", "Vinculacion"]
 EstadoEmpresa = Literal["Solicitante", "Pendiente", "Rechazada", "Activa", "Suspendida", "Inactiva"]
 
 
-class EmpresaCreate(BaseModel):
+class CamposInstitucionPracticas(BaseModel):
+    horario_atencion: str | None = None
+    nombre_contacto: str | None = None
+    cargo_contacto: str | None = None
+    area_contacto: str | None = None
+    telefono_contacto: str | None = None
+    correo_contacto_persona: EmailStr | None = None
+    areas_receptoras: str | None = None
+    numero_estudiantes: int | None = None
+    perfil_academico: str | None = None
+    actividades: str | None = None
+    horario_practicas: str | None = None
+    modalidad: str | None = None
+    documento_pdf: str | None = None
+    municipio: str | None = None
+    estado: str | None = None
+    observaciones: str | None = None
+    carta_colaboracion: str | None = None
+
+
+class EmpresaCreate(CamposInstitucionPracticas):
     nombre_empresa: str
     rfc: str | None = None
     giro: str | None = None
@@ -20,7 +40,7 @@ class EmpresaCreate(BaseModel):
     estado_empresa: EstadoEmpresa = "Pendiente"
 
 
-class EmpresaUpdate(BaseModel):
+class EmpresaUpdate(CamposInstitucionPracticas):
     nombre_empresa: str | None = None
     rfc: str | None = None
     giro: str | None = None

@@ -32,7 +32,7 @@ from infrastructure.persistence.models.vacante import VacanteModel  # noqa: F401
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = BASE_DIR / "templates" / "documentos"
-CACHE_VERSION = "relleno-v3-configuracion-responsables"
+CACHE_VERSION = "relleno-v4-empresas-seleccionadas"
 
 DOCUMENTOS_GENERADOS = {
     "carta_compromiso": {
@@ -79,6 +79,7 @@ MESES = [
 
 def codigo_generacion_por_nombre(nombre_documento: str | None) -> str | None:
     nombre = (nombre_documento or "").strip().lower()
+    nombre = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode("ascii")
     if nombre == "carta compromiso":
         return "carta_compromiso"
     if nombre == "carta de exoneracion":
@@ -187,6 +188,34 @@ def _fecha_corta(hoy: date) -> str:
     return f"{hoy.day:02d}/{hoy.month:02d}/{hoy.year}"
 
 
+def _empresas_seleccionadas(alumno: AlumnoModel, id_convocatoria: int | None) -> tuple[str, str]:
+    db = object_session(alumno)
+    cerrar_db = db is None
+    if db is None:
+        db = SessionLocal()
+
+    try:
+        query = db.query(SeleccionEmpresaModel).filter(
+            SeleccionEmpresaModel.id_alumno == alumno.id_alumno,
+            SeleccionEmpresaModel.estado == "Registrada",
+            SeleccionEmpresaModel.prioridad <= 2,
+        )
+        if id_convocatoria is not None:
+            query = query.filter(
+                SeleccionEmpresaModel.id_convocatoria == id_convocatoria
+            )
+        selecciones = query.order_by(SeleccionEmpresaModel.prioridad.asc()).all()
+        nombres = [
+            seleccion.vacante.empresa.nombre_empresa
+            for seleccion in selecciones
+            if seleccion.vacante is not None and seleccion.vacante.empresa is not None
+        ]
+        nombres.extend([""] * (2 - len(nombres)))
+        return nombres[0], nombres[1]
+    finally:
+        if cerrar_db:
+            db.close()
+
 def _contexto(alumno: AlumnoModel) -> dict[str, str]:
     hoy = date.today()
     usuario = alumno.usuario
@@ -195,6 +224,10 @@ def _contexto(alumno: AlumnoModel) -> dict[str, str]:
     convocatoria = expediente.convocatoria if expediente is not None else None
     tipo_practica = _nombre_tipo_practica(alumno)
     responsables = _responsables_documentos(alumno)
+    empresa_prioritaria, empresa_secundaria = _empresas_seleccionadas(
+        alumno,
+        convocatoria.id_convocatoria if convocatoria is not None else None,
+    )
     return {
         "fecha_larga": _fecha_larga(hoy),
         "fecha_corta": _fecha_corta(hoy),
@@ -212,6 +245,8 @@ def _contexto(alumno: AlumnoModel) -> dict[str, str]:
         "correo": usuario.correo if usuario else "",
         "matricula": alumno.matricula,
         "carrera": carrera,
+        "empresa_prioritaria": empresa_prioritaria,
+        "empresa_secundaria": empresa_secundaria,
         "unidad_academica": "Facultad de Contaduria y Administracion, Campus I",
         "periodo_inicio": convocatoria.fecha_inicio_general.strftime("%d/%m/%Y") if convocatoria.fecha_inicio_general else "" if convocatoria else "",
         "periodo_fin": convocatoria.fecha_cierre_general.strftime("%d/%m/%Y") if convocatoria.fecha_cierre_general else "" if convocatoria else "",
@@ -233,6 +268,10 @@ def _cache_key(codigo: str, alumno: AlumnoModel) -> str:
 def _safe_replace(xml: str, origen: str, destino: str) -> str:
     return xml.replace(origen, escape(destino))
 
+def _safe_replace_once(xml: str, origen: str, destino: str) -> str:
+    return xml.replace(origen, escape(destino), 1)
+
+
 
 def _rellenar_xml(codigo: str, xml: str, alumno: AlumnoModel) -> str:
     c = _contexto(alumno)
@@ -250,11 +289,14 @@ def _rellenar_xml(codigo: str, xml: str, alumno: AlumnoModel) -> str:
             "Nombre y firma del estudiante": c["nombre_alumno"],
         }
     elif codigo == "carta_exoneracion":
+        xml = _safe_replace_once(xml, "FECHA:_", f"FECHA: {c['fecha_larga']}")
+        xml = _safe_replace_once(xml, "____________________", "")
+        xml = _safe_replace_once(xml, "______________", f"\u00a0{c['tipo_practica']}")
+        xml = _safe_replace_once(xml, "_____", c["periodo_inicio_mes"])
+        xml = _safe_replace_once(xml, "_____", c["periodo_inicio_anio"])
         reemplazos = {
-            "FECHA": c["fecha_larga"],
             "Práctica Profesional:   .": f"Práctica Profesional: {c['tipo_practica']}.",
             "del __ de ": f"del {c['periodo_inicio_dia']} de ",
-            "_____": c["periodo_inicio_mes"],
             "00000000000000000": "_________________",
             "Nombre y firma del alumno": c["nombre_alumno"],
         }
@@ -281,6 +323,16 @@ def _rellenar_xml(codigo: str, xml: str, alumno: AlumnoModel) -> str:
             "Nombre y Firma Estudiante": c["nombre_alumno"],
         }
     elif codigo == "carta_exposicion_motivos":
+        xml = _safe_replace_once(
+            xml,
+            "Nombre de la empresa: ________________________________________ Estado: ______________",
+            f"Nombre de la empresa: {c['empresa_prioritaria']} Estado: ______________",
+        )
+        xml = _safe_replace_once(
+            xml,
+            "Nombre de la empresa: ________________________________________ Estado: __________________",
+            f"Nombre de la empresa: {c['empresa_secundaria']} Estado: __________________",
+        )
         reemplazos = {
             "Fecha: ___": f"Fecha: {c['fecha_dia']}",
             "_/____/__": f"/{c['fecha_mes']}/{c['fecha_anio']}",

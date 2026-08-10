@@ -24,6 +24,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.services.auditoria_service import registrar_bitacora
+from app.services.institucion_practicas_service import sincronizar_institucion_practicas
 from app.services.identidad_importacion_service import (
     buscar_id_empresa_reutilizable,
     marcar_id_reutilizado,
@@ -100,7 +101,7 @@ COLUMNAS = [
     "Observaciones",
     "Carta de colaboración",
 ]
-CAMPOS_OBLIGATORIOS = {COLUMNAS[0]}
+CAMPOS_OBLIGATORIOS = {COLUMNAS[0], COLUMNAS[2], COLUMNAS[4], COLUMNAS[5]}
 # Se conserva vacío únicamente para no romper compatibilidad interna con trabajos validados previamente.
 COLUMNAS_DOCUMENTOS: dict[str, str] = {}
 TIPOS_UNIDAD = [
@@ -889,6 +890,31 @@ def confirmar_importacion(
                 )
                 db.add(empresa)
                 db.flush()
+                sincronizar_institucion_practicas(
+                    db,
+                    empresa,
+                    tipo_unidad=datos[COLUMNAS[1]],
+                    datos_completos={
+                        'domicilio': datos[COLUMNAS[3]],
+                        'horario_atencion': datos[COLUMNAS[6]],
+                        'nombre_contacto': datos[COLUMNAS[7]],
+                        'cargo_contacto': datos[COLUMNAS[8]],
+                        'area_contacto': datos[COLUMNAS[9]],
+                        'telefono_contacto': datos[COLUMNAS[10]],
+                        'correo_contacto': datos[COLUMNAS[11]],
+                        'areas_receptoras': datos[COLUMNAS[12]],
+                        'numero_estudiantes': int(datos[COLUMNAS[13]]) if datos[COLUMNAS[13]] else None,
+                        'perfil_academico': datos[COLUMNAS[14]],
+                        'actividades': datos[COLUMNAS[15]],
+                        'horario_practicas': datos[COLUMNAS[16]],
+                        'modalidad': datos[COLUMNAS[17]],
+                        'documento_pdf': datos[COLUMNAS[18]],
+                        'municipio': datos[COLUMNAS[19]],
+                        'estado': datos[COLUMNAS[20]],
+                        'observaciones': datos[COLUMNAS[22]],
+                        'carta_colaboracion': datos[COLUMNAS[23]],
+                    },
+                )
                 marcar_id_reutilizado(registro_identidad)
                 if datos[COLUMNAS[7]]:
                     nombre, apellido_paterno, apellido_materno = _separar_nombre(datos[COLUMNAS[7]])
